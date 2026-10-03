@@ -25,6 +25,7 @@ import fcntl
 import io
 import json
 import os
+import stat
 import posixpath
 import re
 import shutil
@@ -91,6 +92,17 @@ def status(**kw):
         json.dump(s, f)
     os.chmod(tmp, 0o644)
     os.replace(tmp, STATUS)
+
+
+def read_req(path, limit=4096):
+    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("keine normale Datei")
+        return os.read(fd, limit).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
 
 
 def read(path, default=""):
@@ -371,14 +383,17 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         return 0
-    lines = read(REQ).splitlines()
+    try:
+        lines = read_req(REQ).strip().splitlines()
+    except OSError:
+        lines = []
     mode, arg = (lines[0] if lines else ""), (lines[1].strip() if len(lines) > 1 else "")
     try:
         os.remove(REQ)
     except OSError:
         pass
     if mode not in MODES or (mode == "switch" and not VERSION_RE.match(arg)) or (mode != "switch" and arg):
-        log(f"Unbekannte Anforderung verworfen: {mode[:20]!r} {arg[:20]!r}")
+        log("Unbekannte Anforderung verworfen.")
         return 0
     try:
         if mode == "install":

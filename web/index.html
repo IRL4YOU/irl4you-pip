@@ -308,7 +308,7 @@ dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn
     <details><summary class="muted">Anleitung für Handy und Rechner</summary>
       <ol>
         <li><b>Konto:</b> Auf tailscale.com kostenlos anmelden (z. B. mit GitHub, Google, Microsoft oder Apple).</li>
-        <li><b>Box:</b> Hier „Tailscale installieren“, dann „Verbinden“, den Link öffnen, anmelden, „Connect“ klicken.</li>
+        <li><b>Box:</b> Hier „Ja, einrichten“, dann „Verbinden“, den Link öffnen, anmelden, „Connect“ klicken.</li>
         <li><b>Freigabe:</b> „Oberfläche im privaten Netz freigeben“. Falls Tailscale nach „HTTPS“ fragt: den Link öffnen, „Funnel“ <b>aus</b> lassen, „Enable HTTPS“ klicken, dann erneut freigeben.</li>
         <li><b>Handy und Rechner:</b> Die App „Tailscale“ installieren (tailscale.com/download), mit <b>demselben Konto</b> anmelden, Verbindung einschalten.</li>
         <li><b>Zugriff:</b> Die Adresse oben im Browser öffnen, mit dem BELABOX-Passwort anmelden. Es ist nichts am Router freizugeben.</li>
@@ -360,9 +360,17 @@ dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn
   <p id="rdlg_t"></p><p class="muted">Die Sendung läuft noch mit den alten Werten. Ein Neustart unterbricht das Bild für einige Sekunden.</p>
   <div class="actions"><button type="button" id="rdlg_go" class="warnbtn">Stream neu starten</button><button type="submit" class="sec">Später</button></div></form></dialog>
 <footer class="foot"><div id="stagefoot"></div>
-  <div class="footlinks">© 2026 IRL4YOU · MIT-Lizenz · <a href="https://irl4you.de" target="_blank" rel="noopener noreferrer">Webseite</a> · <a href="https://discord.gg/nrBCEarMup" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/IRL4YOU/irl4you-pip" target="_blank" rel="noopener noreferrer">Quellcode auf GitHub</a> · <a href="https://github.com/IRL4YOU/irl4you-pip/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">Drittprojekte (Moblin, BELABOX)</a></div></footer>
+  <div class="footlinks">© 2026 IRL4YOU · MIT-Lizenz (Ordner srtla: AGPL-3.0) · <a href="https://irl4you.de" target="_blank" rel="noopener noreferrer">Webseite</a> · <a href="https://discord.gg/nrBCEarMup" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/IRL4YOU/irl4you-pip" target="_blank" rel="noopener noreferrer">Quellcode auf GitHub</a> · <a href="https://github.com/IRL4YOU/irl4you-pip/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">Drittprojekte (Moblin, BELABOX)</a></div></footer>
 <script>
 const $=id=>document.getElementById(id);
+// Abfragen sparen die Box: Im Hintergrund-Tab ruht alles, zugeklappte Karten fragen nur selten nach.
+const _last={};
+function due(key,card,idleMs){
+  if(document.hidden) return false;
+  const c=card&&$(card); if(!c||c.open) return true;
+  const n=Date.now(); if(!_last[key]||n-_last[key]>=idleMs){ _last[key]=n; return true; }
+  return false;
+}
 const fmt=(v,d=1)=>v==null?"–":Number(v).toFixed(d);
 const ROLE={main:"Hauptbild",pip:"Bild-in-Bild",extra:"Weitere"};
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -438,7 +446,7 @@ function renderUpdate(u){
   else if(u.state==="running") msg=(UPD_LABEL[u.mode]||"Aktion")+" läuft…"+(show?` Laden ${p.downloading}/${p.total}, Entpacken ${p.unpacking}/${p.total}, Einrichten ${p.setting_up}/${p.total}`:"");
   else if(u.state==="rebooting") msg="Die Box startet neu. Diese Seite lädt nach dem Start wieder.";
   else if(u.reboot_pending) msg="Neustart nötig, damit der neue Kernel/Netzwerkteile aktiv werden.";
-  else if(u.message) msg=esc(u.message);
+  else if(u.message) msg=u.message;
   if(u.streaming) msg="Übertragung läuft: Installieren und Neustart sind gesperrt. "+msg;
   $("updmsg").textContent=msg;
   $("updmsg").style.color=(u.state==="failed"||u.state==="refused")?"var(--crit)":"";
@@ -662,7 +670,7 @@ $("wificard").addEventListener("click",e=>{
   if(a.dataset.ssid!==undefined) $("w_ssid").value=a.dataset.ssid;
   if(a.dataset.forget!==undefined) wifiDo({action:"forget",ssid:a.dataset.forget},"Wird vergessen …");
 });
-wifiLoad(); setInterval(()=>{ if(!["w_if","w_ssid","w_pw"].includes(document.activeElement.id)) wifiLoad(); },10000);
+wifiLoad(); setInterval(()=>{ if(due("wifi","netcard",60000)&&!["w_if","w_ssid","w_pw"].includes(document.activeElement.id)) wifiLoad(); },10000);
 
 const FREE_ID="5";
 let posFree={1:{x:500,y:500},2:{x:500,y:500},3:{x:500,y:500}};
@@ -809,7 +817,7 @@ async function pipSave(){
   pipeLoad();
 }
 $("p_save").addEventListener("click",pipSave);
-pipeLoad(); setInterval(()=>{ if(!["p_main","p_pip","p_type","p_corner","p_pip2","p_corner2","p_pip3","p_corner3","p_size","p_auto","p_delay","n_delay","p_delay1","n_delay1","p_delay2","n_delay2","p_delay3","n_delay3","p_audio"].includes(document.activeElement.id)) pipeLoad(); },5000);
+pipeLoad(); setInterval(()=>{ if(due("pipe","pipecard",30000)&&!["p_main","p_pip","p_type","p_corner","p_pip2","p_corner2","p_pip3","p_corner3","p_size","p_auto","p_delay","n_delay","p_delay1","n_delay1","p_delay2","n_delay2","p_delay3","n_delay3","p_audio"].includes(document.activeElement.id)) pipeLoad(); },5000);
 
 const LIVE_LABEL={stopped:"Nicht live",starting:"Startet…",running:"LIVE",restarting:"Verbindung wird neu aufgebaut…",stopping:"Wird beendet…",refused:"Nicht gestartet"};
 let sendData=null, pendIgnored="";
@@ -877,7 +885,7 @@ $("live_stop").addEventListener("click",async()=>{
   try{ await srtlaCall("POST","/api/send",{action:"stop"}); }catch(x){ $("liveerr").textContent=x.message; }
   setTimeout(sendLoad,800);
 });
-sendLoad(); setInterval(sendLoad,2000);
+sendLoad(); setInterval(()=>{ if(!document.hidden) sendLoad(); },2000);
 let rBusy=false, rDeclinedMem=false;
 const R_STATE={Running:"verbunden",NeedsLogin:"Anmeldung nötig",Stopped:"getrennt",NoState:"startet …",Starting:"startet …"};
 async function rLoad(){
@@ -936,7 +944,7 @@ $("r_copy").addEventListener("click",async()=>{
   $("r_copy").textContent=ok?"Kopiert":"Markiert: Strg/Cmd+C";
   setTimeout(()=>$("r_copy").textContent="Kopieren",2500);
 });
-(function rLoop(){ rLoad().finally(()=>setTimeout(rLoop,rBusy?2000:6000)); })();
+(function rLoop(){ (rBusy||due("r","rcard",60000)?rLoad():Promise.resolve()).finally(()=>setTimeout(rLoop,rBusy?2000:6000)); })();
 let swFirst=null, swWasInstalling=false;
 async function swLoad(force){
   let d;
@@ -1005,7 +1013,7 @@ $("sw_rollback").addEventListener("click",async()=>{
   try{ await srtlaCall("POST","/api/swupdate",{action:"rollback",confirm:true}); swWasInstalling=true; $("sw_msg").textContent="Wird zurückgestellt …"; }catch(x){ $("sw_msg").textContent=x.message; }
   setTimeout(()=>swLoad(false),1500);
 });
-(function swLoop(){ swLoad(false).finally(()=>setTimeout(swLoop,swWasInstalling?2000:8000)); })();
+(function swLoop(){ (swWasInstalling||due("sw","swcard",60000)?swLoad(false):Promise.resolve()).finally(()=>setTimeout(swLoop,swWasInstalling?2000:8000)); })();
 async function tick(){
   try{
     const resp=await fetch("/api/metrics"); if(resp.status===401){location.reload();return;}
@@ -1035,9 +1043,9 @@ async function tick(){
     $("net").innerHTML=netHtml||'<span class="muted">keine Daten</span>';
     setRates(m.net);
     renderCams(m.cameras);
-    netRender();
-    try{ const dr=await fetch("/api/dji"); if(dr.ok) djiRender(await dr.json()); }catch(e){}
-    try{ const ur=await fetch("/api/update"); if(ur.ok) renderUpdate(await ur.json()); }catch(e){}
+    if(due("net","c_cams",15000)) netRender();
+    if(due("dji","c_cams",20000)){ try{ const dr=await fetch("/api/dji"); if(dr.ok) djiRender(await dr.json()); }catch(e){} }
+    if(due("upd","updcard",60000)){ try{ const ur=await fetch("/api/update"); if(ur.ok) renderUpdate(await ur.json()); }catch(e){} }
     $("livehealth").innerHTML=m.alerts.length?m.alerts.map(a=>`<span class="${a.level}">${a.text}</span>`).join(" · "):'<span class="ok">● Alles im grünen Bereich</span>';
     $("alerts").innerHTML=m.alerts.length?m.alerts.map(a=>`<div class="alert ${a.level}">${a.text}</div>`).join(""):'<div class="alert ok">Alles im grünen Bereich</div>';
   }catch(e){ $("mode").textContent="keine Verbindung"; }
@@ -1070,7 +1078,11 @@ $("pw_off").addEventListener("click",()=>powerDo("poweroff"));
 $("pw_reboot").addEventListener("click",()=>powerDo("reboot"));
 
 setSM(smStart);
-tick(); setInterval(tick,2000);
+(async function tickLoop(){            // nächster Durchlauf erst nach dem Ende des vorigen (kein Stau bei langsamen Antworten)
+  try{ if(!document.hidden) await tick(); }catch(e){}
+  setTimeout(tickLoop,2000);
+})();
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden){ tick(); sendLoad(); } });   // beim Zurückkehren sofort aktuell
 </script>
 </body>
 </html>

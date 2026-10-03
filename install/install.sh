@@ -36,7 +36,7 @@ case "${1:-install}" in
     install -d /opt/pipbox/web
     # Journal dauerhaft speichern (damit nach einem Absturz Spuren bleiben), aber höchstens 30 MB und 7 Tage behalten
     install -d /var/log/journal /etc/systemd/journald.conf.d
-    printf '[Journal]\nStorage=persistent\nSystemMaxUse=30M\nSystemMaxFileSize=3M\nMaxRetentionSec=7day\nSyncIntervalSec=5s\n' > /etc/systemd/journald.conf.d/pipbox-persistent.conf
+    printf '[Journal]\nStorage=persistent\nSystemMaxUse=30M\nSystemMaxFileSize=3M\nMaxRetentionSec=7day\nSyncIntervalSec=5min\n' > /etc/systemd/journald.conf.d/pipbox-persistent.conf
     systemctl restart systemd-journald 2>/dev/null || true
     # Bluetooth-Dienst nur neu starten, wenn sich seine Dateien ändern (sonst reißen die Kameras ab)
     dji_changed=0

@@ -5,6 +5,7 @@ Liest aus der Auslösedatei ein Stichwort aus fester Liste (poweroff, reboot), l
 einer kurzen Pause aus (damit die Oberfläche noch antworten kann). Nimmt nichts anderes entgegen."""
 import json
 import os
+import stat
 import subprocess
 import sys
 import time
@@ -15,10 +16,20 @@ RUN = "/run/pipbox-power"
 CMDS = {"poweroff": ["systemctl", "poweroff"], "reboot": ["systemctl", "reboot"]}
 
 
+def read_req(path, limit=4096):
+    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("keine normale Datei")
+        return os.read(fd, limit).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
+
+
 def main():
     try:
-        with open(REQ) as f:
-            word = f.readline().strip()
+        word = (read_req(REQ, 64).splitlines() or [""])[0].strip()
     except OSError:
         word = ""
     try:

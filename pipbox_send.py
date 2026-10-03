@@ -13,7 +13,9 @@ import collections
 import json
 import os
 import re
+import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -171,23 +173,42 @@ class Failover:
         return None
 
 
+def ensure_work():
+    """Arbeitsordner der Sendekette: gehört dem laufenden Benutzer (root) und ist kein Verweis (/var/tmp darf jeder Benutzer beschreiben)."""
+    try:
+        st = os.lstat(WORK)
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid():
+            if stat.S_ISDIR(st.st_mode) and not stat.S_ISLNK(st.st_mode):
+                shutil.rmtree(WORK)
+            else:
+                os.unlink(WORK)
+    except FileNotFoundError:
+        pass
+    os.makedirs(WORK, mode=0o700, exist_ok=True)
+    os.chmod(WORK, 0o700)
+
+
 def write_pipeline(cfg):
     """Pipeline-Text und Verzögerungsdatei für diese Einstellung schreiben. Gibt den Text zurück ('' bei Fehler)."""
     text = server.PipelineStore(os.devnull).build(cfg)
     if not text:
         return ""
-    os.makedirs(WORK, mode=0o700, exist_ok=True)
-    os.chmod(WORK, 0o700)
+    ensure_work()
     with open(f"{WORK}/pipeline", "w") as f:
         f.write(text)
     # Verzögerung des Hauptbildes: Steuerdatei für den laufenden Baustein (pbctl) passend zur Pipeline setzen
     try:
         vals = [max(0, min(3000, int(cfg.get(k, 0) or 0))) if cfg["type"] == "pip" else 0
                 for k in ("main_delay_ms", "pip_delay_ms", "pip2_delay_ms", "pip3_delay_ms")]
-        with open(f"{STATE}/main-delay-ms.tmp", "w") as f:
+        tmp = f"{STATE}/main-delay-ms.tmp"
+        try:
+            os.unlink(tmp)                  # der Ordner gehört dem Benutzer pipbox: kein Verweis darf als Ziel dienen
+        except OSError:
+            pass
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(fd, "w") as f:
             f.write(" ".join(map(str, vals)) + "\n")
-        os.chmod(f"{STATE}/main-delay-ms.tmp", 0o644)
-        os.replace(f"{STATE}/main-delay-ms.tmp", f"{STATE}/main-delay-ms")
+        os.replace(tmp, f"{STATE}/main-delay-ms")
     except OSError:
         pass
     global DELAY_LIVE, DELAY_LIVE_PIPS
@@ -238,8 +259,7 @@ def prepare():
     ips = [have[u] for u in st.get("uplinks", []) if u in have]
     if not ips:
         raise Refuse("Keiner der gewählten Sendewege hat eine IP-Adresse")
-    os.makedirs(WORK, mode=0o700, exist_ok=True)
-    os.chmod(WORK, 0o700)
+    ensure_work()
     if not write_pipeline(eff):
         raise Refuse("Der Bildaufbau konnte nicht erzeugt werden (Kamera-Schlüssel ungültig)")
     with open(f"{WORK}/bitrate", "w") as f:
@@ -259,6 +279,8 @@ class Sender:
         self.fo = Failover(plan["cfg"], plan["layout"]) if plan["auto"] else None
         self.layout = tuple(plan["layout"])
         self.waiting = False
+        self.senv = None
+        self._ups_t = 0
         self.stats = collections.deque(maxlen=STATS_KEEP)    # (Zeit, Zeile)
         self.links = collections.deque(maxlen=300)           # Zustandszeilen der Wegewahl (srtla_send "links: ...")
         self.stop_ev = threading.Event()
@@ -381,6 +403,7 @@ class Sender:
         if self.plan.get("spread") == "all":
             # Alle Wege gleichzeitig: auch Leitungen mit höherer Laufzeit mitnutzen (bis 300 ms schlechter als die beste)
             senv = dict(os.environ, SRTLA_LAT_MARGIN_MS="300")
+        self.senv = senv
         self.spawn("srtla_send", self.args("srtla_send"), env=senv)
         self.write_status()          # Zustand "startet" sofort sichtbar machen
         self.wait_links_ready()
@@ -412,11 +435,13 @@ class Sender:
                     print(f"send: {name} beendet (Code {p.returncode}), Neustart {n}", flush=True)
                     if self.stop_ev.wait(2):
                         break
-                    self.spawn(name, self.args(name), env=env if name == "belacoder" else None)
+                    self.spawn(name, self.args(name), env=env if name == "belacoder" else self.senv)
                     with self.lock:
                         self.state = "running"
             try:
-                self.refresh_uplinks()
+                if time.monotonic() - self._ups_t >= 6:     # alle 6 s genügen: srtla_send merkt tote Wege selbst
+                    self._ups_t = time.monotonic()
+                    self.refresh_uplinks()
             except Exception as e:           # eine kaputte Einstellung darf die Übertragung nie beenden
                 print(f"send: Netze konnten nicht neu gelesen werden ({type(e).__name__})", flush=True)
             self.write_status()
@@ -427,6 +452,9 @@ class Sender:
     def wait_links_ready(self, timeout=20):
         """Der Encoder startet erst, wenn srtla_send mindestens einen Weg zum Server aufgebaut hat (erste Zustandszeile mit
         gemessener Laufzeit). Sonst gibt der Encoder nach wenigen Sekunden auf und muss neu starten (Fehlalarm beim Start)."""
+        if not (shutil.which("srtla_send") or "").startswith("/usr/local/"):
+            time.sleep(1)               # Original-Sender ohne Zustandszeilen: nicht umsonst warten
+            return False
         end = time.time() + timeout
         while time.time() < end and not self.stop_ev.is_set():
             if any("srtt=" in l and "srtt=-1ms" not in l for _, l in list(self.links)):

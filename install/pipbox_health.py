@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Schreibt alle 2 s eine Zeile mit dem Zustand der Box in /var/log/pipbox-health.log.
+"""Schreibt alle 10 s eine Zeile mit dem Zustand der Box in /var/log/pipbox-health.log.
 
 Zweck: Hängt sich die Box ohne Fehlermeldung auf, zeigen die letzten Zeilen, was kurz davor los war
-(Last, Temperatur, Takt, Speicher, Router, Sendekette). Jede Zeile wird sofort auf den Datenträger
-geschrieben. Die Datei bleibt unter ca. 4 MB, etwa 1,5 Tage (alte Zeilen fallen weg). Nur Lesen von /proc und /sys.
+(Last, Temperatur, Takt, Speicher, Router, Sendekette). Auf den Datenträger erzwungen (fsync) wird nur alle 30 s,
+das schont die Speicherkarte; bei einem plötzlichen Stromausfall fehlen deshalb bis zu 30 s. Die Datei bleibt unter
+ca. 4 MB, etwa eine Woche (alte Zeilen fallen weg). Nur Lesen von /proc und /sys.
 """
 import glob
 import os
@@ -11,6 +12,8 @@ import time
 
 LOG = "/var/log/pipbox-health.log"
 MAX = 4 * 1024 * 1024
+INTERVAL = 10          # Sekunden zwischen zwei Zeilen
+SYNC_EVERY = 30        # Sekunden zwischen zwei Zwangs-Speicherungen (fsync)
 
 
 def rd(path, default=""):
@@ -21,14 +24,13 @@ def rd(path, default=""):
         return default
 
 
-def running(name):
-    for d in glob.glob("/proc/[0-9]*"):
-        if rd(d + "/comm") == name:
-            return True
-    return False
+def running_names():
+    """Namen aller laufenden Programme, mit einem einzigen Durchlauf durch /proc."""
+    return {rd(d + "/comm") for d in glob.glob("/proc/[0-9]*")}
 
 
 def line():
+    names = running_names()
     load = rd("/proc/loadavg").split()[:3]
     temps = [int(t) // 1000 for t in (rd(p, "0") for p in sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp"))) if t.lstrip("-").isdigit()]
     freq = [int(rd(p, "0")) // 1000 for p in sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq"))]
@@ -36,11 +38,12 @@ def line():
     return (f"{time.strftime('%H:%M:%S')} load={'/'.join(load)} temp={max(temps) if temps else '?'}C "
             f"mhz={'/'.join(map(str, freq[:8]))} memfree={mem.get('MemAvailable', 0) // 1024}M "
             f"eth1={'ja' if os.path.exists('/sys/class/net/eth1') else 'nein'} "
-            f"belacoder={'ja' if running('belacoder') else 'nein'} srtla={'ja' if running('srtla_send') else 'nein'} "
+            f"belacoder={'ja' if 'belacoder' in names else 'nein'} srtla={'ja' if 'srtla_send' in names else 'nein'} "
             f"bt={len(glob.glob('/sys/class/bluetooth/hci[0-9]'))}")
 
 
 def main():
+    last_sync = 0.0
     while True:
         try:
             if os.path.exists(LOG) and os.path.getsize(LOG) > MAX:
@@ -53,12 +56,14 @@ def main():
             fd = os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             try:
                 os.write(fd, (line() + "\n").encode())
-                os.fsync(fd)
+                if time.monotonic() - last_sync >= SYNC_EVERY:
+                    os.fsync(fd)
+                    last_sync = time.monotonic()
             finally:
                 os.close(fd)
         except OSError:
             pass
-        time.sleep(2)
+        time.sleep(INTERVAL)
 
 
 if __name__ == "__main__":

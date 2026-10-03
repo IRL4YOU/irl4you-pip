@@ -1,7 +1,7 @@
 /* IRL4YOU PIP: Bild-in-Bild-Baustein für GStreamer (NV12).
  *
- * Zwei Elemente, die sich einen kleinen Zwischenspeicher teilen (Eigenschaft slot 0 oder 1,
- * so sind bis zu zwei kleine Bilder gleichzeitig möglich):
+ * Zwei Elemente, die sich einen kleinen Zwischenspeicher teilen (Eigenschaft slot 0, 1 oder 2,
+ * so sind bis zu drei kleine Bilder gleichzeitig möglich):
  *
  *   pbpipsink  nimmt das KLEINE Bild entgegen (schon vom Hardware-Decoder auf z. B. 480x270
  *              verkleinert) und legt es in einem Ringspeicher ab.
@@ -16,8 +16,8 @@
  * Bilder werden verworfen). Bleibt das kleine Bild länger als 2 Sekunden aus, wird nichts mehr
  * eingeblendet (statt eines eingefrorenen Bildes).
  *
- * Drittes Element pbctl: liest alle 0,3 s eine kleine Datei (bis zu drei Zahlen in Millisekunden: Hauptbild,
- * kleines Bild 1, kleines Bild 2) und stellt damit die Wartezeit (min-threshold-time) benannter queue-Elemente um.
+ * Drittes Element pbctl: liest alle 0,3 s eine kleine Datei (bis zu vier Zahlen in Millisekunden: Hauptbild,
+ * kleines Bild 1, 2 und 3) und stellt damit die Wartezeit (min-threshold-time) benannter queue-Elemente um.
  * So lassen sich die Verzögerungen im laufenden Betrieb ändern, ohne die Sendekette neu zu starten.
  *
  * MIT-Lizenz, Copyright (c) 2026 IRL4YOU. Eigene Umsetzung.

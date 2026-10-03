@@ -13,6 +13,7 @@ Nimmt keine Adressen, Pfade oder Befehle von der Weboberfläche an. Funnel (öff
 import fcntl
 import json
 import os
+import stat
 import re
 import subprocess
 import sys
@@ -172,6 +173,17 @@ def do_serve_off():
     status(state="idle", step="", hint_url="", message="Freigabe beendet.")
 
 
+def read_req(path, limit=4096):
+    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("keine normale Datei")
+        return os.read(fd, limit).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
+
+
 def main():
     os.makedirs(RUN, exist_ok=True)
     lock = open(LOCK, "w")
@@ -180,7 +192,7 @@ def main():
     except OSError:
         return 0
     try:
-        mode = open(REQ).read().strip().splitlines()[0]
+        mode = read_req(REQ).strip().splitlines()[0]
     except (OSError, IndexError):
         mode = ""
     try:
@@ -188,7 +200,7 @@ def main():
     except OSError:
         pass
     if mode not in MODES:
-        log(f"Unbekannte Anforderung verworfen: {mode[:20]!r}")
+        log("Unbekannte Anforderung verworfen.")
         return 0
     try:
         if mode == "install":

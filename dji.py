@@ -469,7 +469,7 @@ class Dji:
         path = None
         try:
             if self._fails.get(address, 0) >= 2:
-                self.forget(address, self._fails.get(address, 0) >= 4)   # hängenden BlueZ-Eintrag früh verwerfen (Idee aus einem anderen Streaming-Aufbau)
+                self.forget(address, self._fails.get(address, 0) >= 4)   # hängenden BlueZ-Eintrag früh verwerfen
             # Die Suche bleibt an, bis Connect fertig ist: BlueZ vergisst Kameras, die noch nicht dauerhaft gekoppelt sind,
             # sobald die Suche endet ("Kamera nicht mehr sichtbar"). Gemessen: Verbinden klappte nur, solange eine Suche lief.
             self._disc_acquire()

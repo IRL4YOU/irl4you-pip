@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -49,25 +50,42 @@ def load_status():
         return {}
 
 
+def read_req(path, limit=4096):
+    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("keine normale Datei")
+        return os.read(fd, limit).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
+
+
 def save_status(**kw):
     s = load_status()
     s.update(kw)
     tmp = STATUS + ".tmp"
-    with open(tmp, "w") as f:
+    try:
+        os.unlink(tmp)                  # kein Verweis des Benutzers pipbox darf als Ziel dienen
+    except OSError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, "w") as f:
         json.dump(s, f)
-    os.chmod(tmp, 0o644)
     os.replace(tmp, STATUS)
 
 
 def log(line):
-    with open(LOG, "a") as f:
+    flags = os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open(LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT | flags, 0o644)
+    with os.fdopen(fd, "w") as f:
         f.write(line.rstrip("\n") + "\n")
     # Protokoll begrenzen
     try:
         if os.path.getsize(LOG) > 512 * 1024:
-            with open(LOG) as f:
+            with os.fdopen(os.open(LOG, os.O_RDONLY | flags), errors="replace") as f:
                 tail = f.readlines()[-2000:]
-            with open(LOG, "w") as f:
+            with os.fdopen(os.open(LOG, os.O_WRONLY | os.O_TRUNC | flags), "w") as f:
                 f.writelines(tail)
     except OSError:
         pass
@@ -190,7 +208,7 @@ def do_run():
 
     # Paketstand vor dem Update festhalten (für spätere Fehlersuche), letzte 5 behalten
     snap = f"{SNAPSHOTS}/packages-before-{time.strftime('%Y%m%d-%H%M%S')}.txt"
-    with open(snap, "w") as f:
+    with os.fdopen(os.open(snap, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644), "w") as f:
         f.write(subprocess.run(["dpkg-query", "-W"], capture_output=True, text=True).stdout)
     old = sorted(x for x in os.listdir(SNAPSHOTS) if x.startswith("packages-before-"))
     for x in old[:-5]:
@@ -244,8 +262,7 @@ def do_reboot():
 
 def main():
     try:
-        with open(REQ) as f:
-            mode = f.readline().strip()
+        mode = (read_req(REQ).splitlines() or [""])[0].strip()
     except OSError:
         return 0
     try:
@@ -253,7 +270,7 @@ def main():
     except OSError:
         pass
     if mode not in MODES:
-        log(f"Unbekannte Anforderung verworfen: {mode[:20]!r}")
+        log("Unbekannte Anforderung verworfen.")
         return 0
     lock = open(LOCK, "w")
     try:

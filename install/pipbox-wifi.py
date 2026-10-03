@@ -8,6 +8,7 @@ Die Karte des Kameranetzes (camera-net.json) und Karten ohne WLAN werden abgeleh
 """
 import json
 import os
+import stat
 import re
 import subprocess
 import sys
@@ -92,6 +93,13 @@ def check_iface(iface):
         raise ValueError("Diese Karte ist das Kameranetz und wird nicht verändert")
 
 
+def check_not_camera_profile(ssid):
+    """Das Profil, mit dem die Kamera-Karte gerade verbunden ist, wird weder ersetzt noch gelöscht."""
+    cam = camera_iface()
+    if cam and any(d["iface"] == cam and d["connection"] == ssid for d in wifi_devices()):
+        raise ValueError("Dieses WLAN gehört zum Kameranetz und wird nicht verändert")
+
+
 def check_ssid(ssid):
     if not isinstance(ssid, str) or not 1 <= len(ssid.encode("utf-8")) <= 32 or any(ord(c) < 32 or ord(c) == 127 for c in ssid):
         raise ValueError("Netzname ungültig (1 bis 32 Zeichen)")
@@ -129,6 +137,7 @@ def do_connect(req):
     check_ssid(ssid)
     check_password(pw)
     if ssid in saved_wifi():                        # altes Profil ersetzen (z. B. geändertes Passwort)
+        check_not_camera_profile(ssid)
         nm("con", "delete", "id", ssid)
     args = ["--ask", "dev", "wifi", "connect", ssid, "ifname", iface]
     if req.get("hidden") is True:
@@ -146,6 +155,7 @@ def do_forget(req):
     check_ssid(ssid)
     if ssid not in saved_wifi():
         raise ValueError("Dieses WLAN ist nicht gespeichert")
+    check_not_camera_profile(ssid)
     nm("con", "delete", "id", ssid)
     return f"„{ssid}“ vergessen"
 
@@ -156,10 +166,20 @@ def do_disconnect(req):
     return "Getrennt"
 
 
+def read_req(path, limit=4096):
+    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("keine normale Datei")
+        return os.read(fd, limit).decode("utf-8", "replace")
+    finally:
+        os.close(fd)
+
+
 def main():
     try:
-        with open(REQ) as f:
-            req = json.load(f)
+        req = json.loads(read_req(REQ, 8192))
     except (OSError, ValueError):
         req = None
     try:

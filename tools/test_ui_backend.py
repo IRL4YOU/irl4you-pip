@@ -249,6 +249,61 @@ class HelperChecks(unittest.TestCase):
         self.assertEqual(self.h.split_terse(r"*:Mein\:WLAN:80:WPA2"), ["*", "Mein:WLAN", "80", "WPA2"])
 
 
+class RootHelperHardening(unittest.TestCase):
+    """Root-Helfer und Pipeline-Erzeugung: Eingaben aus dem Ordner des Benutzers pipbox dürfen nichts einschleusen."""
+
+    def helper(self, name):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name.replace("-", "_"), os.path.join(os.path.dirname(HERE), "install", name + ".py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_read_req_refuses_symlinks_and_limits_size(self):
+        d = tempfile.mkdtemp()
+        real, link = os.path.join(d, "real"), os.path.join(d, "req")
+        with open(real, "w") as f:
+            f.write("check\n" + "x" * 10000)
+        os.symlink(real, link)
+        for name in ("pipbox-update", "pipbox-remote", "pipbox-swupdate", "pipbox-wifi", "pipbox-power"):
+            m = self.helper(name)
+            with self.assertRaises(OSError, msg=name):
+                m.read_req(link)
+            self.assertEqual(len(m.read_req(real, 100)), 100, name)
+            self.assertTrue(m.read_req(real).startswith("check"), name)
+
+    def test_read_req_refuses_non_regular_files(self):
+        m = self.helper("pipbox-power")
+        with self.assertRaises(OSError):
+            m.read_req("/dev/null")
+
+    def test_pipeline_numbers_cannot_inject_text(self):
+        cfg = dict(BASE, corner="3 ! filesink location=/etc/x", size_pct="25 ! fakesink", x="1 ! y", main_delay_ms="9;x")
+        text = server.PipelineStore(os.devnull).build({**server.PipelineStore.DEFAULT, **cfg})
+        self.assertTrue(text)
+        for bad in ("filesink", "/etc/x", ";", "25 !", "1 ! y"):
+            self.assertNotIn(bad, text)
+        self.assertIn("width-pct=25 ", text)                 # ungültige Zahl fällt auf den erlaubten Bereich zurück
+
+    def test_safe_cfg_clamps(self):
+        c = server.PipelineStore._safe_cfg({"type": "pip", "corner": 99, "size_pct": 1000, "x": -5, "pip_delay_ms": 99999})
+        self.assertEqual((c["corner"], c["size_pct"], c["x"], c["pip_delay_ms"]), (len(server.PIP_CORNERS) - 1, 40, 0, 3000))
+
+    def test_work_dir_replaced_when_not_ours(self):
+        sys.path.insert(0, os.path.dirname(HERE))
+        import pipbox_send as ps
+        d = tempfile.mkdtemp()
+        target = os.path.join(d, "target")
+        os.mkdir(target)
+        work = os.path.join(d, "work")
+        os.symlink(target, work)
+        with mock.patch.object(ps, "WORK", work):
+            ps.ensure_work()
+            self.assertFalse(os.path.islink(work))
+            self.assertEqual(stat.S_IMODE(os.stat(work).st_mode), 0o700)
+        self.assertTrue(os.path.isdir(target))               # das Ziel des Verweises bleibt unangetastet
+
+
 class PendingSettings(unittest.TestCase):
     DATA = {"servers": [{"id": "a1", "name": "X", "host": "h.example", "port": 5000, "streamid": "geheim"}], "selected": "a1",
             "settings": {"min_kbps": 4000, "max_kbps": 12000, "latency_ms": 4000, "spread": "all", "uplinks": ["eth2"]}}

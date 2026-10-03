@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""PIPBOX Rohbau: eigene Oberfläche + Auslastungsanzeige, getrennt von belaUI.
+"""IRL4YOU BOX: eigene Oberfläche, Sendesteuerung und Auslastungsanzeige, getrennt von belaUI.
 
 Nur Python-Standardbibliothek. Läuft auf der Box (liest /proc und /sys) und
 mit --demo auch auf dem Mac (erzeugte Beispielwerte) zur Ansicht.
 
-Standardmäßig nur auf 127.0.0.1; Fernzugriff später über `tailscale serve`.
+Der Dienst lauscht auf dem Port 8780 (install/pipbox.service: --host 0.0.0.0, erreichbar im lokalen Netz);
+Fernzugriff von unterwegs läuft über `tailscale serve`.
 """
 import argparse
 import hashlib
@@ -51,6 +52,7 @@ class Sampler:
         self.prev_cpu = None
         self.prev_net = None
         self.prev_t = None
+        self._lock = threading.Lock()
 
     def cpu_times(self):
         out = []
@@ -87,7 +89,17 @@ class Sampler:
         return res
 
     def sample(self):
-        return self.sample_demo() if self.demo else self.sample_real()
+        """Messwerte. Liegt die letzte Messung keine 1,5 s zurück (zweiter Tab, mehrere Abfragen), gilt sie weiter:
+        sonst würden die Raten über sehr kurze Zeiträume berechnet und die Arbeit doppelt gemacht."""
+        if self.demo:
+            return self.sample_demo()
+        with self._lock:
+            hit = getattr(self, "_last", None)
+            if hit is not None and time.monotonic() - hit[0] < 1.5:
+                return hit[1]
+            val = self.sample_real()
+            self._last = (time.monotonic(), val)
+            return val
 
     def sample_real(self):
         now = time.time()
@@ -221,7 +233,26 @@ def fixed_ip(name):
     return want if f" {want}/" in out else None
 
 
+_TTL = {}
+
+
+def ttl_cached(key, ttl, fn):
+    """Ergebnis von fn() für ttl Sekunden merken. Spart Programmstarts und Dateilesen bei den vielen Abfragen der Oberfläche."""
+    now = time.monotonic()
+    hit = _TTL.get(key)
+    if hit is not None and now - hit[0] < ttl:
+        return hit[1]
+    val = fn()
+    _TTL[key] = (now, val)
+    return val
+
+
 def iface_ips():
+    """IPv4-Adressen der Netzwerkschnittstellen, 3 s zwischengespeichert (jede Abfrage startete sonst `ip`)."""
+    return [dict(x) for x in ttl_cached("iface_ips", 3.0, _iface_ips_raw)]
+
+
+def _iface_ips_raw():
     """IPv4-Adressen der Netzwerkschnittstellen (nur Linux), ohne lo/Container."""
     try:
         import fcntl
@@ -598,9 +629,31 @@ class PipelineStore:
             self.cfg = cfg
             self.save()
 
+    @classmethod
+    def _safe_cfg(cls, c):
+        """Zahlenfelder zu Zahlen in festen Bereichen zwingen. build() läuft über pipbox_send auch als root, und die
+        Datei pipeline.json gehört dem Benutzer pipbox: ein eingeschleuster Text darf nie in den Pipeline-Text gelangen."""
+        out = dict(c)
+
+        def num(k, lo, hi):
+            try:
+                v = int(out.get(k, cls.DEFAULT[k]))
+            except (TypeError, ValueError):
+                v = cls.DEFAULT[k]
+            out[k] = max(lo, min(hi, v))
+        for k in ("corner", "corner2", "corner3"):
+            num(k, 0, len(PIP_CORNERS) - 1)
+        num("size_pct", 15, 40)
+        for k in ("x", "y", "x2", "y2", "x3", "y3"):
+            num(k, 0, 1000)
+        for k in ("main_delay_ms", "pip_delay_ms", "pip2_delay_ms", "pip3_delay_ms"):
+            num(k, 0, 3000)
+        out["type"] = "pip" if out.get("type") == "pip" else "single"
+        return out
+
     def build(self, cfg=None, rtmp_port=1935, rtmp_app="publish"):
         """Pipeline-Text für belacoder. Die Schlüssel sind geprüft (a-z, 0-9, -, _)."""
-        c = cfg or self.cfg
+        c = self._safe_cfg(cfg or self.cfg)
         if not KEY_RE.match(c.get("main", "")):
             return ""
         q = self.Q
@@ -719,12 +772,17 @@ class SendControl:
     def _active(self):
         if self.demo:
             return False
+        hit = getattr(self, "_act", None)
+        if hit is not None and time.monotonic() - hit[0] < 1.5:      # mehrere Abfragen pro Takt teilen sich ein systemctl
+            return hit[1]
         try:
             r = subprocess.run(["systemctl", "is-active", "pipbox-send.service"],
                                capture_output=True, text=True, timeout=4)
-            return r.stdout.strip() in ("active", "activating", "deactivating")
+            val = r.stdout.strip() in ("active", "activating", "deactivating")
         except (OSError, subprocess.TimeoutExpired):
-            return False
+            val = False
+        self._act = (time.monotonic(), val)
+        return val
 
     def _detail(self):
         try:
@@ -790,6 +848,7 @@ class SendControl:
                 raise ValueError("Neustart nicht möglich: " + "; ".join(why))
         elif action != "stop":
             raise ValueError("Unbekannte Aktion")
+        self._act = None
         if self.demo:
             return
         fd = os.open(self.req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -926,6 +985,14 @@ class CameraStore:
                     for i, c in enumerate(self.cams) if i % 3 != 2}
         if not self.stat_url:
             return None
+        hit = getattr(self, "_live", None)
+        if hit is not None and time.monotonic() - hit[0] < 1.5:      # mehrere Abfragen pro Takt teilen sich eine Statistik
+            return hit[1]
+        res = self._live_read()
+        self._live = (time.monotonic(), res)
+        return res
+
+    def _live_read(self):
         try:
             with urllib.request.urlopen(self.stat_url, timeout=2) as r:
                 root = ET.fromstring(r.read())
@@ -966,8 +1033,8 @@ class Auth:
     """Ein Passwort für die Oberfläche; Einrichtung über einen Setup-Code.
 
     Erster Start: kein Passwort gesetzt. Der Server schreibt einen Setup-Code in
-    <state>/setup-code (nur root lesbar). Wer den Code kennt, legt im Browser das
-    Passwort fest; danach wird die Codedatei gelöscht. Passwort nur als scrypt-Hash.
+    <state>/setup-code (Rechte 0600, Besitzer pipbox). Wer den Code kennt, legt im Browser das
+    Passwort fest; danach wird die Codedatei gelöscht. Passwort nur als PBKDF2-HMAC-SHA256-Hash.
     """
 
     BELA_JS = ("const b=require(process.argv[1]);let d='';"
@@ -1111,11 +1178,20 @@ def belacoder_running():
 
 def installed_versions():
     """Versionen wichtiger Pakete aus /var/lib/dpkg/status (nur lesend)."""
+    try:
+        st = os.stat("/var/lib/dpkg/status")
+        sig = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        sig = None
+    hit = _TTL.get("dpkg")
+    if hit is not None and hit[0] == sig and sig is not None:
+        return dict(hit[1])
     res = {}
     for block in (read("/var/lib/dpkg/status", "") or "").split("\n\n"):
         f = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line and not line.startswith(" "))
         if f.get("Package") in KEY_PACKAGES and "installed" in f.get("Status", "") and "not-installed" not in f.get("Status", ""):
             res[f["Package"]] = f.get("Version", "?")
+    _TTL["dpkg"] = (sig, dict(res))
     return res
 
 
@@ -1140,11 +1216,23 @@ class Remote:
         self.fake = {}
 
     def _ts(self, *args):
+        """tailscale-Abfrage, 20 s zwischengespeichert (das Go-Programm zu starten kostet spürbar CPU). Ändert der Root-Helfer
+        etwas (seine Statusdatei bekommt eine neue Zeit), gilt der Speicher als abgelaufen."""
+        try:
+            sig = os.stat(self.STATUS).st_mtime_ns
+        except OSError:
+            sig = None
+        key = ("ts", args)
+        hit = _TTL.get(key)
+        if hit is not None and hit[2] == sig and time.monotonic() - hit[0] < 20:
+            return hit[1]
         try:
             r = subprocess.run(["tailscale", *args], capture_output=True, text=True, timeout=6)
-            return json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
+            val = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
         except (OSError, ValueError, subprocess.TimeoutExpired):
-            return {}
+            val = {}
+        _TTL[key] = (time.monotonic(), val, sig)
+        return val
 
     def status(self):
         if self.demo:
@@ -1343,6 +1431,7 @@ class SwUpdate:
     eine Auslösedatei mit einem festen Stichwort (install / rollback) ab. Laden, Prüfen und Einspielen macht der
     getrennte Root-Helfer pipbox-swupdate.py.
     """
+    CHECK_EVERY = 6 * 3600     # Sekunden zwischen zwei Abfragen bei GitHub
     RAW = "https://raw.githubusercontent.com/IRL4YOU/irl4you-pip/main/"
     API = "https://api.github.com/repos/IRL4YOU/irl4you-pip/releases?per_page=30"
     STATUS = "/run/pipbox-swupdate/status.json"
@@ -1379,10 +1468,12 @@ class SwUpdate:
         return "\n".join(out)
 
     def check(self, force=False):
-        """Fragt die neueste Version auf GitHub ab (höchstens alle 5 Minuten, außer force)."""
+        """Fragt die neueste Version auf GitHub ab (höchstens alle 6 Stunden und nie während einer Übertragung, außer force)."""
         with self.lock:
-            if not force and self.cache and time.time() - self.cache_t < 300:
+            if not force and self.cache and (time.time() - self.cache_t < self.CHECK_EVERY or self.send._active()):
                 return self.cache
+            if not force and not self.cache and not self.demo and self.send._active():
+                return {"checked_at": None}          # während der Übertragung nicht über das Mobilfunknetz nachfragen
         res = {"checked_at": int(time.time())}
         if self.demo:
             res.update(latest="0.9.1", notes="## 0.9.1 (Demo)\n- Beispiel für eine neue Version.")
@@ -1403,8 +1494,8 @@ class SwUpdate:
         return res
 
     def releases(self, force=False):
-        """Veröffentlichte Versionen (Releases) auf GitHub: [{version, date, notes}], höchstens alle 5 Minuten abfragen."""
-        if not force and time.time() - self.rel_t < 300:
+        """Veröffentlichte Versionen (Releases) auf GitHub: [{version, date, notes}], höchstens alle 6 Stunden, nie während einer Übertragung."""
+        if not force and (time.time() - self.rel_t < self.CHECK_EVERY or (not self.demo and self.send._active())):
             return self.rel_cache
         out = []
         if self.demo:
@@ -1416,7 +1507,7 @@ class SwUpdate:
                     data = json.loads(r.read(400000))
                 for x in data if isinstance(data, list) else []:
                     v = str(x.get("tag_name", "")).lstrip("v")
-                    if VERSION_RE.match(v) and not x.get("draft") and not x.get("prerelease_hidden"):
+                    if VERSION_RE.match(v) and not x.get("draft") and not x.get("prerelease"):
                         out.append({"version": v, "date": str(x.get("published_at", ""))[:10],
                                     "notes": str(x.get("body") or "")[:300]})
             except (OSError, ValueError):
@@ -1857,7 +1948,12 @@ class Handler(BaseHTTPRequestHandler):
         return self.auth.valid(self.token())
 
     def read_json(self):
-        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n < 0:
+            raise ValueError("ungültige Länge")
         return json.loads(self.rfile.read(min(n, 4096)) or b"{}")
 
     def send_bytes(self, code, body, ctype, cookie=None):
