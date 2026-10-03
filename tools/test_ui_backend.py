@@ -4,6 +4,8 @@ import os
 import stat
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -386,6 +388,105 @@ class LogModeSwitch(unittest.TestCase):
             self.assertEqual(h.mode(), "sparsam")
         with mock.patch.object(h, "rd", return_value=""):
             self.assertEqual(h.mode(), "ausfuehrlich")         # ohne Datei wie bisher auf der Karte
+
+
+class AutoStartTests(unittest.TestCase):
+    """Automatisch live gehen nach dem Start der Box: einmal pro Start, nur mit sendender Kamera, abbrechbar."""
+
+    class FakeSend:
+        def __init__(self, can_start=True, reasons=None):
+            self.can_start, self.reasons, self.active, self.calls = can_start, reasons or [], False, []
+
+        def status(self):
+            return {"active": self.active, "can_start": self.can_start and not self.active, "reasons": [] if self.can_start else self.reasons}
+
+        def request(self, action, confirm):
+            self.calls.append((action, confirm))
+            self.active = True
+
+    def make(self, send, enabled=True, boot_done=None, wait_s=1.0):
+        d = tempfile.mkdtemp()
+        if enabled or boot_done:
+            with open(os.path.join(d, "autostart.json"), "w") as f:
+                json.dump({"enabled": enabled, "boot": boot_done or ""}, f)
+        a = server.AutoStart(d, send, wait_s=wait_s, poll_s=0.02)
+        return a, d
+
+    def run_it(self, a):
+        with mock.patch.object(server.AutoStart, "boot_id", staticmethod(lambda: "boot1")):
+            a.run()
+
+    def test_starts_once_when_camera_is_there(self):
+        s = self.FakeSend()
+        a, d = self.make(s)
+        self.run_it(a)
+        self.assertEqual(s.calls, [("start", True)])
+        self.assertEqual(a.status()["phase"], "gestartet")
+        self.assertEqual(json.load(open(os.path.join(d, "autostart.json")))["boot"], "boot1")
+
+    def test_waits_for_camera_then_starts(self):
+        s = self.FakeSend(can_start=False, reasons=["Keine Kamera sendet gerade"])
+        a, _ = self.make(s)
+        threading.Timer(0.15, lambda: setattr(s, "can_start", True)).start()
+        self.run_it(a)
+        self.assertEqual(len(s.calls), 1)
+
+    def test_gives_up_and_names_reason(self):
+        s = self.FakeSend(can_start=False, reasons=["Keine Kamera sendet gerade"])
+        a, _ = self.make(s, wait_s=0.2)
+        self.run_it(a)
+        self.assertEqual(s.calls, [])
+        self.assertEqual(a.status()["phase"], "aufgegeben")
+        self.assertIn("Keine Kamera", a.status()["message"])
+
+    def test_not_twice_in_same_boot(self):
+        s = self.FakeSend()
+        a, _ = self.make(s, boot_done="boot1")
+        self.run_it(a)
+        self.assertEqual(s.calls, [])
+
+    def test_new_boot_starts_again(self):
+        s = self.FakeSend()
+        a, _ = self.make(s, boot_done="boot0")
+        self.run_it(a)
+        self.assertEqual(len(s.calls), 1)
+
+    def test_off_by_default_and_when_disabled(self):
+        s = self.FakeSend()
+        a, _ = self.make(s, enabled=False)
+        self.run_it(a)
+        self.assertEqual(s.calls, [])
+        self.assertFalse(a.enabled())
+
+    def test_manual_stop_cancels_waiting(self):
+        s = self.FakeSend(can_start=False, reasons=["x"])
+        a, d = self.make(s, wait_s=2.0)
+        th = threading.Thread(target=self.run_it, args=(a,))
+        th.start()
+        time.sleep(0.15)
+        with mock.patch.object(server.AutoStart, "boot_id", staticmethod(lambda: "boot1")):
+            a.cancel("von Hand beendet")
+        th.join(3)
+        self.assertFalse(th.is_alive())
+        self.assertEqual(s.calls, [])
+        self.assertEqual(a.status()["phase"], "abgebrochen")
+        self.assertEqual(json.load(open(os.path.join(d, "autostart.json")))["boot"], "boot1")
+
+    def test_cancel_when_not_waiting_does_nothing(self):
+        a, d = self.make(self.FakeSend(), enabled=False)
+        a.cancel("egal")
+        self.assertEqual(a.status()["phase"], "aus")
+        self.assertFalse(os.path.exists(os.path.join(d, "autostart.json")))
+
+    def test_set_enabled_validates_and_persists(self):
+        a, d = self.make(self.FakeSend(), enabled=False)
+        for bad in ("true", 1, None, "ja"):
+            with self.assertRaises(ValueError, msg=str(bad)):
+                a.set_enabled(bad)
+        a.set_enabled(True)
+        self.assertTrue(json.load(open(os.path.join(d, "autostart.json")))["enabled"])
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(d, "autostart.json")).st_mode), 0o600)
+        self.assertTrue(server.AutoStart(d, self.FakeSend()).enabled())
 
 
 class PendingSettings(unittest.TestCase):

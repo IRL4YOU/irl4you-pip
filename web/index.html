@@ -124,6 +124,7 @@ dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn
 #livecard #liveerr,#livecard #livewhy{min-height:0;margin-top:8px}#livecard #liveerr:empty,#livecard #livewhy:empty{display:none}
 .livesrv{font-size:12px;margin-top:3px}.liveup{margin-left:16px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}.liveup small{font-size:13px;font-weight:400;color:var(--muted)}
 .logopt{display:block;margin:10px 0;line-height:1.4}.logopt input{margin-right:6px}
+.autolbl{display:block;margin-top:10px;font-size:13px;color:var(--muted)}.autolbl input{margin-right:6px}
 .foot{text-align:center;font-size:12px;color:var(--muted);padding:18px 16px 28px}
 .err{color:var(--crit);font-size:13px;min-height:18px;margin-top:6px}
 </style>
@@ -138,6 +139,8 @@ dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn
       <div class="row" style="justify-content:flex-start"><span class="big" id="livestate">–</span><span id="liveup" class="liveup" hidden title="Gesamter Upload über die gewählten Netze"></span></div>
       <div class="actions"><button id="live_go" type="button" class="warnbtn">Live gehen</button><button id="live_stop" type="button" class="sec" hidden>Live beenden</button> <button type="button" class="sec" id="sm_btn2" title="Blendet Adressen, Namen und Protokolle aus, z. B. wenn der Bildschirm gefilmt wird">Sendemodus: aus</button></div>
       <div id="livewhy" class="ph"></div>
+      <label class="autolbl" title="Gilt nur nach dem Hochfahren der Box, einmal pro Start. Die Box wartet bis zu 10 Minuten auf eine sendende Kamera. Es werden Mobilfunkdaten verbraucht."><input type="checkbox" id="auto_on"> Beim Start der Box automatisch live gehen<span class="unit" style="display:block;margin-left:22px">Einmal pro Start der Box, sobald eine Kamera sendet (wartet bis zu 10 Minuten). Verbraucht Mobilfunkdaten.</span></label>
+      <div id="autostatus" class="ph" hidden></div>
       <div id="livepending" class="pending" hidden><span id="livepending_t"></span> <button type="button" id="live_restart" class="warnbtn">Stream neu starten</button><button type="button" id="live_ignore" class="sec">Später</button></div>
       <div id="liveerr" class="err"></div>
       <div id="livehealth" class="livehealth"></div>
@@ -853,6 +856,13 @@ async function sendLoad(){
   if(!pend.length) pendIgnored="";
   $("livepending").hidden=!pend.length||pend.join("|")===pendIgnored;
   if(pend.length) $("livepending_t").textContent="Noch nicht übernommen: "+pend.join(", ")+". Das gilt erst nach einem Neustart der Sendung.";
+  { const a=d.autostart||{}, cb=$("auto_on");
+    if(document.activeElement!==cb) cb.checked=!!a.enabled;
+    const st=$("autostatus");
+    if(a.phase==="wartet"){ st.hidden=false; st.textContent="Automatischer Start: wartet auf eine sendende Kamera"+(a.until?" (bis "+new Date(a.until*1000).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})+" Uhr)":""); }
+    else if(a.phase==="aufgegeben"||a.phase==="abgebrochen"){ st.hidden=false; st.textContent=a.message||"Automatischer Start beendet"; }
+    else st.hidden=true;
+  }
   $("live_go").hidden=d.active; $("live_stop").hidden=!d.active;
   $("live_go").disabled=!d.can_start;
   const why=[]; if(d.state==="refused"&&d.message) why.push(d.message);
@@ -877,6 +887,10 @@ async function restartNow(){
   try{ await srtlaCall("POST","/api/send",{action:"restart",confirm:true}); $("liveerr").textContent=""; }catch(x){ $("liveerr").textContent=x.message; }
   sendLoad();
 }
+$("auto_on").addEventListener("change",async e=>{
+  try{ await srtlaCall("POST","/api/autostart",{enabled:e.target.checked}); $("liveerr").textContent=""; }catch(x){ $("liveerr").textContent=x.message; e.target.checked=!e.target.checked; }
+  sendLoad();
+});
 $("live_restart").addEventListener("click",async()=>{
   if(!confirm("Die Sendung jetzt kurz neu starten?\n\nDas Bild ist dabei einige Sekunden weg.")) return;
   try{ await srtlaCall("POST","/api/send",{action:"restart",confirm:true}); $("liveerr").textContent=""; }catch(x){ $("liveerr").textContent=x.message; }

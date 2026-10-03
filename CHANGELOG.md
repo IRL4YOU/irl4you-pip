@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.9.15 (Beta)
+- Neu: **Automatisch live gehen nach dem Start der Box** (Schalter in der Live-Karte, standardmäßig aus). Einmal pro Start der Box wartet die Box, bis ein
+  SRTLA-Server gewählt ist und mindestens eine Kamera sendet (dieselben Voraussetzungen wie "Live gehen"), und startet dann die Sendung. Wiederholt
+  den Versuch alle 20 Sekunden und gibt nach 10 Minuten auf, mit Angabe des Grundes in der Live-Karte. "Live beenden" oder von Hand starten bricht die
+  Automatik für diesen Start ab; ein Neustart der Oberfläche (zum Beispiel durch ein Update) startet die Sendung nicht noch einmal. Die Einstellung steht in
+  `autostart.json` im Zustandsordner (Rechte 0600), der Zeitpunkt der letzten Automatik über die Boot-Kennung des Systems.
+- Tests: neun Fälle für die Automatik (einmal pro Start, Warten auf Kamera, Aufgeben, Abbrechen, neuer Start, Einstellung speichern und prüfen).
+
 ## 0.9.14 (Beta)
 - Behoben: **Bitrate bricht ein und bleibt unten hängen.** Zwei Ursachen, beide gefunden und mit Messungen belegt:
   1. **Regler im Encoder (belacoder):** Der Original-Regler senkt die Bitrate schon bei normalem Mobilfunk-Rauschen der RTT (15 bis 30 ms) um

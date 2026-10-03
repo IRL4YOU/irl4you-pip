@@ -1424,6 +1424,111 @@ class Power:
             f.write(action + "\n")
 
 
+class AutoStart:
+    """Automatisch live gehen, nachdem die Box gestartet wurde (Einstellung, standardmäßig aus).
+
+    Nur einmal pro Start der Box: Nach dem Hochfahren wartet die Box, bis ein SRTLA-Server gewählt ist und mindestens eine
+    Kamera sendet (dieselben Voraussetzungen wie "Live gehen"), und startet dann genau so, als wäre "Live gehen" gedrückt worden.
+    "Live beenden" vor dem Start bricht ab; ein Neustart der Oberfläche (zum Beispiel durch ein Update) startet die Sendung
+    nicht noch einmal. Findet sich innerhalb von WAIT_S Sekunden keine Kamera, gibt die Box auf und zeigt den Grund."""
+    WAIT_S = 600
+    RETRY_S = 20
+
+    def __init__(self, state_dir, send, demo=False, wait_s=None, poll_s=5.0):
+        self.path = os.path.join(state_dir, "autostart.json")
+        self.send, self.demo = send, demo
+        self.wait_s = self.WAIT_S if wait_s is None else wait_s
+        self.poll_s = poll_s
+        self.lock = threading.Lock()
+        self.cancel_ev = threading.Event()
+        self.data = {"enabled": False, "boot": ""}
+        try:
+            with open(self.path) as f:
+                d = json.load(f)
+            self.data["enabled"] = d.get("enabled") is True
+            self.data["boot"] = str(d.get("boot", ""))[:64]
+        except (OSError, ValueError):
+            pass
+        self.phase, self.message, self.until = "aus", "", None
+
+    def _save(self):
+        tmp = self.path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.data, f)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, self.path)
+
+    @staticmethod
+    def boot_id():
+        return (read("/proc/sys/kernel/random/boot_id", "demo") or "demo").strip()
+
+    def enabled(self):
+        return self.data["enabled"]
+
+    def set_enabled(self, on):
+        if not isinstance(on, bool):
+            raise ValueError("ja oder nein")
+        with self.lock:
+            self.data["enabled"] = on
+            self._save()
+        if not on:
+            self.cancel("ausgeschaltet")
+
+    def cancel(self, why="abgebrochen"):
+        """Wartet die Box noch auf den Automatik-Start, wird er für diesen Start der Box abgebrochen."""
+        with self.lock:
+            if self.phase == "wartet":
+                self.cancel_ev.set()
+                self.phase, self.message = "abgebrochen", why
+                self.data["boot"] = self.boot_id()
+                self._save()
+
+    def status(self):
+        return {"enabled": self.data["enabled"], "phase": self.phase, "message": self.message, "until": self.until}
+
+    def _finish(self, phase, message=""):
+        with self.lock:
+            if self.phase == "wartet":
+                self.phase, self.message = phase, message
+            self.data["boot"] = self.boot_id()
+            self._save()
+
+    def run(self):
+        """Läuft einmal im Hintergrund, solange die Oberfläche läuft."""
+        if not self.data["enabled"]:
+            return
+        if self.data["boot"] == self.boot_id():
+            with self.lock:
+                self.phase = "erledigt"
+            return
+        with self.lock:
+            self.phase, self.message = "wartet", "Wartet auf eine sendende Kamera"
+            self.until = time.time() + self.wait_s
+        deadline = time.monotonic() + self.wait_s
+        last_try, reasons = None, []       # None: noch kein Versuch (die Uhr zählt ab Hochfahren, 0 wäre nicht 'lange her')
+        while time.monotonic() < deadline and not self.cancel_ev.is_set():
+            try:
+                st = self.send.status()
+            except Exception:
+                st = {}
+            if st.get("active"):
+                self._finish("gestartet", "Läuft")
+                return
+            reasons = st.get("reasons") or reasons
+            if st.get("can_start") and (last_try is None or time.monotonic() - last_try >= self.RETRY_S):
+                last_try = time.monotonic()
+                try:
+                    self.send.request("start", True)
+                    with self.lock:
+                        self.message = "Startet"
+                except Exception as e:
+                    reasons = [str(e)]
+            self.cancel_ev.wait(self.poll_s)
+        if self.cancel_ev.is_set():
+            return
+        self._finish("aufgegeben", "Automatischer Start aufgegeben: " + ("; ".join(reasons) if reasons else "keine sendende Kamera"))
+
+
 class LogMode:
     """Protokoll-Modus: "sparsam" (Journal und Zustandsprotokoll nur im Arbeitsspeicher, schont die Speicherkarte, nach einem
     Absturz bleibt keine Spur) oder "ausfuehrlich" (dauerhaft, zur Fehlersuche). Dieser Dienst hat keine Root-Rechte: er legt
@@ -2055,7 +2160,9 @@ class Handler(BaseHTTPRequestHandler):
             st["live"] = {"main": self.send.delay_live(), "pips": self.send.delay_live_pips()}
             return self.reply(200, st)
         if path == "/api/send":
-            return self.reply(200, self.send.status())
+            out = self.send.status()
+            out["autostart"] = self.autostart.status()
+            return self.reply(200, out)
         self.reply(404, {"error": "not found"})
 
     def do_POST(self):
@@ -2079,7 +2186,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {"ok": True})
             if path == "/api/send":
                 self.send.request(d.get("action"), d.get("confirm") is True)
+                if d.get("action") in ("stop", "start"):
+                    self.autostart.cancel("Sendung wurde von Hand gestartet oder beendet")
                 return self.reply(200, {"ok": True})
+            if path == "/api/autostart":
+                self.autostart.set_enabled(d.get("enabled"))
+                return self.reply(200, self.autostart.status())
             if path == "/api/power":
                 self.power.request(d.get("action"), d.get("confirm") is True)
                 return self.reply(200, {"ok": True})
@@ -2202,6 +2314,9 @@ def main():
     Handler.wifi = Wifi(args.state, args.demo, Handler.netchoice)
     Handler.power = Power(args.state, args.demo, Handler.send)
     Handler.logmode = LogMode(args.state, args.demo)
+    Handler.autostart = AutoStart(args.state, Handler.send, args.demo)
+    if not args.demo:
+        threading.Thread(target=Handler.autostart.run, daemon=True).start()
     Handler.cams.ipfn = Handler.netchoice.ip
     Handler.djisvc = DjiService(args.state, Handler.cams, args.rtmp_app, args.rtmp_port)
     Handler.djisvc.pipeline = Handler.pipeline
