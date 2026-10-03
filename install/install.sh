@@ -34,10 +34,6 @@ case "${1:-install}" in
     chown -R pipbox:pipbox /var/lib/pipbox
     chmod 700 /var/lib/pipbox
     install -d /opt/pipbox/web
-    # Journal dauerhaft speichern (damit nach einem Absturz Spuren bleiben), aber höchstens 30 MB und 7 Tage behalten
-    install -d /var/log/journal /etc/systemd/journald.conf.d
-    printf '[Journal]\nStorage=persistent\nSystemMaxUse=30M\nSystemMaxFileSize=3M\nMaxRetentionSec=7day\nSyncIntervalSec=5min\n' > /etc/systemd/journald.conf.d/pipbox-persistent.conf
-    systemctl restart systemd-journald 2>/dev/null || true
     # Bluetooth-Dienst nur neu starten, wenn sich seine Dateien ändern (sonst reißen die Kameras ab)
     dji_changed=0
     for f in dji.py dji_daemon.py; do cmp -s "$HERE/$f" "/opt/pipbox/$f" || dji_changed=1; done
@@ -59,6 +55,16 @@ case "${1:-install}" in
     install -m 644 "$HERE/install/pipbox-wifi.service" /etc/systemd/system/pipbox-wifi.service
     install -m 644 "$HERE/install/pipbox-wifi.path" /etc/systemd/system/pipbox-wifi.path
     install -m 755 "$HERE/install/pipbox-power.py" /opt/pipbox/pipbox-power.py
+    install -m 755 "$HERE/install/pipbox-logmode.py" /opt/pipbox/pipbox-logmode.py
+    install -m 644 "$HERE/install/pipbox-logmode.service" /etc/systemd/system/pipbox-logmode.service
+    install -m 644 "$HERE/install/pipbox-logmode.path" /etc/systemd/system/pipbox-logmode.path
+    # Protokoll-Modus: Boxen mit dem früheren dauerhaften Journal bleiben "ausfuehrlich", neue Installationen starten "sparsam"
+    # (Journal und Zustandsprotokoll nur im Arbeitsspeicher, schont die Speicherkarte). Umschalten in der Oberfläche.
+    install -d /etc/pipbox
+    if [ ! -f /etc/pipbox/logmode ]; then
+      if [ -f /etc/systemd/journald.conf.d/pipbox-persistent.conf ]; then mode=ausfuehrlich; else mode=sparsam; fi
+      python3 /opt/pipbox/pipbox-logmode.py --apply "$mode" || echo "WARNUNG: Protokoll-Modus konnte nicht gesetzt werden."
+    fi
     install -m 644 "$HERE/install/pipbox-power.service" /etc/systemd/system/pipbox-power.service
     install -m 644 "$HERE/install/pipbox-power.path" /etc/systemd/system/pipbox-power.path
     install -m 644 "$HERE/install/pipbox-health.service" /etc/systemd/system/pipbox-health.service
@@ -97,14 +103,17 @@ case "${1:-install}" in
     systemctl enable pipbox.service pipbox-dji.service
     if [ "$dji_changed" = 1 ] || ! systemctl is-active --quiet pipbox-dji.service; then systemctl restart pipbox-dji.service; fi
     systemctl restart pipbox-health.service 2>/dev/null || true
-    systemctl enable --now pipbox-update.path pipbox-send-ctl.path pipbox-health.service pipbox-swupdate.path pipbox-remote.path pipbox-wifi.path pipbox-power.path
+    systemctl enable --now pipbox-update.path pipbox-send-ctl.path pipbox-health.service pipbox-swupdate.path pipbox-remote.path pipbox-wifi.path pipbox-power.path pipbox-logmode.path
     systemctl restart pipbox.service
     echo "IRL4YOU BOX läuft auf Port 8780 im lokalen Netz. Ersteinrichtung im Browser."
     ;;
   uninstall)
-    systemctl disable --now pipbox-send.service pipbox-send-ctl.path pipbox-update.path pipbox-swupdate.path pipbox-remote.path pipbox-wifi.path pipbox-power.path pipbox-health.service pipbox.service pipbox-dji.service || true
-    rm -f /etc/systemd/system/pipbox-send.service /etc/systemd/system/pipbox-send-ctl.service /etc/systemd/system/pipbox-send-ctl.path /etc/systemd/system/pipbox.service /etc/systemd/system/pipbox-dji.service /etc/systemd/system/pipbox-update.service /etc/systemd/system/pipbox-update.path /etc/systemd/system/pipbox-swupdate.service /etc/systemd/system/pipbox-swupdate.path /etc/systemd/system/pipbox-remote.service /etc/systemd/system/pipbox-remote.path /etc/systemd/system/pipbox-wifi.service /etc/systemd/system/pipbox-wifi.path /etc/systemd/system/pipbox-power.service /etc/systemd/system/pipbox-power.path /etc/systemd/system/pipbox-health.service
+    systemctl disable --now pipbox-send.service pipbox-send-ctl.path pipbox-update.path pipbox-swupdate.path pipbox-remote.path pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-health.service pipbox.service pipbox-dji.service || true
+    rm -f /etc/systemd/system/pipbox-send.service /etc/systemd/system/pipbox-send-ctl.service /etc/systemd/system/pipbox-send-ctl.path /etc/systemd/system/pipbox.service /etc/systemd/system/pipbox-dji.service /etc/systemd/system/pipbox-update.service /etc/systemd/system/pipbox-update.path /etc/systemd/system/pipbox-swupdate.service /etc/systemd/system/pipbox-swupdate.path /etc/systemd/system/pipbox-remote.service /etc/systemd/system/pipbox-remote.path /etc/systemd/system/pipbox-wifi.service /etc/systemd/system/pipbox-wifi.path /etc/systemd/system/pipbox-power.service /etc/systemd/system/pipbox-power.path /etc/systemd/system/pipbox-health.service /etc/systemd/system/pipbox-logmode.service /etc/systemd/system/pipbox-logmode.path
     rm -f /usr/local/bin/srtla_send
+    rm -f /etc/systemd/journald.conf.d/pipbox-journal.conf /etc/systemd/journald.conf.d/pipbox-persistent.conf
+    rm -rf /etc/pipbox
+    systemctl restart systemd-journald 2>/dev/null || true
     rm -rf /opt/pipbox
     echo "Passwort und Kameraliste bleiben in /var/lib/pipbox (zum Löschen manuell entfernen)."
     systemctl daemon-reload

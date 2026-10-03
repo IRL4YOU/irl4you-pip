@@ -1424,6 +1424,39 @@ class Power:
             f.write(action + "\n")
 
 
+class LogMode:
+    """Protokoll-Modus: "sparsam" (Journal und Zustandsprotokoll nur im Arbeitsspeicher, schont die Speicherkarte, nach einem
+    Absturz bleibt keine Spur) oder "ausfuehrlich" (dauerhaft, zur Fehlersuche). Dieser Dienst hat keine Root-Rechte: er legt
+    nur ein Stichwort aus fester Liste in eine Auslösedatei, der Root-Helfer pipbox-logmode.py stellt um."""
+    MODES = ("sparsam", "ausfuehrlich")
+    FILE = "/etc/pipbox/logmode"
+
+    def __init__(self, state_dir, demo):
+        self.req = os.path.join(state_dir, "logmode-request")
+        self.demo = demo
+        self.fake = "ausfuehrlich"
+
+    def status(self):
+        if self.demo:
+            return {"mode": self.fake, "helper_installed": True}
+        mode = (read(self.FILE, "") or "").strip()
+        # Ohne Datei (ältere Installation) schreibt alles wie bisher dauerhaft: das entspricht "ausfuehrlich"
+        return {"mode": mode if mode in self.MODES else "ausfuehrlich",
+                "helper_installed": os.path.exists("/etc/systemd/system/pipbox-logmode.path")}
+
+    def request(self, mode):
+        if mode not in self.MODES:
+            raise ValueError("Unbekannter Modus")
+        if not self.status()["helper_installed"]:
+            raise ValueError("Der Helfer ist nicht installiert (Software-Update einspielen oder install.sh erneut ausführen)")
+        if self.demo:
+            self.fake = mode
+            return
+        fd = os.open(self.req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(mode + "\n")
+
+
 class SwUpdate:
     """Software-Update von IRL4YOU BOX aus dem eigenen GitHub-Repository.
 
@@ -1999,6 +2032,8 @@ class Handler(BaseHTTPRequestHandler):
                     if f:
                         c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
             return self.reply(200, m)
+        if path == "/api/logmode":
+            return self.reply(200, self.logmode.status())
         if path == "/api/power":
             return self.reply(200, self.power.status())
         if path == "/api/wifi":
@@ -2047,6 +2082,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {"ok": True})
             if path == "/api/power":
                 self.power.request(d.get("action"), d.get("confirm") is True)
+                return self.reply(200, {"ok": True})
+            if path == "/api/logmode":
+                self.logmode.request(d.get("mode"))
                 return self.reply(200, {"ok": True})
             if path == "/api/wifi":
                 self.wifi.request(d)
@@ -2163,6 +2201,7 @@ def main():
     Handler.netchoice = NetChoice(os.path.join(args.state, "camera-net.json"))
     Handler.wifi = Wifi(args.state, args.demo, Handler.netchoice)
     Handler.power = Power(args.state, args.demo, Handler.send)
+    Handler.logmode = LogMode(args.state, args.demo)
     Handler.cams.ipfn = Handler.netchoice.ip
     Handler.djisvc = DjiService(args.state, Handler.cams, args.rtmp_app, args.rtmp_port)
     Handler.djisvc.pipeline = Handler.pipeline

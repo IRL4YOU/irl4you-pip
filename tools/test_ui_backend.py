@@ -304,6 +304,90 @@ class RootHelperHardening(unittest.TestCase):
         self.assertTrue(os.path.isdir(target))               # das Ziel des Verweises bleibt unangetastet
 
 
+class LogModeSwitch(unittest.TestCase):
+    """Protokoll-Modus: Oberfläche legt nur ein festes Stichwort ab, der Root-Helfer stellt um."""
+
+    def helper(self, name):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name.replace("-", "_"), os.path.join(os.path.dirname(HERE), "install", name + ".py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_request_writes_keyword_only(self):
+        d = tempfile.mkdtemp()
+        lm = server.LogMode(d, demo=False)
+        with mock.patch.object(lm, "status", return_value={"mode": "ausfuehrlich", "helper_installed": True}):
+            lm.request("sparsam")
+            self.assertEqual(open(os.path.join(d, "logmode-request")).read(), "sparsam\n")
+            self.assertEqual(stat.S_IMODE(os.stat(os.path.join(d, "logmode-request")).st_mode), 0o600)
+            for bad in ("", "aus", "sparsam; reboot", None, 5, "../x"):
+                with self.assertRaises(ValueError, msg=str(bad)):
+                    lm.request(bad)
+
+    def test_request_needs_installed_helper(self):
+        lm = server.LogMode(tempfile.mkdtemp(), demo=False)
+        with mock.patch.object(lm, "status", return_value={"mode": "ausfuehrlich", "helper_installed": False}):
+            with self.assertRaises(ValueError):
+                lm.request("sparsam")
+
+    def test_status_defaults_to_verbose_without_file(self):
+        lm = server.LogMode(tempfile.mkdtemp(), demo=False)
+        with mock.patch.object(server, "read", return_value=None):
+            self.assertEqual(lm.status()["mode"], "ausfuehrlich")        # ältere Installation schreibt wie bisher dauerhaft
+        with mock.patch.object(server, "read", return_value="sparsam\n"):
+            self.assertEqual(lm.status()["mode"], "sparsam")
+        with mock.patch.object(server, "read", return_value="irgendwas"):
+            self.assertEqual(lm.status()["mode"], "ausfuehrlich")
+
+    def test_demo_switches(self):
+        lm = server.LogMode(tempfile.mkdtemp(), demo=True)
+        lm.request("sparsam")
+        self.assertEqual(lm.status()["mode"], "sparsam")
+
+    def test_helper_apply_writes_config_and_restarts_journald(self):
+        m = self.helper("pipbox-logmode")
+        d = tempfile.mkdtemp()
+        calls = []
+        with mock.patch.multiple(m, CONF_DIR=d + "/etc", MODE_FILE=d + "/etc/logmode", JOURNAL_DIR=d + "/j",
+                                 JOURNAL_CONF=d + "/j/pipbox-journal.conf", OLD_JOURNAL_CONF=d + "/j/pipbox-persistent.conf",
+                                 RUN=d + "/run", JOURNAL_LOG_DIR=d + "/varlog"), \
+                mock.patch.object(m.subprocess, "run", side_effect=lambda *a, **k: calls.append(a[0])):
+            os.makedirs(d + "/j")
+            open(d + "/j/pipbox-persistent.conf", "w").write("alt")
+            m.apply("sparsam")
+            self.assertEqual(open(d + "/etc/logmode").read(), "sparsam\n")
+            self.assertIn("Storage=volatile", open(d + "/j/pipbox-journal.conf").read())
+            self.assertFalse(os.path.exists(d + "/j/pipbox-persistent.conf"))
+            self.assertIn(["systemctl", "restart", "systemd-journald"], calls)
+            m.JOURNAL_LOG_DIR = d + "/varlog"
+            m.apply("ausfuehrlich")
+            self.assertEqual(open(d + "/etc/logmode").read(), "ausfuehrlich\n")
+            self.assertIn("Storage=persistent", open(d + "/j/pipbox-journal.conf").read())
+            self.assertIn("SystemMaxUse=30M", open(d + "/j/pipbox-journal.conf").read())
+            self.assertTrue(os.path.isdir(d + "/varlog"))
+            self.assertIn(["journalctl", "--flush"], calls)
+            with self.assertRaises(ValueError):
+                m.apply("alles")
+
+    def test_helper_ignores_unknown_keyword(self):
+        m = self.helper("pipbox-logmode")
+        d = tempfile.mkdtemp()
+        req = os.path.join(d, "logmode-request")
+        open(req, "w").write("poweroff\n")
+        with mock.patch.multiple(m, REQ=req, LOCK=d + "/lock"), mock.patch.object(m, "apply") as ap:
+            self.assertEqual(m.main(["x"]), 1)
+            ap.assert_not_called()
+        self.assertFalse(os.path.exists(req))                 # Anforderung wird trotzdem gelöscht
+
+    def test_health_log_follows_mode(self):
+        h = self.helper("pipbox_health")
+        with mock.patch.object(h, "rd", return_value="sparsam"):
+            self.assertEqual(h.mode(), "sparsam")
+        with mock.patch.object(h, "rd", return_value=""):
+            self.assertEqual(h.mode(), "ausfuehrlich")         # ohne Datei wie bisher auf der Karte
+
+
 class PendingSettings(unittest.TestCase):
     DATA = {"servers": [{"id": "a1", "name": "X", "host": "h.example", "port": 5000, "streamid": "geheim"}], "selected": "a1",
             "settings": {"min_kbps": 4000, "max_kbps": 12000, "latency_ms": 4000, "spread": "all", "uplinks": ["eth2"]}}

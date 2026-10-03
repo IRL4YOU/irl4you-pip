@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX Protokoll-Helfer
+
+[Path]
+PathExists=/var/lib/pipbox/logmode-request
+Unit=pipbox-logmode.service
+
+[Install]
+WantedBy=multi-user.target

@@ -123,6 +123,7 @@ details.locked>summary{cursor:not-allowed;opacity:.6}body.sm .sens{display:none!
 dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn);border-radius:12px;max-width:min(420px,90vw);padding:18px}dialog#rdlg::backdrop{background:rgba(0,0,0,.6)}
 #livecard #liveerr,#livecard #livewhy{min-height:0;margin-top:8px}#livecard #liveerr:empty,#livecard #livewhy:empty{display:none}
 .livesrv{font-size:12px;margin-top:3px}.liveup{margin-left:16px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}.liveup small{font-size:13px;font-weight:400;color:var(--muted)}
+.logopt{display:block;margin:10px 0;line-height:1.4}.logopt input{margin-right:6px}
 .foot{text-align:center;font-size:12px;color:var(--muted);padding:18px 16px 28px}
 .err{color:var(--crit);font-size:13px;min-height:18px;margin-top:6px}
 </style>
@@ -349,6 +350,12 @@ dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn
     <div id="updbar" class="bar" style="margin-top:10px" hidden><i id="updbari" style="width:0"></i></div>
     <div id="updmsg" class="ph"></div>
     <details id="upddet" class="sens"><summary class="muted">Protokoll</summary><pre id="updlog"></pre></details>
+  </details>
+  <details class="card wide" id="c_logs"><summary><span class="sumh">Protokolle: Speicherkarte schonen</span><span id="log_badge" class="badge">…</span></summary>
+    <div class="ph" style="margin-top:0">Die Box schreibt Protokolle für die Fehlersuche. Jeder Schreibvorgang belastet die Speicherkarte, die dadurch auf Dauer kaputtgehen kann.</div>
+    <label class="logopt"><input type="radio" name="logmode" value="sparsam"> <b>Sparsam</b>: Protokolle nur im Arbeitsspeicher. Schont die Speicherkarte. Nach einem Absturz oder Stromausfall bleibt <b>keine Spur</b>.</label>
+    <label class="logopt"><input type="radio" name="logmode" value="ausfuehrlich"> <b>Ausführlich</b>: Protokolle dauerhaft auf der Karte (Journal höchstens 30 MB und 7 Tage, Zustandsprotokoll höchstens 4 MB, alle 10 Sekunden). Für die Fehlersuche, zum Beispiel wenn sich die Box von selbst ausschaltet.</label>
+    <div id="logmsg" class="ph"></div>
   </details>
   <details class="card wide" id="c_power"><summary><span class="sumh">Box ausschalten</span></summary>
     <div class="ph" style="margin-top:0">Fährt die Box sauber herunter oder startet sie neu. Wenn die Box ausgeschaltet ist, kann sie über die Oberfläche nicht wieder eingeschaltet werden: dafür den Strom kurz trennen oder die Ein-Taste nutzen.</div>
@@ -1060,6 +1067,23 @@ async function tick(){
   $("unfold_all").addEventListener("click",()=>cards.forEach(d=>d.open=true));
   $("fold_toggle").addEventListener("click",()=>{ const any=cards.some(d=>d.open); cards.forEach(d=>d.open=!any); });   // Handy: ein Knopf
 })();
+
+// ---- Protokoll-Modus ----
+const LOG_NAME={sparsam:"Sparsam",ausfuehrlich:"Ausführlich"};
+async function logLoad(){
+  let d; try{ d=await srtlaCall("GET","/api/logmode"); }catch(e){ return; }
+  document.querySelectorAll('input[name="logmode"]').forEach(r=>{ r.checked=r.value===d.mode; r.disabled=!d.helper_installed; });
+  $("log_badge").textContent=LOG_NAME[d.mode]||"–";
+  if(!d.helper_installed) $("logmsg").textContent="Der Helfer ist noch nicht installiert. Er kommt mit dem nächsten Software-Update (oder install.sh erneut ausführen).";
+}
+document.querySelectorAll('input[name="logmode"]').forEach(r=>r.addEventListener("change",async()=>{
+  if(!r.checked) return;
+  $("logmsg").textContent="Wird umgestellt …";
+  try{ await srtlaCall("POST","/api/logmode",{mode:r.value}); }catch(x){ $("logmsg").textContent=x.message; logLoad(); return; }
+  setTimeout(async()=>{ await logLoad(); $("logmsg").textContent=r.value==="sparsam"?"Umgestellt: Protokolle nur noch im Arbeitsspeicher.":"Umgestellt: Protokolle werden dauerhaft gespeichert."; },3000);
+}));
+$("c_logs").addEventListener("toggle",()=>{ if($("c_logs").open) logLoad(); });
+logLoad();
 
 // ---- Box herunterfahren / neu starten ----
 async function powerDo(action){

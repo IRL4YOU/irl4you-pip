@@ -10,10 +10,18 @@ import glob
 import os
 import time
 
-LOG = "/var/log/pipbox-health.log"
-MAX = 4 * 1024 * 1024
+LOG_DISK = "/var/log/pipbox-health.log"      # ausführlich: auf der Speicherkarte
+LOG_RAM = "/run/pipbox-health.log"           # sparsam: nur im Arbeitsspeicher (nach einem Neustart weg)
+MODE_FILE = "/etc/pipbox/logmode"
+MAX_DISK = 4 * 1024 * 1024
+MAX_RAM = 1024 * 1024
 INTERVAL = 10          # Sekunden zwischen zwei Zeilen
 SYNC_EVERY = 30        # Sekunden zwischen zwei Zwangs-Speicherungen (fsync)
+
+
+def mode():
+    """Protokoll-Modus aus /etc/pipbox/logmode; ohne Datei (ältere Installation) wie bisher auf der Karte."""
+    return "sparsam" if rd(MODE_FILE) == "sparsam" else "ausfuehrlich"
 
 
 def rd(path, default=""):
@@ -46,6 +54,8 @@ def main():
     last_sync = 0.0
     while True:
         try:
+            ram = mode() == "sparsam"
+            LOG, MAX = (LOG_RAM, MAX_RAM) if ram else (LOG_DISK, MAX_DISK)
             if os.path.exists(LOG) and os.path.getsize(LOG) > MAX:
                 with open(LOG, "rb") as f:
                     f.seek(-MAX // 2, 2)
@@ -53,10 +63,10 @@ def main():
                     keep = f.read()
                 with open(LOG, "wb") as f:
                     f.write(keep)
-            fd = os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            fd = os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o644)
             try:
                 os.write(fd, (line() + "\n").encode())
-                if time.monotonic() - last_sync >= SYNC_EVERY:
+                if not ram and time.monotonic() - last_sync >= SYNC_EVERY:
                     os.fsync(fd)
                     last_sync = time.monotonic()
             finally:

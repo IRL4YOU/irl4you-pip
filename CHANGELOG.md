@@ -1,5 +1,16 @@
 # Änderungen
 
+## 0.9.13 (Beta)
+- Neu: **Protokolle in zwei Stufen** (Karte "Protokolle: Speicherkarte schonen", getrennter Root-Helfer `pipbox-logmode.py` mit fester
+  Liste "sparsam" / "ausfuehrlich"). *Sparsam*: Journal nur im Arbeitsspeicher (`Storage=volatile`, 20 MB) und Zustandsprotokoll
+  in `/run` (höchstens 1 MB): im Normalbetrieb schreibt das Paket kaum etwas auf die Speicherkarte, nach einem Absturz oder
+  Stromausfall bleibt aber keine Spur. *Ausführlich*: wie bisher (Journal dauerhaft, höchstens 30 MB und 7 Tage;
+  Zustandsprotokoll auf der Karte, alle 10 s). Neue Installationen starten mit "sparsam"; Boxen mit dem früheren
+  dauerhaften Journal bleiben beim Update auf "ausführlich". Die Modus-Datei ist `/etc/pipbox/logmode`, die Journal-Einstellung
+  heißt jetzt `pipbox-journal.conf` (vorher `pipbox-persistent.conf`). Die Deinstallation entfernt beides.
+- Doku: Installationsanleitung mit `wget` im README (Herunterladen, Entpacken, `install.sh`, Anmeldung, Setup-Code).
+- Tests erweitert (Modus-Wechsel, Helfer, Zustandsprotokoll folgt dem Modus).
+
 ## 0.9.12 (Beta)
 Sicherheit, Ressourcenverbrauch und Aufräumen nach einer unabhängigen Prüfung des Quelltexts.
 - Sicherheit: Die Root-Helfer lesen ihre Anforderungsdateien im Ordner des Benutzers `pipbox` nur noch ohne Verweisen

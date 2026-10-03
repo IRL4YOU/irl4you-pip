@@ -1,6 +1,6 @@
 # IRL4YOU PIP / IRL4YOU BOX
 
-**Version 0.9.12 (Beta).** Getestet auf einer Radxa ROCK 5B+ mit BELABOX-Image und DJI Osmo Action 4, Action 5 Pro und
+**Version 0.9.13 (Beta).** Getestet auf einer Radxa ROCK 5B+ mit BELABOX-Image und DJI Osmo Action 4, Action 5 Pro und
 Action 6. Vier Kameras gleichzeitig (Hauptbild und drei kleine Bilder) liefen ohne Frame-Drops bei rund 13 Mbit/s; die
 Box war dabei zu etwa 70 % im Leerlauf. Noch kein Langzeittest über mehrere Stunden mit dem aktuellen Stand.
 Auf der Orange Pi 5 Plus (frisches BELABOX-Image) ist die Installation getestet und der Überlagerungs-Baustein mit künstlichen
@@ -39,8 +39,11 @@ vorhandene BELABOX-Passwort (Rückfall: eigenes Passwort).
   gesichert; man kann gezielt auf eine Version wechseln, auch auf eine ältere (gesichert oder als Release `vX.Y.Z` auf
   GitHub). Nicht während einer Übertragung.
 - **System-Updates** der BELABOX über einen getrennten Root-Helfer mit festen Aktionen.
-- **Zustandsprotokoll** (`/var/log/pipbox-health.log`): eine Zeile alle 2 Sekunden, damit nach einem Totalausfall sichtbar
-  bleibt, was kurz davor los war. Alle Protokolle sind begrenzt (Journal 30 MB/7 Tage, Zustandsprotokoll 4 MB).
+- **Protokolle, in zwei Stufen** (Karte "Protokolle: Speicherkarte schonen"). *Sparsam* (Standard bei neuen Installationen): Journal
+  und Zustandsprotokoll nur im Arbeitsspeicher, die Speicherkarte wird geschont, nach einem Absturz oder Stromausfall bleibt aber
+  keine Spur. *Ausführlich* (zur Fehlersuche): Journal dauerhaft (30 MB/7 Tage) und Zustandsprotokoll
+  (`/var/log/pipbox-health.log`, alle 10 Sekunden, höchstens 4 MB), damit nach einem Totalausfall sichtbar bleibt, was kurz
+  davor los war. Boxen, die vor 0.9.13 installiert wurden, bleiben beim Update auf "ausführlich".
 
 ## Was noch fehlt oder ungetestet ist
 
@@ -64,14 +67,33 @@ Dann `http://127.0.0.1:8780/` öffnen.
 
 ## Installation auf der Box
 
+Voraussetzung: eine BELABOX mit dem BELABOX-Image (getestet: Radxa ROCK 5B+ und Orange Pi 5 Plus), Internet auf der Box und ein
+Terminal auf der Box (SSH oder Tastatur). Nicht während einer Übertragung installieren.
+
 ```sh
+cd /tmp
+wget -O irl4you-pip.tar.gz https://github.com/IRL4YOU/irl4you-pip/archive/refs/heads/main.tar.gz
+tar xzf irl4you-pip.tar.gz
+cd irl4you-pip-main
 sudo sh install/install.sh
 ```
 
+Fehlt `wget`, geht auch `curl -L -o irl4you-pip.tar.gz https://github.com/IRL4YOU/irl4you-pip/archive/refs/heads/main.tar.gz`.
+Die Installation lädt fehlende Pakete nach und baut den Bild-in-Bild-Baustein und den SRTLA-Sender selbst; das kann einige
+Minuten dauern.
+
+Danach im Browser `http://<Adresse der Box>:8780` öffnen und mit dem BELABOX-Passwort anmelden. Hat die BELABOX noch kein
+Passwort, verlangt die Seite einen Setup-Code, den die Box in der Datei `/var/lib/pipbox/setup-code` bereithält
+(`sudo cat /var/lib/pipbox/setup-code`); dann ein eigenes Passwort festlegen. Spätere Versionen spielt die Karte
+"Software-Update" in der Oberfläche ein, ein erneutes Installieren ist nicht nötig.
+
+Das Paket schreibt nach der Installation sehr wenig auf die Speicherkarte ("Protokolle: sparsam"). Für die Fehlersuche lässt
+sich in der Karte "Protokolle" die ausführliche Stufe einschalten.
+
 Rückweg: `sudo sh install/install.sh uninstall`.
 Die Deinstallation entfernt Dienste und Programme. Liegen bleiben der Zustand (`/var/lib/pipbox`), die Sicherungen
-(`/var/lib/pipbox-backup`), die Protokolle (`/var/log/pipbox-*.log`), die Journal-Einstellung
-(`/etc/systemd/journald.conf.d/pipbox-persistent.conf`) und der Benutzer `pipbox`.
+(`/var/lib/pipbox-backup`), die Protokolle (`/var/log/pipbox-*.log`) und der Benutzer `pipbox`. Die Journal-Einstellung
+und `/etc/pipbox` werden entfernt.
 
 Optional, **nicht automatisch installiert** (`install/optional/`, nur für den Aufbau des Entwicklers auf der ROCK 5B+):
 `pipbox-net.service` hält die feste Zweitadresse 192.168.80.50 für ein Kameranetz an `eth1`, und
