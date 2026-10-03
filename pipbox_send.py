@@ -25,6 +25,7 @@ sys.path.insert(0, "/opt/pipbox")
 import server  # noqa: E402  (nur Prüf- und Erzeugungsfunktionen, startet nichts)
 
 STATE = "/var/lib/pipbox"
+BELACODER = "/opt/pipbox/bin/belacoder"      # belacoder mit tolerantem Regler (belacoder/), sonst das Original aus dem Suchpfad
 RUN = "/run/pipbox-send"
 WORK = "/var/tmp/pipbox"
 STATUS = f"{RUN}/status.json"
@@ -343,7 +344,7 @@ class Sender:
         sv = self.sv
         if name == "srtla_send":
             return ["srtla_send", str(LISTEN_PORT), sv["host"], str(sv["port"]), f"{WORK}/ips"]
-        a = ["stdbuf", "-oL", "-eL", "belacoder", f"{WORK}/pipeline", "127.0.0.1", str(LISTEN_PORT), "-d", "0",
+        a = ["stdbuf", "-oL", "-eL", BELACODER if os.access(BELACODER, os.X_OK) else "belacoder", f"{WORK}/pipeline", "127.0.0.1", str(LISTEN_PORT), "-d", "0",
              "-b", f"{WORK}/bitrate", "-l", str(self.lat)]
         if sv.get("streamid"):
             a += ["-s", sv["streamid"]]

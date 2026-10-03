@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.13 (Beta).** Getestet auf einer Radxa ROCK 5B+ mit BELABOX-Image und DJI Osmo Action 4, Action 5 Pro und
+**Version 0.9.14 (Beta).** Getestet auf einer Radxa ROCK 5B+ mit BELABOX-Image und DJI Osmo Action 4, Action 5 Pro und
 Action 6. Vier Kameras gleichzeitig (Hauptbild und drei kleine Bilder) liefen ohne Frame-Drops bei rund 13 Mbit/s; die
 Box war dabei zu etwa 70 % im Leerlauf. Noch kein Langzeittest über mehrere Stunden mit dem aktuellen Stand.
 Auf der Orange Pi 5 Plus (frisches BELABOX-Image) ist die Installation getestet und der Überlagerungs-Baustein mit künstlichen
@@ -41,6 +41,10 @@ vorhandene BELABOX-Passwort (Rückfall: eigenes Passwort).
   gesichert; man kann gezielt auf eine Version wechseln, auch auf eine ältere (gesichert oder als Release `vX.Y.Z` auf
   GitHub). Nicht während einer Übertragung.
 - **System-Updates** der BELABOX über einen getrennten Root-Helfer mit festen Aktionen.
+- **Stabile Bitrate über gebündelte Mobilfunkleitungen:** Der Encoder bekommt einen toleranteren Regler (kleiner Patch auf BELABOX/belacoder, siehe
+  `belacoder/README.md`), damit die Bitrate nach einer kurzen Überlast wieder hochkommt. **Wichtig für den Empfänger:** Die Wartegrenze für
+  Verlustmeldungen (`SRTO_LOSSMAXTTL`) sollte klein bleiben (BELABOX empfiehlt 10 bis 50, bei uns gemessen gut: 150). Ein großer Wert (zum Beispiel 600)
+  lässt die Bestätigungen Sekunden lang ausbleiben und der Encoder senkt die Bitrate.
 - **Protokolle, in zwei Stufen** (Karte "Protokolle: Speicherkarte schonen"). *Sparsam* (Standard bei neuen Installationen): Journal
   und Zustandsprotokoll nur im Arbeitsspeicher, die Speicherkarte wird geschont, nach einem Absturz oder Stromausfall bleibt aber
   keine Spur. *Ausführlich* (zur Fehlersuche): Journal dauerhaft (30 MB/7 Tage) und Zustandsprotokoll

@@ -11,6 +11,6 @@ Reserve. Alle fünf Sekunden schreibt er eine Zeile `links: ...` je Leitung auf 
 
 Umgebungsvariablen: `SRTLA_LAT_PREF=0` schaltet die Wegewahl ab (Verhalten wie das Original), `SRTLA_LAT_MARGIN_MS=<ms>` legt
 fest, wie viel schlechter als die beste Leitung eine Leitung sein darf, um noch mitzusenden (Standard: größer von 20 ms und
-halber Laufzeit der besten). Die Einstellung "Verteilung auf die Sendewege = alle" der Oberfläche setzt 150 ms.
+halber Laufzeit der besten). Die Einstellung "Verteilung auf die Sendewege = alle" der Oberfläche setzt 300 ms.
 
 Bauen: `sudo sh build.sh` (braucht git, gcc, make, patch und Internet; installiert nach `/usr/local/bin/srtla_send`).

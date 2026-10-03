@@ -45,6 +45,13 @@ Der Ordner `srtla/` enthält einen Patch für `srtla_send.c` aus [BELABOX/srtla]
 AGPL-3.0; der Quelltext ist der Upstream-Commit plus dieser Patch (siehe `srtla/README.md`). Das Original-Programm des
 BELABOX-Pakets bleibt unverändert unter `/usr/bin` liegen; der gepatchte Sender wird nach `/usr/local/bin` installiert.
 
+### belacoder-Encoder mit tolerantem Regler (GPL-3.0)
+
+Der Ordner `belacoder/` enthält einen Patch für `belacoder.c` aus [BELABOX/belacoder](https://github.com/BELABOX/belacoder)
+(Commit ccce9ca, GNU General Public License v3). Der Patch und das damit gebaute Programm stehen ebenfalls unter GPL-3.0; der
+Quelltext ist der Upstream-Commit plus dieser Patch (siehe `belacoder/README.md`). Das Original-Programm des BELABOX-Pakets bleibt
+unverändert unter `/usr/bin` liegen; das gepatchte wird nach `/opt/pipbox/bin` installiert und nur von der Sendekette dieses Pakets benutzt.
+
 ### WLAN
 
 Die WLAN-Karte der Oberfläche legt über `nmcli` (NetworkManager) Verbindungsprofile an, wenn Sie ein Netz verbinden.

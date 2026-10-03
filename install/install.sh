@@ -99,6 +99,19 @@ case "${1:-install}" in
         echo "WARNUNG: Der latenzbewusste Sender konnte nicht gebaut werden (braucht git, gcc, make, patch, Internet). Es bleibt der Original-Sender."
       fi
     fi
+    # belacoder mit tolerantem Bitraten-Regler (verhindert, dass die Bitrate nach einer kurzen Überlast auf dem Minimum hängen
+    # bleibt). Wird nur gebaut, wenn der Patch neuer ist; schlägt das fehl, bleibt das Original aus dem BELABOX-Paket aktiv.
+    install -d /opt/pipbox/belacoder
+    bc_changed=0
+    cmp -s "$HERE/belacoder/belacoder-jitter-tolerant.patch" /opt/pipbox/belacoder/belacoder-jitter-tolerant.patch || bc_changed=1
+    [ -x /opt/pipbox/bin/belacoder ] || bc_changed=1
+    if [ "$bc_changed" = 1 ]; then
+      if sh "$HERE/belacoder/build.sh"; then
+        install -m 644 "$HERE/belacoder/belacoder-jitter-tolerant.patch" /opt/pipbox/belacoder/belacoder-jitter-tolerant.patch
+      else
+        echo "WARNUNG: belacoder mit dem toleranten Regler konnte nicht gebaut werden (braucht git, gcc, patch, Internet). Es bleibt das Original."
+      fi
+    fi
     systemctl daemon-reload
     systemctl enable pipbox.service pipbox-dji.service
     if [ "$dji_changed" = 1 ] || ! systemctl is-active --quiet pipbox-dji.service; then systemctl restart pipbox-dji.service; fi
