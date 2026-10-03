@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IRL4YOU BOX</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#f8fafc;--muted:#a8b4c7;--line:#50647f;--accent:#06b6d4;--ok:#22c55e;--warn:#f59e0b;--crit:#ef4444;--bar:#06b6d4}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 -apple-system,system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;margin:12px auto 0;max-width:calc(980px - 0px);width:calc(100% - 32px);border:1px solid var(--line);border-radius:14px;background:var(--card)}
+h1{font-size:17px;margin:0;color:var(--accent)}
+.badge{font-size:12px;padding:3px 8px;border-radius:99px;background:var(--line);color:var(--muted)}
+.badge.demo{background:var(--warn);color:#0f172a}
+main{max-width:980px;margin:0 auto;padding:16px;display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}
+.card{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin:0 0 10px}
+.wide{grid-column:1/-1}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0}
+.big{font-size:26px;font-weight:600}
+.unit{font-size:13px;color:var(--muted);font-weight:400}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--bar);transition:width .5s}
+.cores{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}
+.core{font-size:12px;color:var(--muted)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--ok)}
+.dot.off{background:var(--crit)}
+#alerts{display:grid;gap:8px}
+.alert{padding:9px 12px;border-radius:8px;font-size:14px;border-left:4px solid var(--warn);background:var(--bg)}
+.alert.crit{border-color:var(--crit)}
+.alert.ok{border-color:var(--ok);color:var(--muted)}
+.muted{color:var(--muted)}
+.ph{font-size:12px;color:var(--muted);margin-top:8px}
+.cam{padding:10px 0;border-bottom:1px solid var(--line)}
+.cam:last-of-type{border-bottom:0}
+.cam .top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.cam code{display:block;margin-top:4px;font-size:12px;color:var(--muted);word-break:break-all}
+.tag{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--line);color:var(--muted);margin-left:6px}
+.cam a.ren{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)}
+.cam select.role{margin-left:8px;padding:2px 6px;font-size:12px}
+.dot.unk{background:var(--muted)}
+.add{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:8px;margin-top:12px}
+.add>label{display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0}
+.add>label[hidden]{display:none}
+.dlrow{display:flex;gap:8px;align-items:center}
+.dlrow input[type=range]{flex:1;min-width:0;padding:0}
+.dlrow input[type=number]{width:84px;flex:none}
+.add.dset{align-items:center}
+.sech{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin:18px 0 6px}
+.wform{display:grid;grid-template-columns:minmax(130px,.7fr) 1.4fr 1.4fr;gap:10px;align-items:end;margin-top:10px}
+.wform label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.wform select,.wform input{width:100%;height:38px;box-sizing:border-box}
+@media(max-width:620px){.wform{grid-template-columns:1fr}}
+.wstat{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);margin-top:8px}
+.wstat .wdot{width:10px;height:10px;border-radius:50%;background:var(--line);flex:none}.wstat.ok .wdot{background:var(--ok)}
+.wstat .wgrow{flex:1;min-width:160px}
+.wstat label{display:flex;gap:8px;align-items:center;white-space:nowrap}
+#wificard a{color:var(--accent)}
+.pvbox{position:relative;width:100%;max-width:640px;background:linear-gradient(135deg,#1d3b6b,#0e2a4a 60%,#0a1f38);border:1px solid var(--line);border-radius:12px;overflow:hidden;user-select:none;margin-top:6px}
+.pvmain{position:absolute;left:12px;top:8px;font-size:13px;color:#cbd5e1}
+.pvpip{touch-action:none;position:absolute;border:2px solid rgba(255,255,255,.7);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;color:#fff;cursor:grab;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.pvpip b{font-size:18px}.pvpip span{max-width:96%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pvpip.drag{cursor:grabbing;border-color:var(--warn)}
+.pv1{background:linear-gradient(135deg,#0891b2,#164e63)}.pv2{background:linear-gradient(135deg,#059669,#064e3b)}.pv3{background:linear-gradient(135deg,#d97706,#78350f)}
+.wlist{display:grid;gap:4px;max-height:260px;overflow:auto}
+.wrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:12px;align-items:center;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);text-decoration:none}
+.wrow:hover{border-color:var(--accent)}
+.wrow.cur{border-color:var(--ok)}
+.wname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wsig{font-variant-numeric:tabular-nums;white-space:nowrap}.wsec{color:var(--muted);font-size:13px;white-space:nowrap}.wuse{color:var(--ok);font-size:13px}
+@media(max-width:560px){.wrow{grid-template-columns:minmax(0,1fr) auto}.wsec,.wuse{grid-column:1/-1}}
+.camcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));gap:10px;margin-top:12px}
+.camcol{display:flex;flex-direction:column;gap:8px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}
+.camcol[hidden]{display:none}
+.camcol h3{margin:0;font-size:13px;color:var(--accent)}
+.camcol .opt{color:var(--muted);font-weight:400}
+.camcol>label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.camcol>label[hidden]{display:none}
+.camcol .fixed{min-height:2.2em;display:flex;align-items:center}
+.srvrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.srvrow select{flex:1 1 200px}
+input,select,button{font:inherit;min-width:0;max-width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:0}
+button{background:var(--bar);color:#0f172a;font-weight:600;border-color:transparent;cursor:pointer}
+button.del{background:transparent;color:var(--crit);border-color:var(--line);padding:4px 10px;font-size:13px}
+details.card>summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;list-style:none}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary .sumh{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+details.card>summary .sumh::before{content:"\25B8  ";}
+details.card[open]>summary .sumh::before{content:"\25BE  ";}
+details.card[open]>summary{margin-bottom:10px}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:12px;margin-top:12px}
+.statbox{min-width:0;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg)}
+.statbox .sech{margin:0 0 8px}
+.hdr{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.foldd{display:inline-flex;gap:6px}
+.foldm{display:none}.smic{display:none;font-size:16px;line-height:1}
+button.small{padding:4px 10px;font-size:13px}
+button.foldm{font-size:17px;line-height:1;padding:3px 10px}
+@media(max-width:620px){.smtx{display:none}.smic{display:inline}#sm_btn{padding:3px 10px}.foldd{display:none}.foldm{display:inline-block}header{gap:8px}}
+#rcard a.btnlink{display:inline-block;padding:8px 12px;border-radius:8px;background:var(--bar);color:#0f172a;font-weight:600;text-decoration:none}
+#r_apps a.btnlink{background:transparent;color:var(--text);border:1px solid var(--line);font-weight:400}
+#r_url{word-break:break-all}
+#rcard ol{margin:6px 0 0 18px;padding:0;color:var(--muted);font-size:13px}
+#swcard[open]>summary .sumh::before{content:"\25BE  ";}
+#swcard[open]>summary{margin-bottom:10px}
+#swcard .swpick{margin-top:12px}
+#sw_notes{white-space:pre-wrap;border-left:3px solid var(--line);padding-left:10px;margin:10px 0}
+#updcard[open]>summary .sumh::before{content:"\25BE  ";}
+#updcard[open]>summary{margin-bottom:10px}
+.badge.attn{background:var(--warn);color:#0f172a}
+.badge.ok{background:var(--line);color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+button.sec{background:transparent;color:var(--text);border:1px solid var(--line);font-weight:400}
+button.warnbtn{background:var(--warn)}
+button:disabled{opacity:.45;cursor:not-allowed}
+pre{white-space:pre-wrap;word-break:break-all;font-size:11px;color:var(--muted);max-height:220px;overflow:auto;margin:8px 0 0}
+.upd-line{display:flex;justify-content:space-between;padding:3px 0}
+.livehealth{font-size:12px;margin-top:8px;opacity:.85}.livehealth .ok{color:var(--ok)}.livehealth .warn{color:var(--warn)}.livehealth .crit,.livehealth .err{color:var(--crit)}
+details.locked>summary{cursor:not-allowed;opacity:.6}body.sm .sens{display:none!important}.smon{background:var(--warn);color:#111}.lockhint{font-size:12px;color:var(--muted);font-weight:400}
+.foot a{color:var(--muted);text-decoration:underline}.footlinks{margin-top:6px}
+.pending{margin-top:10px;padding:8px 10px;border:1px solid var(--warn);border-radius:8px;font-size:13px}.pending button{margin-left:8px;padding:4px 10px}
+dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn);border-radius:12px;max-width:min(420px,90vw);padding:18px}dialog#rdlg::backdrop{background:rgba(0,0,0,.6)}
+#livecard #liveerr,#livecard #livewhy{min-height:0;margin-top:8px}#livecard #liveerr:empty,#livecard #livewhy:empty{display:none}
+.livesrv{font-size:12px;margin-top:3px}.liveup{margin-left:16px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}.liveup small{font-size:13px;font-weight:400;color:var(--muted)}
+.foot{text-align:center;font-size:12px;color:var(--muted);padding:18px 16px 28px}
+.err{color:var(--crit);font-size:13px;min-height:18px;margin-top:6px}
+</style>
+</head>
+<body>
+<header><h1>IRL4YOU BOX</h1><span class="hdr">
+  <span class="foldd"><button type="button" class="sec small" id="fold_all">Alle zuklappen</button><button type="button" class="sec small" id="unfold_all">Alle aufklappen</button></span>
+  <button type="button" class="sec small foldm" id="fold_toggle" title="Alle Karten zu- oder aufklappen" aria-label="Alle Karten zu- oder aufklappen">⇕</button> <button type="button" class="sec small" id="sm_btn" title="Sendemodus: blendet Adressen, Namen und Protokolle aus, z. B. wenn der Bildschirm gefilmt wird" aria-label="Sendemodus"><span class="smic">👁</span><span class="smtx">Sendemodus: aus</span></button> <span id="mode" class="badge">verbinde…</span> <button class="del" id="logout">Abmelden</button></span></header>
+<main>
+    <section class="card wide" id="livecard" aria-label="Live">
+    <div id="livebox">
+      <div class="row" style="justify-content:flex-start"><span class="big" id="livestate">–</span><span id="liveup" class="liveup" hidden title="Gesamter Upload über die gewählten Netze"></span></div>
+      <div class="actions"><button id="live_go" type="button" class="warnbtn">Live gehen</button><button id="live_stop" type="button" class="sec" hidden>Live beenden</button> <button type="button" class="sec" id="sm_btn2" title="Blendet Adressen, Namen und Protokolle aus, z. B. wenn der Bildschirm gefilmt wird">Sendemodus: aus</button></div>
+      <div id="livewhy" class="ph"></div>
+      <div id="livepending" class="pending" hidden><span id="livepending_t"></span> <button type="button" id="live_restart" class="warnbtn">Stream neu starten</button><button type="button" id="live_ignore" class="sec">Später</button></div>
+      <div id="liveerr" class="err"></div>
+      <div id="livehealth" class="livehealth"></div>
+      <div id="liveserver" class="muted livesrv"></div>
+    </div>
+  </section>
+
+  <details class="card wide" id="c_status" open><summary><span class="sumh">Status</span></summary>
+    <div id="alerts"></div>
+    <div class="statgrid">
+      <div class="statbox"><div class="sech">CPU</div>
+    <div class="row"><span class="big"><span id="cpu">–</span><span class="unit"> %</span></span>
+      <span class="muted"><span id="cpumax"></span> · <span id="temp">–</span> °C</span></div>
+    <div class="bar"><i id="cpubar" style="width:0"></i></div>
+    <div class="muted" id="fanline" hidden title="Ansteuerung des Lüfters, keine gemessene Drehzahl (die Box hat keinen Drehzahlanschluss am Lüfter)">Lüfter: <span id="fan">–</span> % (Ansteuerung)</div>
+    <div class="cores" id="cores"></div>
+  </div>
+      <div class="statbox"><div class="sech">Arbeitsspeicher</div>
+    <div class="row"><span class="big"><span id="mem">–</span><span class="unit"> % belegt</span></span></div>
+    <div class="bar"><i id="membar" style="width:0"></i></div>
+    <div class="row muted"><span>frei</span><span id="memfree">–</span></div>
+  </div>
+      <div class="statbox"><div class="sech">Upload (Netze zum Senden)</div><div id="net"></div></div>
+    </div>
+  </details>
+
+  <details class="card wide" id="c_cams" open><summary><span class="sumh">Kameras</span></summary>
+    <div class="sech" style="margin-top:0">RTMP-Kameras</div>
+    <div id="cams"></div>
+    <form id="addcam" class="add">
+      <input id="f_name" placeholder="Name, z. B. Hauptkamera" maxlength="40" required>
+      <select id="f_role"><option value="extra">Weitere</option><option value="main">Hauptbild</option><option value="pip">Bild-in-Bild</option></select>
+      <input id="f_key" placeholder="Schlüssel (leer = automatisch)" maxlength="32">
+      <button type="submit">Kamera hinzufügen</button>
+    </form>
+    <div id="formerr" class="err"></div>
+    <div class="ph">Die Kamera sendet an die angezeigte RTMP-Adresse. Die Adresse gilt für das Netzwerk, das Sie im Bereich „DJI-Kameras“ unter „Netzwerk der Kamera“ gewählt haben.</div>
+      <div class="sech">DJI-Kameras (Bluetooth)</div><div id="djicard">
+    <div class="ph" style="margin-top:0">In welchem Netzwerk soll die Kamera die Box erreichen? Davon hängt die RTMP-Adresse ab.</div>
+    <div class="add" style="margin-bottom:6px"><select id="netsel"></select></div>
+    <div id="netinfo" class="ph"></div>
+    <div id="djinote" class="muted"></div>
+    <div class="actions"><button id="d_scan" type="button">Nach DJI-Kameras suchen</button></div>
+    <div id="djilist"></div>
+    <div class="sens"><div class="ph" style="margin-top:12px">WLAN, dem die Kamera beitreten soll (muss das Netz der Box sein, z. B. Ihr Router):</div>
+    <form id="djiwifi" class="add">
+      <input id="d_ssid" placeholder="WLAN-Name" maxlength="32" autocomplete="off">
+      <input id="d_pw" type="password" placeholder="WLAN-Passwort" maxlength="63" autocomplete="new-password">
+      <button type="submit" class="sec">WLAN speichern</button>
+    </form>
+    <div id="djiwifistate" class="ph"></div></div>
+    <div id="djisession" class="ph"></div>
+    <div id="djierr" class="err"></div>
+  </div>
+  </details>
+
+
+  <details class="card wide" id="pipecard" open><summary><span class="sumh">Bildaufbau: Kameras, Bild-in-Bild, Positionen</span></summary>
+    <div class="ph" style="margin-top:0">Wie das gesendete Bild aufgebaut ist: Hauptbild und bis zu drei kleine Bilder (Bild-in-Bild) mit Position, Größe und Verzögerung. Die kleinen Bilder lassen sich unten in der Vorschau verschieben. Ohne gespeicherten Bildaufbau kann nicht gesendet werden.</div>
+    <div class="add">
+      <label class="muted">Art<select id="p_type" style="width:100%"><option value="single">Eine Kamera</option><option value="pip">Bild-in-Bild</option></select></label>
+      <label class="muted piponly">Größe der kleinen Bilder (% der Breite)<input id="p_size" type="number" min="15" max="40" step="1" style="width:100%"></label>
+      <label class="muted piponly">Ton von<select id="p_audio" style="width:100%"><option value="main">Hauptbild</option><option value="pip">Kleinem Bild 1</option><option value="pip2">Kleinem Bild 2</option><option value="pip3">Kleinem Bild 3</option></select></label>
+    </div>
+    <div class="camcols">
+      <div class="camcol">
+        <h3>Hauptbild</h3>
+        <label class="muted">Kamera<select id="p_main" style="width:100%"></select></label>
+        <div class="muted fixed piponly">Ecke: ganzes Bild</div>
+        <label class="muted piponly dl" title="Das Hauptbild wartet samt Ton vor dem Einblenden. 0 = aus."><span>Verzögerung: <b id="v_delay">0</b> ms</span>
+          <span class="dlrow"><input id="p_delay" type="range" min="0" max="3000" step="10"><input id="n_delay" type="number" min="0" max="3000" step="10"></span></label>
+      </div>
+      <div class="camcol piponly">
+        <h3>Kleines Bild 1</h3>
+        <label class="muted">Kamera<select id="p_pip" style="width:100%"></select></label>
+        <label class="muted">Ecke<select id="p_corner" style="width:100%"></select></label>
+        <label class="muted dl" title="Zusätzliche Wartezeit nur für das erste kleine Bild."><span>Verzögerung: <b id="v_delay1">0</b> ms</span>
+          <span class="dlrow"><input id="p_delay1" type="range" min="0" max="3000" step="10"><input id="n_delay1" type="number" min="0" max="3000" step="10"></span></label>
+      </div>
+      <div class="camcol piponly">
+        <h3>Kleines Bild 2 <span class="opt">(optional)</span></h3>
+        <label class="muted">Kamera<select id="p_pip2" style="width:100%"></select></label>
+        <label class="muted">Ecke<select id="p_corner2" style="width:100%"></select></label>
+        <label class="muted dl" id="dl2" title="Zusätzliche Wartezeit nur für das zweite kleine Bild."><span>Verzögerung: <b id="v_delay2">0</b> ms</span>
+          <span class="dlrow"><input id="p_delay2" type="range" min="0" max="3000" step="10"><input id="n_delay2" type="number" min="0" max="3000" step="10"></span></label>
+      </div>
+      <div class="camcol piponly">
+        <h3>Kleines Bild 3 <span class="opt">(optional)</span></h3>
+        <label class="muted">Kamera<select id="p_pip3" style="width:100%"></select></label>
+        <label class="muted">Ecke<select id="p_corner3" style="width:100%"></select></label>
+        <label class="muted dl" id="dl3" title="Zusätzliche Wartezeit nur für das dritte kleine Bild."><span>Verzögerung: <b id="v_delay3">0</b> ms</span>
+          <span class="dlrow"><input id="p_delay3" type="range" min="0" max="3000" step="10"><input id="n_delay3" type="number" min="0" max="3000" step="10"></span></label>
+      </div>
+    </div>
+    <div class="piponly pvwrap"><div class="sech">Vorschau: kleine Bilder verschieben</div><div id="pvbox" class="pvbox"></div><div id="pvnote" class="ph"></div></div>
+    <label class="muted" style="display:block;margin-top:12px"><input type="checkbox" id="p_auto" checked> Automatisch umschalten, wenn eine Kamera ausfällt (nach 5 s ohne Signal; zurück nach 60 s stabilem Signal)</label>
+    <div class="actions"><button id="p_save" type="button">Bildaufbau speichern</button><span class="muted" style="margin-left:.75rem">Läuft gerade eine Übertragung, wird sie bei einer Änderung kurz neu gestartet.</span></div>
+    <div id="pipeerr" class="err"></div>
+    <div id="pipeinfo" class="ph"></div>
+    <details class="sens"><summary class="muted">Technische Beschreibung ansehen (für die Fehlersuche)</summary><pre id="pipeprev"></pre></details>
+  </details>
+
+  <details class="card wide" id="srtlacard" open><summary><span class="sumh">SRTLA: Server, Bitrate und Latenz</span><span class="lockhint" id="srtlalock" hidden> · Sendemodus ist an</span></summary>
+        <div class="sech" style="margin-top:0">SRTLA-Server</div>
+    <div class="ph" style="margin-top:0">SRTLA-Server speichern und per Auswahl umschalten. Die Stream-ID ist ein Zugangsschlüssel: sie wird auf der Box gespeichert und hier nie wieder angezeigt.</div>
+    <div class="srvrow"><select id="srv_sel"></select><button id="srv_edit" type="button" class="sec">Bearbeiten</button><button id="srv_del" type="button" class="sec">Löschen</button></div>
+    <form id="srvform" class="add" style="margin-top:10px">
+      <input id="s_name" placeholder="Name (z. B. Mein Server)" maxlength="40" required>
+      <input id="s_host" placeholder="Adresse (z. B. srtla.example.de)" maxlength="253" required autocomplete="off">
+      <input id="s_port" placeholder="Port" type="number" min="1" max="65535" required>
+      <input id="s_sid" type="password" placeholder="Stream-ID (optional)" maxlength="512" autocomplete="new-password">
+      <button type="submit" id="srv_save">Server hinzufügen</button>
+      <button type="button" id="srv_cancel" class="sec" hidden>Abbrechen</button>
+    </form>
+    <label class="muted" style="display:block;margin-top:10px">Verteilung auf die Netze
+      <select id="b_spread" style="width:100%;max-width:560px;margin-top:4px"><option value="best">Beste Leitung bevorzugen, andere als Reserve (empfohlen, stabiler)</option><option value="all">Alle Leitungen gleichzeitig nutzen (auch langsamere)</option></select></label>
+    <div class="sech">Bitrate und Latenz</div>
+    <div class="add" style="margin-top:6px">
+      <label class="muted">Mindestbitrate (kbit/s)<input id="b_min" type="number" min="100" max="19999" step="50" style="width:100%"></label>
+      <label class="muted">Höchstbitrate (kbit/s)<input id="b_max" type="number" min="200" max="20000" step="100" style="width:100%"></label>
+      <label class="muted">Latenz (ms)<input id="b_lat" type="number" min="100" max="10000" step="100" style="width:100%"></label>
+    </div>
+    <div class="actions"><button id="b_save" type="button">Bitrate, Latenz und Verteilung speichern</button></div>
+<div id="srtlaerr" class="err"></div>
+    <div id="srtlainfo" class="ph"></div>
+  </details>
+
+  <details class="card wide" id="netcard" open><summary><span class="sumh">Netze zum Senden und WLAN</span></summary>
+    <div class="sech">Netze zum Senden (Upload)</div>
+    <div class="ph" style="margin-top:0">Die Box sendet gleichzeitig über alle Netze mit Häkchen (Bonding). Das Häkchen wird sofort gespeichert und wirkt auch während der Sendung nach wenigen Sekunden. Das Kameranetz darf mitgenutzt werden.</div>
+    <div id="b_ups"></div>
+        <div class="sens"><div class="sech">WLAN-Verbindung (z. B. Handy-Hotspot, auch zum Senden nutzbar)</div><div id="wificard">
+    <div class="ph" style="margin-top:0">Verbindet die Box mit einem WLAN, zum Beispiel dem Hotspot eines Handys. Danach in der Zeile der WLAN-Karte „Zum Senden verwenden“ ankreuzen (wird sofort gespeichert). Das Passwort wird nur an das Netzwerk-Programm der Box übergeben und nicht gespeichert.</div>
+    <div id="wifidev"></div>
+    <div class="wform">
+      <label class="muted">WLAN-Karte<select id="w_if"></select></label>
+      <label class="muted">Netzname (SSID)<input id="w_ssid" maxlength="32" autocomplete="off"></label>
+      <label class="muted">Passwort<input id="w_pw" type="password" maxlength="64" autocomplete="new-password" placeholder="leer bei offenem Netz"></label>
+    </div>
+    <label class="muted" style="display:block;margin:8px 0"><input type="checkbox" id="w_hidden"> verstecktes Netz (Name wird nicht ausgesendet)</label>
+    <div class="actions"><button id="w_scan" type="button" class="sec">Netze suchen</button> <button id="w_connect" type="button">Verbinden</button> <button id="w_disc" type="button" class="sec">Trennen</button></div>
+    <div id="wifinets" class="ph"></div>
+    <div id="wifisaved" class="ph"></div>
+    <div id="wifimsg" class="ph"></div>
+  </div></div>
+<div id="neterr" class="err"></div>
+    <div id="upinfo" class="ph"></div>
+  </details>
+
+  <details class="card wide" id="rcard">
+    <summary><span class="sumh">Fernzugriff (Tailscale)</span><span class="lockhint" id="rlock" hidden> · Sendemodus ist an</span><span id="r_badge" class="badge">…</span></summary>
+    <div class="ph" style="margin-top:0">Erreichen Sie die Oberfläche von unterwegs, <b>nur über Ihr privates Tailscale-Netz</b>, nie öffentlich im Internet. Jedes Gerät, das zugreifen soll, braucht die Tailscale-App und Ihr Konto.</div>
+    <div id="r_info"></div>
+    <div id="r_login" hidden><a id="r_loginlink" class="btnlink" target="_blank" rel="noopener noreferrer" href="#">Bei Tailscale anmelden</a>
+      <div class="ph">Der Link öffnet Tailscale. Melden Sie sich mit Ihrem Konto an (z. B. GitHub oder Google) und klicken Sie dort auf „Connect“. Danach hier einen Moment warten.</div></div>
+    <div id="r_url_row" class="row" hidden><span>Adresse im privaten Netz</span><span><a id="r_url" target="_blank" rel="noopener noreferrer" href="#"></a> <button id="r_copy" type="button" class="sec" style="padding:2px 8px;font-size:12px">Kopieren</button></span></div>
+    <div id="r_peers" class="ph"></div>
+    <div id="r_warn" class="err" hidden>Achtung: „Funnel“ ist an, die Oberfläche ist öffentlich im Internet erreichbar. Mit „Freigabe beenden“ abschalten.</div>
+    <div class="actions" id="r_actions"></div>
+    <div id="r_msg" class="ph"></div>
+    <div class="ph" style="margin-top:14px">Tailscale-App für Ihre Geräte (offizielle Stores):</div>
+    <div class="actions" id="r_apps">
+      <a class="btnlink" target="_blank" rel="noopener noreferrer" href="https://play.google.com/store/apps/details?id=com.tailscale.ipn">Android (Play Store)</a>
+      <a class="btnlink" target="_blank" rel="noopener noreferrer" href="https://apps.apple.com/app/tailscale/id1470499037">iPhone/iPad (App Store)</a>
+      <a class="btnlink" target="_blank" rel="noopener noreferrer" href="https://tailscale.com/download/mac">Mac</a>
+      <a class="btnlink" target="_blank" rel="noopener noreferrer" href="https://tailscale.com/download/windows">Windows</a>
+      <a class="btnlink" target="_blank" rel="noopener noreferrer" href="https://tailscale.com/download/linux">Linux</a>
+    </div>
+    <details><summary class="muted">Anleitung für Handy und Rechner</summary>
+      <ol>
+        <li><b>Konto:</b> Auf tailscale.com kostenlos anmelden (z. B. mit GitHub, Google, Microsoft oder Apple).</li>
+        <li><b>Box:</b> Hier „Tailscale installieren“, dann „Verbinden“, den Link öffnen, anmelden, „Connect“ klicken.</li>
+        <li><b>Freigabe:</b> „Oberfläche im privaten Netz freigeben“. Falls Tailscale nach „HTTPS“ fragt: den Link öffnen, „Funnel“ <b>aus</b> lassen, „Enable HTTPS“ klicken, dann erneut freigeben.</li>
+        <li><b>Handy und Rechner:</b> Die App „Tailscale“ installieren (tailscale.com/download), mit <b>demselben Konto</b> anmelden, Verbindung einschalten.</li>
+        <li><b>Zugriff:</b> Die Adresse oben im Browser öffnen, mit dem BELABOX-Passwort anmelden. Es ist nichts am Router freizugeben.</li>
+      </ol>
+      <div class="ph"><a href="https://github.com/IRL4YOU/irl4you-pip/blob/main/ANLEITUNG-Fernzugriff.md" target="_blank" rel="noopener noreferrer">Ausführliche Anleitung (mit Fehlerhilfe)</a></div></details>
+  </details>
+
+  <details class="card wide" id="swcard">
+    <summary><span class="sumh">Software-Update (IRL4YOU BOX)</span><span id="sw_badge" class="badge ok">…</span></summary>
+    <div class="ph" style="margin-top:0">Holt neue Versionen dieser Software aus dem Repository auf GitHub. Kameras, Server und Einstellungen bleiben erhalten. Nicht während einer Übertragung.</div>
+    <div class="row"><span>Installiert</span><b id="sw_cur">–</b></div>
+    <div class="row"><span>Neueste auf GitHub</span><b id="sw_latest">–</b></div>
+    <div id="sw_notes" hidden></div>
+    <div class="swpick">
+      <label class="muted" for="sw_ver">Auf eine bestimmte Version wechseln (auch ältere):</label>
+      <div class="dlrow"><input id="sw_ver" list="sw_vers" placeholder="Version wählen oder eintragen, z. B. 0.9.0" autocomplete="off" maxlength="24">
+        <button id="sw_switch" type="button" class="sec">Wechseln</button></div>
+      <datalist id="sw_vers"></datalist>
+      <div id="sw_verinfo" class="ph"></div>
+    </div>
+    <div class="actions">
+      <button id="sw_check" type="button" class="sec">Nach Updates suchen</button>
+      <button id="sw_install" type="button" class="warnbtn" disabled>Update installieren</button>
+      <button id="sw_rollback" type="button" class="sec" hidden>Zurück zur vorherigen Version</button>
+    </div>
+    <div id="sw_msg" class="ph"></div>
+  </details>
+
+  <details class="card wide" id="updcard">
+    <summary><span class="sumh">System-Updates (BELABOX)</span><span id="updbadge" class="badge">…</span></summary>
+    <div id="updinfo" class="muted">lade…</div>
+    <div class="actions">
+      <button id="u_check" type="button">Nach Updates suchen</button>
+      <button id="u_dry" type="button" class="sec">Probelauf</button>
+      <button id="u_run" type="button" class="warnbtn">Updates installieren</button>
+      <button id="u_reboot" type="button" class="sec">Neu starten</button>
+    </div>
+    <div id="updbar" class="bar" style="margin-top:10px" hidden><i id="updbari" style="width:0"></i></div>
+    <div id="updmsg" class="ph"></div>
+    <details id="upddet" class="sens"><summary class="muted">Protokoll</summary><pre id="updlog"></pre></details>
+  </details>
+  <details class="card wide" id="c_power"><summary><span class="sumh">Box ausschalten</span></summary>
+    <div class="ph" style="margin-top:0">Fährt die Box sauber herunter oder startet sie neu. Wenn die Box ausgeschaltet ist, kann sie über die Oberfläche nicht wieder eingeschaltet werden: dafür den Strom kurz trennen oder die Ein-Taste nutzen.</div>
+    <div class="actions"><button id="pw_off" type="button" class="warnbtn">Herunterfahren</button> <button id="pw_reboot" type="button" class="sec">Neu starten</button></div>
+    <div id="pwmsg" class="ph"></div>
+  </details>
+</main>
+<dialog id="rdlg"><form method="dialog"><b>Noch nicht übernommen</b>
+  <p id="rdlg_t"></p><p class="muted">Die Sendung läuft noch mit den alten Werten. Ein Neustart unterbricht das Bild für einige Sekunden.</p>
+  <div class="actions"><button type="button" id="rdlg_go" class="warnbtn">Stream neu starten</button><button type="submit" class="sec">Später</button></div></form></dialog>
+<footer class="foot"><div id="stagefoot"></div>
+  <div class="footlinks">© 2026 IRL4YOU · MIT-Lizenz · <a href="https://irl4you.de" target="_blank" rel="noopener noreferrer">Webseite</a> · <a href="https://discord.gg/nrBCEarMup" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/IRL4YOU/irl4you-pip" target="_blank" rel="noopener noreferrer">Quellcode auf GitHub</a> · <a href="https://github.com/IRL4YOU/irl4you-pip/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">Drittprojekte (Moblin, BELABOX)</a></div></footer>
+<script>
+const $=id=>document.getElementById(id);
+const fmt=(v,d=1)=>v==null?"–":Number(v).toFixed(d);
+const ROLE={main:"Hauptbild",pip:"Bild-in-Bild",extra:"Weitere"};
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function setHtml(el,html){ if(el.dataset.h===html) return; el.dataset.h=html; el.innerHTML=html; }
+let camsByKey={};
+function renderCams(list){
+  const box=$("cams");
+  camsByKey={}; for(const c of list) camsByKey[c.key]=c;
+  // Kameras ohne Signal stehen unten; sonst bleibt die Reihenfolge der Anlage (Array.sort ist stabil)
+  const quiet=c=>c.state==="live"||c.state==="unknown"?0:1;
+  list=list.slice().sort((x,y)=>quiet(x)-quiet(y));
+  // Struktur-Signatur ohne Zahlen, die sich ständig ändern (fps, Datenrate, Status)
+  const sig=JSON.stringify(list.map(c=>[c.id,c.name,c.role,c.url,!!c.auto]));
+  if(box.dataset.sig!==sig){
+    box.dataset.sig=sig;
+    box.innerHTML=list.length?list.map(c=>
+      `<div class="cam" data-cid="${c.id}"><div class="top"><span><span class="dot"></span><a href="#" class="ren" data-id="${c.id}" data-name="${esc(c.name)}">${esc(c.name)}</a><button type="button" class="sec ren" data-id="${c.id}" data-name="${esc(c.name)}" title="Kamera umbenennen" style="padding:2px 8px;font-size:12px;margin-left:6px">Umbenennen</button><select class="role" data-id="${c.id}">${Object.entries(ROLE).map(([k,v])=>`<option value="${k}"${k===c.role?" selected":""}>${v}</option>`).join("")}</select>${c.auto?'<span class="tag">automatisch erkannt</span>':""}</span>
+      <span class="muted"><span class="dyn"></span> <button class="del" data-id="${c.id}">Entfernen</button></span></div><code>${esc(c.url)}</code></div>`).join("")
+      :'<div class="muted">Noch keine Kamera angelegt.</div>';
+  }
+  for(const c of list){
+    const row=box.querySelector(`.cam[data-cid="${c.id}"]`); if(!row) continue;
+    row.querySelector(".dot").className="dot"+(c.state==="live"?"":(c.state==="unknown"?" unk":" off"));
+    row.querySelector(".dyn").textContent=c.state==="live"?`${c.fps?fmt(c.fps,0)+" fps"+" · ":""}${fmt(c.mbit)} Mbit/s`:(c.state==="unknown"?"Status unbekannt":"wartet auf Signal");
+  }
+}
+$("cams").addEventListener("click",async e=>{
+  if(!e.target.classList.contains("del")) return; const id=e.target.dataset.id;
+  if(!confirm("Kamera entfernen?")) return;
+  await fetch("/api/cameras/"+id,{method:"DELETE"}); tick();
+});
+$("cams").addEventListener("change",async e=>{
+  if(!e.target.classList.contains("role")) return;
+  const r=await fetch("/api/cameras/"+e.target.dataset.id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({role:e.target.value})});
+  if(!r.ok) alert((await r.json()).error); tick();
+});
+$("cams").addEventListener("click",async e=>{
+  if(!e.target.classList.contains("ren")) return; e.preventDefault();
+  await renameCam(e.target.dataset.id,e.target.dataset.name);
+});
+async function renameCam(id,old){
+  const n=prompt("Neuer Name der Kamera (z. B. Rucksack, Brust, Helm):",old); if(!n||n.trim()===old) return;
+  const r=await fetch("/api/cameras/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n})});
+  if(!r.ok) alert((await r.json().catch(()=>({}))).error||"Umbenennen fehlgeschlagen");
+  tick();
+}
+$("addcam").addEventListener("submit",async e=>{
+  e.preventDefault(); $("formerr").textContent="";
+  const r=await fetch("/api/cameras",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name:$("f_name").value,role:$("f_role").value,key:$("f_key").value})});
+  if(!r.ok){ $("formerr").textContent=(await r.json()).error; return; }
+  $("f_name").value=""; $("f_key").value=""; tick();
+});
+$("logout").addEventListener("click",async()=>{await fetch("/api/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});location.reload();});
+
+const UPD_LABEL={check:"Suche",dry:"Probelauf",run:"Update",reboot:"Neustart"};
+const fmtT=t=>t?new Date(t*1000).toLocaleString("de-DE"):"nie";
+function renderUpdate(u){
+  const v=u.versions||{}, busy=u.state==="running"||u.state==="rebooting";
+  const lines=[
+    ["Kernel (läuft)",esc(u.kernel_running||"–")],
+    ["Kernelpaket installiert",esc(v["belabox-linux-rk3588"]||"–")],
+    ["belaui / belacoder",esc((v["belaui"]||"–")+" / "+(v["belacoder"]||"–"))],
+    ["Zuletzt geprüft",fmtT(u.last_check)]];
+  if(u.available!=null) lines.push(["Verfügbar",u.available+" Pakete"+(u.download&&u.download!=="0 B"?" ("+esc(u.download)+")":"")+(u.belabox&&u.belabox.length?", BELABOX: "+u.belabox.map(esc).join(", "):"")]);
+  if(u.would_reboot) lines.push(["Hinweis","Danach ist ein Neustart nötig (Kernel/Netzwerk)."]);
+  $("updinfo").innerHTML=lines.map(l=>`<div class="upd-line"><span class="muted">${l[0]}</span><span>${l[1]}</span></div>`).join("");
+  const p=u.progress, show=u.state==="running"&&p&&p.total>0;
+  $("updbar").hidden=!show;
+  if(show){ const pct=Math.round(100*(p.downloading+p.unpacking+p.setting_up)/(3*p.total)); $("updbari").style.width=pct+"%"; }
+  let msg="";
+  if(!u.helper_installed) msg="Update-Helfer ist auf der Box nicht installiert.";
+  else if(u.state==="running") msg=(UPD_LABEL[u.mode]||"Aktion")+" läuft…"+(show?` Laden ${p.downloading}/${p.total}, Entpacken ${p.unpacking}/${p.total}, Einrichten ${p.setting_up}/${p.total}`:"");
+  else if(u.state==="rebooting") msg="Die Box startet neu. Diese Seite lädt nach dem Start wieder.";
+  else if(u.reboot_pending) msg="Neustart nötig, damit der neue Kernel/Netzwerkteile aktiv werden.";
+  else if(u.message) msg=esc(u.message);
+  if(u.streaming) msg="Übertragung läuft: Installieren und Neustart sind gesperrt. "+msg;
+  $("updmsg").textContent=msg;
+  $("updmsg").style.color=(u.state==="failed"||u.state==="refused")?"var(--crit)":"";
+  $("u_check").disabled=$("u_dry").disabled=busy||!u.helper_installed;
+  $("u_run").disabled=busy||u.streaming||!u.helper_installed;
+  $("u_reboot").disabled=busy||u.streaming||!u.helper_installed;
+  $("u_reboot").className=u.reboot_pending?"warnbtn":"sec";
+  if(u.log!==undefined && $("upddet").open) $("updlog").textContent=u.log||"(leer)";
+  // Kopfzeile und Auf-/Zuklappen: nur bei Wechsel des Zustands automatisch ändern
+  const attention=busy||u.reboot_pending||u.state==="failed"||u.state==="refused"||(u.available>0);
+  let badge="nicht geprüft", cls="ok";
+  if(busy) {badge=u.state==="rebooting"?"Neustart…":"läuft…"; cls="attn";}
+  else if(u.reboot_pending) {badge="Neustart nötig"; cls="attn";}
+  else if(u.state==="failed"||u.state==="refused") {badge="Fehler"; cls="attn";}
+  else if(u.available>0) {badge=u.available+" Updates verfügbar"; cls="attn";}
+  else if(u.last_check||u.state==="done") {badge="aktuell"; cls="ok";}
+  $("updbadge").textContent=badge; $("updbadge").className="badge "+cls;
+  if(window._updAttn!==attention){ $("updcard").open=attention; window._updAttn=attention; }
+}
+async function updPost(mode,confirm){
+  const r=await fetch("/api/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,confirm})});
+  if(!r.ok) alert((await r.json()).error); tick();
+}
+$("u_check").onclick=()=>updPost("check");
+$("u_dry").onclick=()=>updPost("dry");
+$("u_run").onclick=()=>{
+  if(confirm("System-Update installieren?\n\n• Es darf KEINE Übertragung laufen.\n• Strom nicht trennen: bei einem Kernel-Update kann die Box sonst unbrauchbar werden.\n• Danach ist meist ein Neustart nötig, und die Kameras müssen neu geprüft werden.\n• Ein automatisches Zurückrollen gibt es nicht.")) updPost("run",true);
+};
+$("u_reboot").onclick=()=>{ if(confirm("Box jetzt neu starten?")) updPost("reboot",true); };
+$("upddet").addEventListener("toggle",tick);
+
+const DJI_STATE={connecting:"Verbinde…",pairing:"Koppeln…",preparing:"Vorbereiten…",wifi:"WLAN wird übergeben…",starting:"Stream startet…",streaming:"Streamt",stopping:"Beende…",failed:"Fehler",idle:""};
+function djiRender(d){
+  if(!d.available){ $("djinote").textContent=d.reason||"Bluetooth nicht verfügbar"; $("d_scan").disabled=true; $("djilist").innerHTML=""; $("djilist").dataset.sig=""; return; }
+  $("d_scan").disabled=d.scanning; $("d_scan").textContent=d.scanning?"Suche läuft (30 s)…":"Nach DJI-Kameras suchen";
+  const netDown=d.net&&d.net.iface&&!d.net.ip;
+  $("djinote").textContent=netDown?`Das Kameranetz (${d.net.iface}) ist nicht verfügbar. Router prüfen: eingeschaltet, per USB verbunden, im USB-Modus? Solange es fehlt, können die Kameras nicht zur Box streamen.`:(d.scan_error||"");
+  $("djinote").style.color=(d.scan_error||netDown)?"var(--crit)":"";
+  const S=d.sessions||{}, box=$("djilist");
+  const sess=x=>S[x.address.toUpperCase()]||{state:"idle",message:""};
+  const act=s=>!["idle","failed"].includes(s.state);
+  const sig=JSON.stringify([(d.devices||[]).map(x=>[x.address,x.model_name,x.name,!!x.offline]),!!d.scanning]);
+  if(box.dataset.sig!==sig){
+    box.dataset.sig=sig;
+    box.innerHTML=(d.devices&&d.devices.length)?d.devices.map(x=>
+      `<div class="cam" data-addr="${esc(x.address)}"><div class="top"><span><span class="dot off"></span><b class="dname">${esc(x.model_name)}</b><button type="button" class="sec dren" data-addr="${esc(x.address)}" title="Kamera umbenennen" style="padding:2px 8px;font-size:12px;margin-left:6px">Umbenennen</button> <span class="muted">${esc(x.model_name)} · ${esc(x.name)}<span class="sens"> · ${esc(x.address)}</span><span class="rssi"></span></span></span>
+      <span><button data-djistart="${esc(x.address)}">Verbinden &amp; streamen</button><button class="del" data-djistop="${esc(x.address)}" hidden>Stoppen</button></span></div>
+      <div class="add dset" data-addr="${esc(x.address)}"><select data-k="resolution"><option value="1080p">1080p</option><option value="720p">720p</option><option value="480p">480p</option></select><select data-k="fps"><option value="30">30 fps</option><option value="25">25 fps</option></select><label class="muted" style="flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;white-space:nowrap">Bitrate <input data-k="mbit" type="number" min="1" max="20" step="0.5" style="width:80px"> Mbit/s</label><select data-k="stabilization"><option value="off">Stab. aus</option><option value="rockSteady">RockSteady</option><option value="rockSteadyPlus">RockSteady+</option><option value="horizonBalancing">Horizont</option><option value="horizonSteady">HorizonSteady</option></select></div>
+      <div class="ph djst"></div></div>`).join(""):(d.scanning?"":'<div class="muted" style="margin-top:8px">Noch keine DJI-Kamera gefunden. Kamera einschalten, Bluetooth aktivieren, nahe an die Box legen und suchen.</div>');
+  }
+  for(const x of (d.devices||[])){
+    const row=box.querySelector(`.cam[data-addr="${x.address}"]`); if(!row) continue;
+    const s=sess(x), busy=act(s);
+    const cam=camsByKey[djiKey(x.address)];
+    row.querySelector(".dname").textContent=cam?cam.name:x.model_name;      // selbst vergebener Name, sonst Modell
+    row.querySelector(".dren").hidden=!cam;                                   // Umbenennen geht, sobald die Kamera angelegt ist
+    row.querySelector(".dot").className="dot "+(s.state==="streaming"?"":(busy?"unk":"off"));
+    row.querySelector(".rssi").textContent=x.rssi!=null?" · "+x.rssi+" dBm":"";
+    const st=row.querySelector("[data-djistart]"), sp=row.querySelector("[data-djistop]");
+    st.hidden=busy||!!x.offline; sp.hidden=!busy;
+    const cfg=(d.settings||{})[x.address.toUpperCase()]||d.defaults||{};
+    const ctl=row.querySelector(".dset");
+    if(!ctl.contains(document.activeElement) && !ctl.dataset.busy){
+      ctl.querySelector('[data-k="resolution"]').value=cfg.resolution||"1080p";
+      ctl.querySelector('[data-k="fps"]').value=String(cfg.fps||30);
+      ctl.querySelector('[data-k="mbit"]').value=((cfg.bitrate_kbps||6000)/1000);
+      ctl.querySelector('[data-k="stabilization"]').value=cfg.stabilization||"off";
+    }
+    const line=row.querySelector(".djst");
+    line.textContent=s.state&&s.state!=="idle"?((DJI_STATE[s.state]||s.state)+(s.message?": "+s.message:"")):(x.offline?"Ausgeschaltet oder außer Reichweite. Einschalten und \u201eNach DJI-Kameras suchen\u201c drücken. Einstellungen bleiben änderbar.":"");
+    line.style.color=s.state==="failed"?"var(--crit)":"";
+  }
+  $("djiwifistate").textContent=d.wifi&&d.wifi.saved?`Gespeichert: ${d.wifi.ssid} (Passwort wird nie angezeigt)`:"Noch keine WLAN-Daten gespeichert.";
+  if(d.wifi&&d.wifi.ssid&&!$("d_ssid").value&&document.activeElement!==$("d_ssid")) $("d_ssid").value=d.wifi.ssid;
+  $("djisession").textContent="";
+}
+const djiKey=a=>"dji-"+a.replace(/:/g,"").toLowerCase().slice(-6);
+$("djilist").addEventListener("click",async e=>{
+  const b=e.target.closest&&e.target.closest(".dren"); if(!b) return;
+  const cam=camsByKey[djiKey(b.dataset.addr)]; if(cam) await renameCam(cam.id,cam.name);
+});
+$("djilist").addEventListener("change",async e=>{
+  const ctl=e.target.closest&&e.target.closest(".dset"); if(!ctl) return;
+  const v=k=>ctl.querySelector(`[data-k="${k}"]`).value;
+  const body={address:ctl.dataset.addr,resolution:v("resolution"),fps:+v("fps"),bitrate_kbps:Math.round(parseFloat(v("mbit"))*1000),stabilization:v("stabilization")};
+  ctl.dataset.busy="1";
+  const r=await fetch("/api/dji/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  delete ctl.dataset.busy;
+  if(!r.ok){ $("djierr").textContent=(await r.json()).error; } else { $("djierr").textContent=""; }
+  tick();
+});
+$("d_scan").onclick=async()=>{ $("djierr").textContent=""; const r=await fetch("/api/dji/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); if(!r.ok) $("djierr").textContent=(await r.json()).error; tick(); };
+$("djiwifi").addEventListener("submit",async e=>{ e.preventDefault(); $("djierr").textContent="";
+  const r=await fetch("/api/dji/wifi",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ssid:$("d_ssid").value,password:$("d_pw").value})});
+  if(!r.ok) $("djierr").textContent=(await r.json()).error; else $("d_pw").value=""; tick(); });
+$("djilist").addEventListener("click",async e=>{
+  const st=e.target.dataset&&e.target.dataset.djistart;
+  if(e.target.dataset&&e.target.dataset.djistop){ await fetch("/api/dji/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({address:e.target.dataset.djistop})}); tick(); return; }
+  if(!st) return; $("djierr").textContent="";
+  const r=await fetch("/api/dji/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({address:st})});
+  if(!r.ok) $("djierr").textContent=(await r.json()).error; tick(); });
+
+let netBusy=false;
+async function netRender(){
+  const r=await fetch("/api/network"); if(!r.ok) return; const d=await r.json();
+  const sel=$("netsel"); if(document.activeElement===sel||netBusy) return;
+  sel.innerHTML=d.options.map(o=>`<option value="${esc(o.iface)}"${(d.selected?o.iface===d.selected:o.ip===d.ip)?" selected":""}>${esc(o.label)} · ${esc(o.cam_ip||o.ip)}${o.cam_ip&&o.cam_ip!==o.ip?" (feste Adresse)":""}</option>`).join("")||"<option>keine Netzwerke</option>";
+  $("netinfo").textContent=`Adresse für die Kamera: rtmp://${d.ip}:1935/publish/<Schlüssel>`+(d.selected?"":" (Standardweg, noch nicht gewählt)");
+}
+$("netsel").addEventListener("change",async e=>{ netBusy=true;
+  const r=await fetch("/api/network",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({iface:e.target.value})});
+  netBusy=false; if(!r.ok) $("djierr").textContent=(await r.json()).error; netRender(); tick(); });
+
+let srtlaEdit=null, srtlaData=null;
+async function srtlaCall(method,url,body){
+  const r=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||"Fehler"); return j;
+}
+let lastNet=null;
+function setRates(net){ lastNet=net; document.querySelectorAll("[data-rate]").forEach(e=>{ const r=net[e.dataset.rate]; e.textContent=r?fmt(r.tx_mbit):"–"; }); }
+$("b_ups").addEventListener("change",async e=>{
+  const iface=e.target.dataset&&e.target.dataset.up; if(!iface||!srtlaData) return;
+  const st=srtlaData.settings, ups=new Set(st.uplinks); e.target.checked?ups.add(iface):ups.delete(iface);
+  $("neterr").textContent="";
+  try{ await srtlaCall("POST","/api/srtla/settings",{uplinks:[...ups]}); $("upinfo").textContent="Sendewege gespeichert. Die Änderung wirkt innerhalb weniger Sekunden, ohne Neustart."; }
+  catch(x){ $("neterr").textContent=x.message; }
+  srtlaLoad();
+});
+async function srtlaLoad(){
+  try{ srtlaData=await srtlaCall("GET","/api/srtla"); }catch(e){ return; }
+  const d=srtlaData, sel=$("srv_sel");
+  sel.innerHTML=d.servers.length?d.servers.map(s=>`<option value="${esc(s.id)}"${s.id===d.selected?" selected":""}>${esc(s.name)} · ${esc(s.host)}:${s.port}${s.has_streamid?" · Stream-ID gespeichert":""}</option>`).join(""):"<option value=\"\">Noch kein Server angelegt</option>";
+  $("srv_edit").disabled=$("srv_del").disabled=!d.servers.length;
+  const st=d.settings;
+  if(document.activeElement.id!=="b_min") $("b_min").value=st.min_kbps;
+  if(document.activeElement.id!=="b_max") $("b_max").value=st.max_kbps;
+  if(document.activeElement.id!=="b_lat") $("b_lat").value=st.latency_ms;
+  if(document.activeElement.id!=="b_spread") $("b_spread").value=st.spread||"best";
+  $("b_ups").innerHTML=(d.interfaces||[]).map(o=>`<div class="wstat${o.ip?" ok":""}"><span class="wdot"></span><span class="wgrow"><b>${esc(o.label)}</b> · ${esc(o.ip)}</span><span class="muted"><b data-rate="${esc(o.iface)}">–</b> Mbit/s ↑</span><label><input type="checkbox" data-up="${esc(o.iface)}"${st.uplinks.includes(o.iface)?" checked":""}> Zum Senden verwenden</label></div>`).join("")+(st.uplinks||[]).filter(u=>!(d.interfaces||[]).some(o=>o.iface===u)).map(u=>`<div class="wstat"><span class="wdot"></span><span class="wgrow"><b>${esc(u)}</b> · gerade nicht verbunden</span><label><input type="checkbox" data-up="${esc(u)}" checked> Zum Senden verwenden</label></div>`).join("");
+  if(!$("b_ups").innerHTML) $("b_ups").innerHTML='<span class="muted">keine Netzwerke gefunden</span>';
+  if(lastNet) setRates(lastNet);
+  const cur=d.servers.find(s=>s.id===d.selected);
+  if(wifiData) wifiLoad();
+  $("srtlainfo").textContent=cur?`Gewählter Server: ${cur.name} (${cur.host}:${cur.port}). `:"Legen Sie einen Server an, um ihn später zum Senden zu wählen.";
+}
+function srtlaFormReset(){ srtlaEdit=null; $("srvform").reset(); $("srv_save").textContent="Server hinzufügen"; $("srv_cancel").hidden=true; $("s_sid").placeholder="Stream-ID (optional)"; }
+$("srv_sel").addEventListener("change",async e=>{ if(!e.target.value) return; try{ await srtlaCall("POST","/api/srtla/select",{id:e.target.value}); $("srtlaerr").textContent=""; }catch(x){ $("srtlaerr").textContent=x.message; } srtlaLoad(); askRestart(); });
+$("srv_edit").addEventListener("click",()=>{
+  const s=srtlaData&&srtlaData.servers.find(x=>x.id===$("srv_sel").value); if(!s) return;
+  srtlaEdit=s.id; $("s_name").value=s.name; $("s_host").value=s.host; $("s_port").value=s.port; $("s_sid").value="";
+  $("s_sid").placeholder=s.has_streamid?"Stream-ID (leer lassen = behalten)":"Stream-ID (optional)";
+  $("srv_save").textContent="Änderungen speichern"; $("srv_cancel").hidden=false; $("s_name").focus();
+});
+$("srv_cancel").addEventListener("click",srtlaFormReset);
+$("srv_del").addEventListener("click",async()=>{
+  const id=$("srv_sel").value; if(!id||!confirm("Diesen Server löschen?")) return;
+  try{ await srtlaCall("DELETE","/api/srtla/"+id); $("srtlaerr").textContent=""; }catch(x){ $("srtlaerr").textContent=x.message; } srtlaFormReset(); srtlaLoad(); askRestart();
+});
+$("srvform").addEventListener("submit",async e=>{
+  e.preventDefault(); $("srtlaerr").textContent="";
+  const body={name:$("s_name").value,host:$("s_host").value,port:+$("s_port").value,streamid:$("s_sid").value};
+  try{ if(srtlaEdit) await srtlaCall("POST","/api/srtla/"+srtlaEdit,body); else await srtlaCall("POST","/api/srtla",body); srtlaFormReset(); }
+  catch(x){ $("srtlaerr").textContent=x.message; } srtlaLoad(); askRestart();
+});
+$("b_save").addEventListener("click",async()=>{
+  $("srtlaerr").textContent="";
+  const ups=[...document.querySelectorAll("#b_ups [data-up]")].filter(c=>c.checked).map(c=>c.dataset.up);   // Häkchen sind schon gespeichert
+  try{ await srtlaCall("POST","/api/srtla/settings",{min_kbps:+$("b_min").value,max_kbps:+$("b_max").value,latency_ms:+$("b_lat").value,uplinks:ups,spread:$("b_spread").value}); $("srtlainfo").textContent=(sendData&&sendData.active)?"Gespeichert. Gilt erst nach einem Neustart der Sendung (Knopf oben bei Live).":"Einstellungen gespeichert. Gilt ab dem nächsten Start der Sendekette."; srtlaLoad(); askRestart(); }
+  catch(x){ $("srtlaerr").textContent=x.message; }
+});
+srtlaLoad();
+
+// ---- WLAN ----
+let wifiData=null, wifiTimer=null, wifiSig=null;
+async function wifiLoad(){
+  let d; try{ d=await srtlaCall("GET","/api/wifi"); }catch(e){ return; }
+  wifiData=d;
+  const sel=$("w_if"), cur=sel.value, usable=d.cards.filter(c=>!c.camera_net);
+  if(document.activeElement!==sel){
+    sel.innerHTML=usable.map(c=>`<option value="${esc(c.iface)}">${esc(c.iface)}${c.ip?" · "+esc(c.ip):""}</option>`).join("")||'<option value="">keine WLAN-Karte</option>';
+    if(usable.some(c=>c.iface===cur)) sel.value=cur;
+  }
+  const ups=((srtlaData&&srtlaData.settings)||{}).uplinks||[];
+  $("wifidev").innerHTML=d.cards.length?d.cards.map(c=>c.camera_net?`<div class="wstat"><span class="wdot"></span><span class="wgrow"><b>${esc(c.iface)}</b> · Kameranetz (hier nicht änderbar)</span></div>`:
+    `<div class="wstat${c.ip?" ok":""}"><span class="wdot"></span><span class="wgrow"><b>${esc(c.iface)}</b> · ${c.ip?`verbunden${c.ssid?" mit <b>"+esc(c.ssid)+"</b>":""} · ${esc(c.ip)}${c.signal!=null?" · Signal "+c.signal+" %":""}`:"nicht verbunden"}</span>`+
+    (c.ip?`<label title="Sendet die Box auch über dieses Netz. Danach Sendekette neu starten."><input type="checkbox" data-wup="${esc(c.iface)}"${ups.includes(c.iface)?" checked":""}> Zum Senden verwenden</label>`:"")+`</div>`).join(""):'<div class="ph">Keine WLAN-Karte gefunden.</div>';
+  const sig=d.cards.map(c=>c.iface+":"+c.ip).join("|");
+  if(wifiSig!==null&&sig!==wifiSig) srtlaLoad();          // neue Verbindung: Liste der Sendewege unten aktualisieren
+  wifiSig=sig;
+  const nets=(d.scan&&d.scan.nets)||[];
+  const bars=p=>"▂▄▆█".split("").map((c,i)=>`<span style="color:${p>=(i+1)*25-12?"var(--ok)":"var(--line)"}">${c}</span>`).join("");
+  $("wifinets").innerHTML=nets.length?`<div class="muted" style="margin-bottom:4px">Gefundene Netze – Zeile anklicken zum Übernehmen:</div><div class="wlist">`+nets.map(n=>
+    `<a href="#" class="wrow${n.in_use?" cur":""}" data-ssid="${esc(n.ssid)}"><span class="wname">${esc(n.ssid)}</span><span class="wsig">${bars(n.signal)} ${n.signal} %</span><span class="wsec">${n.security&&n.security!=="offen"?"🔒 "+esc(n.security):"offen"}</span>${n.in_use?'<span class="wuse">verbunden</span>':""}</a>`).join("")+"</div>":"";
+  $("wifisaved").innerHTML=(d.saved||[]).length?"Gespeicherte Netze: "+d.saved.map(s=>`${esc(s)} <a href="#" data-forget="${esc(s)}">vergessen</a>`).join(" · "):"";
+  $("wifimsg").textContent=d.helper_installed?(d.message||""):"Der WLAN-Helfer ist auf dieser Box noch nicht installiert (install.sh erneut ausführen).";
+  $("w_scan").disabled=$("w_connect").disabled=$("w_disc").disabled=!d.helper_installed||d.state==="working";
+  if(d.state==="working"){ $("wifimsg").textContent="Läuft …"; clearTimeout(wifiTimer); wifiTimer=setTimeout(wifiLoad,1500); }
+}
+async function wifiDo(body,busy){
+  $("wifimsg").textContent=busy;
+  try{ await srtlaCall("POST","/api/wifi",body); }catch(x){ $("wifimsg").textContent=x.message; return; }
+  clearTimeout(wifiTimer); wifiTimer=setTimeout(wifiLoad,1200);
+}
+$("w_scan").addEventListener("click",()=>wifiDo({action:"scan",iface:$("w_if").value},"Suche läuft …"));
+$("w_connect").addEventListener("click",async()=>{
+  const body={action:"connect",iface:$("w_if").value,ssid:$("w_ssid").value,password:$("w_pw").value,hidden:$("w_hidden").checked};
+  await wifiDo(body,"Verbinde …"); $("w_pw").value="";
+});
+$("w_disc").addEventListener("click",()=>wifiDo({action:"disconnect",iface:$("w_if").value},"Trenne …"));
+$("wificard").addEventListener("change",async e=>{
+  const iface=e.target.dataset&&e.target.dataset.wup; if(!iface||!srtlaData) return;
+  const st=srtlaData.settings, ups=new Set(st.uplinks); e.target.checked?ups.add(iface):ups.delete(iface);
+  try{
+    await srtlaCall("POST","/api/srtla/settings",{uplinks:[...ups]});
+    $("wifimsg").textContent=(e.target.checked?"Zum Senden gespeichert":"Nicht mehr zum Senden")+". Die Änderung wirkt innerhalb weniger Sekunden, ohne Neustart.";
+  }catch(x){ $("wifimsg").textContent=x.message; e.target.checked=!e.target.checked; }
+  srtlaLoad();
+});
+$("wificard").addEventListener("click",e=>{
+  const a=e.target.closest("a"); if(!a) return; e.preventDefault();
+  if(a.dataset.ssid!==undefined) $("w_ssid").value=a.dataset.ssid;
+  if(a.dataset.forget!==undefined) wifiDo({action:"forget",ssid:a.dataset.forget},"Wird vergessen …");
+});
+wifiLoad(); setInterval(()=>{ if(!["w_if","w_ssid","w_pw"].includes(document.activeElement.id)) wifiLoad(); },10000);
+
+const FREE_ID="5";
+let posFree={1:{x:500,y:500},2:{x:500,y:500},3:{x:500,y:500}};
+let pipeData=null, pipeDirty=false, pipDelayDirty=false, pipLive={}, pipCams=[], pipCorners=[];
+const DL=[["p_delay","n_delay","v_delay","main_delay_ms"],["p_delay1","n_delay1","v_delay1","pip_delay_ms"],["p_delay2","n_delay2","v_delay2","pip2_delay_ms"],["p_delay3","n_delay3","v_delay3","pip3_delay_ms"]];
+function setDelays(vals){
+  DL.forEach(([r,n,v],i)=>{
+    const x=Math.max(0,Math.min(3000,+vals[i]||0));
+    const act=document.activeElement.id;
+    if(act===r||act===n) return;
+    $(r).max=3000; $(r).value=x; $(n).value=x; $(v).textContent=x;
+  });
+}
+function delayBody(){ const o={}; DL.forEach(([r,n,v,k])=>{ o[k]=+($(n).value||0); }); return o; }
+const isDelayCtl=id=>DL.some(([r,n])=>id===r||id===n);
+// Der Schlüssel in Klammern erscheint nur, wenn zwei Kameras denselben Namen tragen (sonst reicht der Name)
+const pipOpt=(k,sel)=>`<option value="${esc(k.key)}"${k.key===sel?" selected":""}>${esc(k.name)}${pipCams.filter(x=>x.name===k.name).length>1?" ("+esc(k.key)+")":""}${k.state==="live"?" · sendet":""}</option>`;
+// Dieselbe Kamera oder dieselbe Ecke darf nicht doppelt gewählt werden. Vorrang: Hauptbild vor erstem kleinen
+// Bild vor zweitem; Ecke 1 vor Ecke 2. Schon belegte Einträge stehen in den anderen Feldern gar nicht mehr zur Wahl.
+// Vorschau: die kleinen Bilder lassen sich mit Maus oder Finger verschieben (dann gilt "frei (verschiebbar)")
+function renderPreview(){
+  const box=$("pvbox"); if(!box) return;
+  const W=box.clientWidth||520, H=Math.round(W*9/16); box.style.height=H+"px";
+  const size=Math.max(15,Math.min(40,+$("p_size").value||25));
+  const pw=W*size/100, ph=pw*9/16, m=W/60, canFree=pipCorners.length>5;
+  const nm=k=>{ const x=pipCams.find(y=>y.key===k); return x?x.name:k; };
+  let out='<div class="pvmain">Hauptbild: '+esc(nm($("p_main").value))+'</div>';
+  [["p_pip","p_corner",1],["p_pip2","p_corner2",2],["p_pip3","p_corner3",3]].forEach(([cs,co,k])=>{
+    const cam=$(cs).value; if(!cam) return;
+    const c=+$(co).value, f=posFree[k]; let x,y;
+    if(c===5){ x=f.x/1000*(W-pw); y=f.y/1000*(H-ph); }
+    else if(c===4){ x=(W-pw)/2; y=H-ph-m; }
+    else { x=(c&1)?W-pw-m:m; y=(c&2)?H-ph-m:m; }
+    out+=`<div class="pvpip pv${k}" data-k="${k}" data-co="${co}" style="left:${x}px;top:${y}px;width:${pw}px;height:${ph}px"><b>${k}</b><span>${esc(nm(cam))}</span></div>`;
+  });
+  box.innerHTML=out;
+  $("pvnote").textContent=canFree?"Bilder mit Maus oder Finger ziehen. Danach „Bildaufbau speichern“.":"Freies Verschieben braucht den neuen Überlagerungs-Baustein (kommt beim Software-Update).";
+}
+(function(){
+  const box=$("pvbox"); let drag=null;
+  box.addEventListener("pointerdown",e=>{
+    const el=e.target.closest(".pvpip"); if(!el||pipCorners.length<=5) return;
+    e.preventDefault(); box.setPointerCapture(e.pointerId);
+    const r=el.getBoundingClientRect(); drag={el,k:+el.dataset.k,co:el.dataset.co,dx:e.clientX-r.left,dy:e.clientY-r.top};
+    el.classList.add("drag");
+  });
+  box.addEventListener("pointermove",e=>{
+    if(!drag) return;
+    const b=box.getBoundingClientRect(), W=b.width, H=b.height, w=drag.el.offsetWidth, h=drag.el.offsetHeight;
+    const x=Math.max(0,Math.min(W-w,e.clientX-b.left-drag.dx)), y=Math.max(0,Math.min(H-h,e.clientY-b.top-drag.dy));
+    drag.el.style.left=x+"px"; drag.el.style.top=y+"px";
+    posFree[drag.k]={x:W>w?Math.round(x/(W-w)*1000):0,y:H>h?Math.round(y/(H-h)*1000):0};
+  });
+  const end=()=>{
+    if(!drag) return;
+    drag.el.classList.remove("drag");
+    $(drag.co).value=FREE_ID;                       // "frei (verschiebbar)" wählen
+    pipeDirty=true; $("pipeerr").textContent="Nicht gespeichert: Mit „Bildaufbau speichern“ übernehmen.";
+    drag=null;
+  };
+  box.addEventListener("pointerup",end); box.addEventListener("pointercancel",end);
+  window.addEventListener("resize",()=>renderPreview());
+})();
+function pipConstrain(v){
+  v=v||{main:$("p_main").value,pip:$("p_pip").value,pip2:$("p_pip2").value,pip3:$("p_pip3").value,c1:$("p_corner").value,c2:$("p_corner2").value,c3:$("p_corner3").value};
+  const has=k=>pipCams.some(x=>x.key===k), free=ex=>pipCams.filter(x=>!ex.includes(x.key));
+  const main=has(v.main)?v.main:((pipCams[0]||{}).key||"");
+  const pip=(has(v.pip)&&v.pip!==main)?v.pip:((free([main])[0]||{}).key||"");
+  const pip2=(has(v.pip2)&&v.pip2!==main&&v.pip2!==pip)?v.pip2:"";
+  const pip3=(pip2&&has(v.pip3)&&v.pip3!==main&&v.pip3!==pip&&v.pip3!==pip2)?v.pip3:"";
+  const fill=(id,list,val,none)=>{
+    const el=$(id); el.innerHTML=(none?'<option value="">keins</option>':"")+(list.map(k=>pipOpt(k,val)).join("")||(none?"":'<option value="">keine Kamera</option>'));
+    el.value=val;
+  };
+  fill("p_main",pipCams,main,false); fill("p_pip",free([main]),pip,false); fill("p_pip2",free([main,pip]),pip2,true); fill("p_pip3",pip2?free([main,pip,pip2]):[],pip3,true);
+  const ids=pipCorners.map((n,i)=>String(i));
+  const taken=(i,used)=>i!==FREE_ID&&used.includes(i);     // feste Ecken nur einmal, "frei" beliebig oft
+  const c1=ids.includes(String(v.c1))?String(v.c1):"3";
+  let c2=String(v.c2); if(taken(c2,[c1])||!ids.includes(c2)) c2=ids.find(i=>!taken(i,[c1]))||"";
+  $("p_corner").innerHTML=pipCorners.map((n,i)=>`<option value="${i}">${esc(n)}</option>`).join(""); $("p_corner").value=c1;
+  $("p_corner2").innerHTML=pipCorners.map((n,i)=>taken(String(i),[c1])?"":`<option value="${i}">${esc(n)}</option>`).join(""); $("p_corner2").value=c2;
+  let c3=String(v.c3); if(taken(c3,[c1,c2])||!ids.includes(c3)) c3=ids.find(i=>!taken(i,[c1,c2]))||"";
+  $("p_corner3").innerHTML=pipCorners.map((n,i)=>taken(String(i),[c1,c2])?"":`<option value="${i}">${esc(n)}</option>`).join(""); $("p_corner3").value=c3;
+  const nm=k=>{ const x=pipCams.find(y=>y.key===k); return x?x.name:k; };
+  const au=$("p_audio"), prev=au.value;
+  au.innerHTML=[["main","Hauptbild",main],["pip","Kleines Bild 1",pip],["pip2","Kleines Bild 2",pip2],["pip3","Kleines Bild 3",pip3]]
+    .filter(x=>x[2]).map(x=>`<option value="${x[0]}">${x[1]} (${esc(nm(x[2]))})</option>`).join("");
+  au.value=[...au.options].some(o=>o.value===prev)?prev:"main";
+  $("p_corner2").disabled=!pip2; $("p_pip3").disabled=!pip2; $("p_corner3").disabled=!pip3;
+  $("dl2").style.display=pip2?"":"none"; $("dl3").style.display=pip3?"":"none";
+  renderPreview();
+}
+async function pipeLoad(){
+  try{ pipeData=await srtlaCall("GET","/api/pipeline"); }catch(e){ return; }
+  const d=pipeData, c=d.config;
+  pipCams=d.cameras; pipCorners=d.corners;
+  pipLive=d.live||{};
+  if(pipeDirty||pipDelayDirty){ $("pipeprev").textContent=d.preview||""; return; }   // ungespeicherte Eingaben nicht überschreiben
+  if(document.activeElement.id!=="p_type") $("p_type").value=c.type;
+  if(document.activeElement.id!=="p_auto") $("p_auto").checked=c.auto_failover!==false;
+  posFree={1:{x:c.x??500,y:c.y??500},2:{x:c.x2??500,y:c.y2??500},3:{x:c.x3??500,y:c.y3??500}};
+  pipConstrain({main:c.main,pip:c.pip,pip2:c.pip2,pip3:c.pip3,c1:c.corner,c2:c.corner2??2,c3:c.corner3??0});
+  if(document.activeElement.id!=="p_size") $("p_size").value=c.size_pct;
+  renderPreview();
+  setDelays([c.main_delay_ms,c.pip_delay_ms,c.pip2_delay_ms,c.pip3_delay_ms]);
+  pipLive=d.live||{};
+  $("p_audio").value=c.audio;
+  document.querySelectorAll(".piponly").forEach(e=>e.hidden=$("p_type").value!=="pip");
+  $("pipeprev").textContent=d.preview||"(noch keine Hauptkamera gewählt)";
+  let info=c.main?`Gespeichert: ${c.type==="pip"?"Bild-in-Bild":"eine Kamera"}, Hauptbild ${c.main}${c.type==="pip"?", kleines Bild "+c.pip+(c.pip2?(c.pip3?", ":" und ")+c.pip2:"")+(c.pip3?" und "+c.pip3:""):""}.`:"Noch keine Pipeline gespeichert.";
+  if(d.needs_plugin&&!d.plugin_present) info+=" Bild-in-Bild braucht den Überlagerungs-Baustein, der noch nicht auf der Box installiert ist.";
+  $("pipeinfo").textContent=info;
+}
+$("p_type").addEventListener("change",()=>document.querySelectorAll(".piponly").forEach(e=>e.hidden=$("p_type").value!=="pip"));
+$("pipecard").addEventListener("input",e=>{
+  const id=e.target.id||"";
+  if(id==="p_size") renderPreview();
+  if(isDelayCtl(id)){                       // Regler und Zahlenfeld synchron halten
+    const row=DL.find(([r,n])=>id===r||id===n), val=Math.max(0,Math.min(3000,+e.target.value||0));
+    $(row[0]).value=val; if(id!==row[1]) $(row[1]).value=val; $(row[2]).textContent=val;
+    pipDelayDirty=true; return;
+  }
+  pipeDirty=true; $("pipeerr").textContent="Nicht gespeichert: Mit „Bildaufbau speichern“ übernehmen.";
+});
+$("pipecard").addEventListener("change",async e=>{
+  if(isDelayCtl(e.target.id||"")){
+    const row=DL.find(([r,n])=>(e.target.id===r||e.target.id===n));
+    const liveOk=(row[3]==="main_delay_ms"?pipLive.main:pipLive.pips);
+    if(!pipeDirty&&liveOk){                 // läuft die Kette mit Steuerbaustein: sofort übernehmen, ohne Neustart
+      await pipSave();
+    }else{
+      pipeDirty=true;
+      $("pipeerr").textContent=pipLive.main?"Nicht gespeichert: Mit „Bildaufbau speichern“ übernehmen (Sendekette startet kurz neu)."
+                                             :"Nicht gespeichert: Mit „Bildaufbau speichern“ übernehmen.";
+    }
+    return;
+  }
+  pipeDirty=true; pipConstrain();
+});
+async function pipSave(){
+  $("pipeerr").textContent="";
+  const body={type:$("p_type").value,main:$("p_main").value,pip:$("p_pip").value,corner:+$("p_corner").value,pip2:$("p_pip2").value,corner2:+$("p_corner2").value,pip3:$("p_pip3").value,corner3:+$("p_corner3").value,x:posFree[1].x,y:posFree[1].y,x2:posFree[2].x,y2:posFree[2].y,x3:posFree[3].x,y3:posFree[3].y,size_pct:+$("p_size").value,audio:$("p_audio").value,auto_failover:$("p_auto").checked,...delayBody()};
+  try{ const r=await srtlaCall("POST","/api/pipeline",body); pipeDirty=false; pipDelayDirty=false; $("pipeerr").textContent=(r&&r.note)||"Gespeichert."; }catch(x){ $("pipeerr").textContent=x.message; }
+  pipeLoad();
+}
+$("p_save").addEventListener("click",pipSave);
+pipeLoad(); setInterval(()=>{ if(!["p_main","p_pip","p_type","p_corner","p_pip2","p_corner2","p_pip3","p_corner3","p_size","p_auto","p_delay","n_delay","p_delay1","n_delay1","p_delay2","n_delay2","p_delay3","n_delay3","p_audio"].includes(document.activeElement.id)) pipeLoad(); },5000);
+
+const LIVE_LABEL={stopped:"Nicht live",starting:"Startet…",running:"LIVE",restarting:"Verbindung wird neu aufgebaut…",stopping:"Wird beendet…",refused:"Nicht gestartet"};
+let sendData=null, pendIgnored="";
+// Sendemodus: blendet Adressen, Namen und Protokolle aus (nur in diesem Browser gemerkt)
+const SM_LOCKED=["srtlacard","rcard"];
+function setSM(on){
+  document.body.classList.toggle("sm",on);
+  document.querySelector("#sm_btn .smtx").textContent="Sendemodus: "+(on?"an":"aus"); $("sm_btn").title="Sendemodus ist "+(on?"an":"aus"); $("sm_btn2").textContent="Sendemodus: "+(on?"an":"aus"); $("sm_btn2").classList.toggle("smon",on); $("sm_btn").classList.toggle("smon",on);
+  SM_LOCKED.forEach(id=>{ const c=$(id); c.classList.toggle("locked",on); if(on) c.open=false; });
+  $("srtlalock").hidden=!on; $("rlock").hidden=!on;
+  try{ localStorage.setItem("pb_sendemodus",on?"1":"0"); }catch(e){}
+}
+SM_LOCKED.forEach(id=>{
+  $(id).addEventListener("toggle",()=>{ if($(id).classList.contains("locked")&&$(id).open) $(id).open=false; });
+  $(id).querySelector("summary").addEventListener("click",e=>{ if($(id).classList.contains("locked")) e.preventDefault(); });
+});
+["sm_btn","sm_btn2"].forEach(i=>$(i).addEventListener("click",()=>setSM(!document.body.classList.contains("sm"))));
+let smStart=false; try{ smStart=localStorage.getItem("pb_sendemodus")==="1"; }catch(e){}
+async function sendLoad(){
+  let d; try{ d=await srtlaCall("GET","/api/send"); }catch(e){ return; }
+  sendData=d;
+  $("livestate").textContent=LIVE_LABEL[d.state]||d.state;
+  $("livestate").style.color=d.state==="running"?"var(--ok)":(d.state==="restarting"?"var(--warn)":(d.state==="refused"?"var(--crit)":""));
+  $("liveserver").textContent=d.server?"Server: "+d.server.name:"";
+  const pend=d.active&&d.pending&&d.pending.length?d.pending:[];
+  if(!pend.length) pendIgnored="";
+  $("livepending").hidden=!pend.length||pend.join("|")===pendIgnored;
+  if(pend.length) $("livepending_t").textContent="Noch nicht übernommen: "+pend.join(", ")+". Das gilt erst nach einem Neustart der Sendung.";
+  $("live_go").hidden=d.active; $("live_stop").hidden=!d.active;
+  $("live_go").disabled=!d.can_start;
+  const why=[]; if(d.state==="refused"&&d.message) why.push(d.message);
+  if(!d.active) why.push(...d.reasons);
+  if(d.active&&d.failover&&d.failover.waiting) why.push("Keine Kamera sendet, warte auf ein Signal");
+  else if(d.active&&d.failover&&d.failover.degraded){ const nm=k=>(camsByKey[k]||{}).name||k; why.push("Notbetrieb: es senden "+d.failover.layout.map(nm).join(", ")+" (fehlende Kameras kommen nach 60 s stabilem Signal zurück)"); }
+  if(d.active&&d.last&&d.last_age!=null&&d.last_age<180) why.push(d.last);      // alte Meldungen verschwinden von selbst
+  if(d.active&&d.restarts){ const e=d.restarts.belacoder||0, n=d.restarts.srtla_send||0;
+    if(e||n) why.push("Seit dem Start automatisch neu gestartet: "+[e?`Encoder ${e}×`:"",n?`Netzverbindung ${n}×`:""].filter(Boolean).join(", ")); }
+  $("livewhy").textContent=why.join(" · ");
+}
+async function askRestart(){
+  await sendLoad();
+  const pend=sendData&&sendData.active&&sendData.pending||[];
+  if(!pend.length||$("rdlg").open) return;
+  $("rdlg_t").textContent="Geändert: "+pend.join(", ")+". Das gilt erst nach einem Neustart der Sendung.";
+  $("rdlg").showModal();
+}
+$("live_ignore").addEventListener("click",()=>{ pendIgnored=(sendData&&sendData.pending||[]).join("|"); $("livepending").hidden=true; });   // bis sich etwas Neues ändert
+$("rdlg_go").addEventListener("click",async()=>{ $("rdlg").close(); await restartNow(); });
+async function restartNow(){
+  try{ await srtlaCall("POST","/api/send",{action:"restart",confirm:true}); $("liveerr").textContent=""; }catch(x){ $("liveerr").textContent=x.message; }
+  sendLoad();
+}
+$("live_restart").addEventListener("click",async()=>{
+  if(!confirm("Die Sendung jetzt kurz neu starten?\n\nDas Bild ist dabei einige Sekunden weg.")) return;
+  try{ await srtlaCall("POST","/api/send",{action:"restart",confirm:true}); $("liveerr").textContent=""; }catch(x){ $("liveerr").textContent=x.message; }
+  sendLoad();
+});
+$("live_go").addEventListener("click",async()=>{
+  const s=sendData&&sendData.server; if(!s) return;
+  if(!confirm(`Jetzt LIVE senden?\n\nZiel: ${s.name}\n\nDas Bild wird sofort zum Server übertragen.`)) return;
+  try{ await srtlaCall("POST","/api/send",{action:"start",confirm:true}); $("liveerr").textContent=""; }catch(x){ $("liveerr").textContent=x.message; }
+  setTimeout(sendLoad,800);
+});
+$("live_stop").addEventListener("click",async()=>{
+  try{ await srtlaCall("POST","/api/send",{action:"stop"}); }catch(x){ $("liveerr").textContent=x.message; }
+  setTimeout(sendLoad,800);
+});
+sendLoad(); setInterval(sendLoad,2000);
+let rBusy=false, rDeclinedMem=false;
+const R_STATE={Running:"verbunden",NeedsLogin:"Anmeldung nötig",Stopped:"getrennt",NoState:"startet …",Starting:"startet …"};
+async function rLoad(){
+  let d; try{ d=await srtlaCall("GET","/api/remote"); }catch(e){ return; }
+  rBusy=d.state==="working";
+  $("r_badge").textContent=!d.installed?"nicht installiert":(rBusy?"läuft …":(R_STATE[d.backend]||d.backend||"–")+(d.connected&&d.serve?", freigegeben":""));
+  $("r_badge").className="badge "+(d.connected&&d.serve?"ok":"attn");
+  const info=$("r_info"); info.innerHTML="";
+  if(d.installed&&d.connected){ for(const [k,v] of [["Gerätename",d.name],["Adresse im Tailscale-Netz",d.ip],["Tailscale-Netz",d.tailnet]]){ if(!v) continue; const r=document.createElement("div"); r.className="row"; const a=document.createElement("span"); a.textContent=k; const b=document.createElement("b"); b.textContent=v; r.append(a,b); info.append(r); } }
+  const login=d.login_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.login_url);
+  $("r_login").hidden=!login; if(login) $("r_loginlink").href=d.login_url;
+  const ur=$("r_url_row"); ur.hidden=!(d.connected&&d.serve&&d.url); if(!ur.hidden){ $("r_url").textContent=d.url; $("r_url").href=d.url; }
+  const others=(d.peers||[]).filter(p=>p.name);
+  $("r_peers").textContent=d.connected?(others.length?"Weitere Geräte in Ihrem Netz: "+others.map(p=>p.name+" ("+(p.os||"?")+(p.online?", online":", offline")+")").join(", ")+".":"Noch kein weiteres Gerät in Ihrem Netz. Installieren Sie Tailscale auf Handy oder Rechner und melden Sie sich mit demselben Konto an."):"";
+  $("r_warn").hidden=!d.funnel;
+  const acts=$("r_actions"); acts.innerHTML="";
+  const add=(txt,act,cls,ask)=>{ const b=document.createElement("button"); b.type="button"; if(cls) b.className=cls; b.textContent=txt; b.disabled=rBusy||!d.helper_installed;
+    b.addEventListener("click",async()=>{ if(ask&&!confirm(ask)) return; try{ await srtlaCall("POST","/api/remote",{action:act,confirm:true}); $("r_msg").textContent="Wird ausgeführt …"; }catch(x){ $("r_msg").textContent=x.message; } setTimeout(rLoad,1200); }); acts.append(b); };
+  if(!d.installed){
+    let declined=rDeclinedMem; try{ declined=declined||localStorage.getItem("rDeclined")==="1"; }catch(e){}
+    const choice=(txt,cls,fn)=>{ const b=document.createElement("button"); b.type="button"; if(cls) b.className=cls; b.textContent=txt; b.disabled=rBusy||!d.helper_installed; b.addEventListener("click",fn); acts.append(b); };
+    if(declined){
+      $("r_badge").textContent="nicht eingerichtet"; $("r_badge").className="badge";
+      choice("Doch einrichten","sec",()=>{ rDeclinedMem=false; try{ localStorage.removeItem("rDeclined"); }catch(e){} rLoad(); });
+    }else{
+      info.innerHTML='<div class="ph" style="margin-top:0"><b>Möchten Sie den Fernzugriff einrichten?</b> Das ist freiwillig. Ohne Fernzugriff funktioniert alles wie bisher im lokalen Netz. Es wird nur etwas installiert, wenn Sie „Ja“ wählen.</div>';
+      choice("Ja, einrichten","",async()=>{ if(!confirm("Tailscale aus der offiziellen Paketquelle installieren?\n\nDas lädt ein kleines Programm herunter. Es ändert nichts am BELABOX-System.")) return;
+        try{ await srtlaCall("POST","/api/remote",{action:"install",confirm:true}); $("r_msg").textContent="Wird ausgeführt …"; }catch(x){ $("r_msg").textContent=x.message; } setTimeout(rLoad,1200); });
+      choice("Nein, nicht einrichten","sec",()=>{ rDeclinedMem=true; try{ localStorage.setItem("rDeclined","1"); }catch(e){} $("rcard").open=false; rLoad(); });
+    }
+  }
+  else if(!d.connected) add(login?"Neuen Anmeldelink holen":"Verbinden","login","");
+  else{
+    if(!d.serve) add("Oberfläche im privaten Netz freigeben","serve_on","");
+    else add("Freigabe beenden","serve_off","sec");
+    add("Verbindung trennen","down","sec","Verbindung zu Tailscale trennen? Der Fernzugriff geht dann nicht mehr.");
+    add("Vom Konto abmelden","logout","sec","Diese Box aus Ihrem Tailscale-Konto abmelden? Danach müssen Sie sich neu anmelden.");
+  }
+  let msg=d.message||"";
+  if(!d.helper_installed) msg="Der Fernzugriff-Helfer ist nicht installiert. Bitte install.sh einmal erneut ausführen.";
+  else if(rBusy) msg=(d.step||"Arbeite")+" …";
+  if(d.hint_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.hint_url)){ msg+=" "; $("r_msg").textContent=msg; const a=document.createElement("a"); a.href=d.hint_url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Tailscale-Seite öffnen"; $("r_msg").append(a); }
+  else $("r_msg").textContent=msg;
+  $("r_msg").style.color=d.state==="failed"?"var(--crit)":"";
+}
+$("r_copy").addEventListener("click",async()=>{
+  const t=$("r_url").textContent; let ok=false;
+  try{ if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(t); ok=true; } }catch(e){}
+  if(!ok){                                            // Ersatz für Seiten ohne HTTPS: Text markieren und kopieren
+    const ta=document.createElement("textarea"); ta.value=t; ta.setAttribute("readonly",""); ta.style.cssText="position:fixed;left:-9999px;top:0";
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,t.length);
+    try{ ok=document.execCommand("copy"); }catch(e){}
+    ta.remove();
+  }
+  if(!ok){ const rng=document.createRange(); rng.selectNodeContents($("r_url")); const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(rng); }
+  $("r_copy").textContent=ok?"Kopiert":"Markiert: Strg/Cmd+C";
+  setTimeout(()=>$("r_copy").textContent="Kopieren",2500);
+});
+(function rLoop(){ rLoad().finally(()=>setTimeout(rLoop,rBusy?2000:6000)); })();
+let swFirst=null, swWasInstalling=false;
+async function swLoad(force){
+  let d;
+  try{ d=await srtlaCall("GET","/api/swupdate"+(force?"?check=1":"")); }
+  catch(e){ if(swWasInstalling) $("sw_msg").textContent="Die Oberfläche startet gerade neu, einen Moment …"; return; }
+  if(swFirst===null) swFirst=d.current;
+  if(swFirst!==d.current && swWasInstalling){ location.reload(); return; }     // neue Version läuft: Seite neu laden
+  const busy=d.state==="installing";
+  $("stagefoot").textContent="IRL4YOU BOX Version "+d.current+(d.stage?" ("+d.stage+")":"")+(d.stage?" – Funktionen und Bedienung können sich noch ändern.":"");
+  $("sw_cur").textContent="v"+d.current+(d.stage?" ("+d.stage+")":"");
+  $("sw_latest").textContent=d.latest?"v"+d.latest:(d.error?"–":"wird geprüft …");
+  $("sw_badge").textContent=busy?"läuft …":(d.error?"unbekannt":(d.newer?"Update verfügbar":"aktuell"));
+  $("sw_badge").className="badge "+(d.newer||busy?"attn":"ok");
+  const n=$("sw_notes"); n.hidden=!(d.newer&&d.notes); n.textContent=d.newer?d.notes:"";
+  $("sw_install").disabled=busy||!d.newer||d.sending||!d.helper_installed;
+  $("sw_check").disabled=busy;
+  $("sw_rollback").hidden=!d.backup_version||busy;
+  if(d.backup_version) $("sw_rollback").textContent="Zurück zu Version "+d.backup_version;
+  let msg="";
+  if(!d.helper_installed) msg="Der Update-Helfer ist nicht installiert. Bitte install.sh einmal erneut ausführen.";
+  else if(d.error) msg=d.error;
+  else if(busy) msg=(d.step||"Update läuft")+" …";
+  else if(d.state==="done"||d.state==="rolledback") msg=d.message;
+  else if(d.state==="refused"||d.state==="failed") msg=d.message;
+  else if(d.sending&&d.newer) msg="Update gesperrt: Es wird gerade gesendet.";
+  else if(d.newer) msg="Eine neue Version ist da. Installieren geht nur, wenn nicht gesendet wird.";
+  else if(d.latest) msg="Sie haben die neueste Version."+(d.checked_at?" Zuletzt geprüft um "+new Date(d.checked_at*1000).toLocaleTimeString("de-DE")+".":"");
+  $("sw_msg").textContent=msg;
+  $("sw_msg").style.color=(d.state==="failed"||d.state==="refused"||d.error)?"var(--crit)":"";
+  swVersions=d.versions||[]; swCurrent=d.current;
+  const dl=$("sw_vers"); const sig=JSON.stringify(swVersions.map(v=>[v.version,v.local,v.github]));
+  if(dl.dataset.sig!==sig){ dl.dataset.sig=sig;
+    dl.innerHTML=swVersions.filter(v=>!v.current).map(v=>`<option value="${esc(v.version)}">${esc(v.version)} · ${v.relation}${v.local?" · gesichert":""}${v.github?" · GitHub":""}${v.date?" · "+esc(v.date):""}</option>`).join(""); }
+  $("sw_switch").disabled=busy||d.sending||!d.helper_installed;
+  swShowInfo();
+  swWasInstalling=busy;
+}
+let swVersions=[], swCurrent="";
+function swFind(v){ v=(v||"").trim().replace(/^v/,""); return swVersions.find(x=>x.version===v); }
+function swShowInfo(){
+  const raw=$("sw_ver").value.trim(); const x=swFind(raw);
+  let t="";
+  if(!raw) t=swVersions.length>1?"Verfügbar: "+swVersions.filter(v=>!v.current).slice(0,6).map(v=>v.version+(v.relation==="älter"?" (älter)":" (neuer)")).join(", ")+".":"Es sind noch keine anderen Versionen gesichert oder veröffentlicht.";
+  else if(!x||x.current) t=x&&x.current?"Diese Version ist schon installiert.":"Diese Version kennt die Box nicht (weder gesichert noch auf GitHub veröffentlicht).";
+  else t=`Version ${x.version}: ${x.relation}${x.local?", lokal gesichert (sofort verfügbar)":""}${x.github?", auf GitHub veröffentlicht":""}${x.date?", "+x.date:""}.`+(x.notes?"\n"+x.notes.split("\n").slice(0,4).join("\n"):"");
+  $("sw_verinfo").textContent=t; $("sw_verinfo").style.whiteSpace="pre-wrap";
+}
+$("sw_ver").addEventListener("input",swShowInfo);
+$("sw_switch").addEventListener("click",async()=>{
+  const x=swFind($("sw_ver").value);
+  if(!x||x.current){ swShowInfo(); return; }
+  const older=x.relation==="älter";
+  if(!confirm(`Auf Version ${x.version} wechseln?\n\n`+(older?"ACHTUNG: Das ist eine ÄLTERE Version als die installierte ("+swCurrent+"). Neuere Funktionen und Korrekturen fehlen dann.\n\n":"")
+      +"• Es darf KEINE Übertragung laufen.\n• Die Oberfläche startet dabei kurz neu.\n• Die jetzige Version wird vorher gesichert, Sie können wieder zurück.")) return;
+  try{ await srtlaCall("POST","/api/swupdate",{action:"switch",version:x.version,older,confirm:true}); swWasInstalling=true; $("sw_msg").textContent="Wechsel gestartet …"; }catch(e){ $("sw_msg").textContent=e.message; }
+  setTimeout(()=>swLoad(false),1500);
+});
+$("sw_check").addEventListener("click",()=>{ $("sw_msg").textContent="Suche …"; swLoad(true); });
+$("sw_install").addEventListener("click",async()=>{
+  if(!confirm("Software-Update installieren?\n\n• Es darf KEINE Übertragung laufen.\n• Die Oberfläche startet dabei kurz neu (etwa eine halbe Minute).\n• Kameras und Einstellungen bleiben erhalten; der Kamera-Dienst startet nur neu, wenn sich seine Dateien ändern.\n• Die jetzige Version wird gesichert, Sie können zurückgehen.")) return;
+  try{ await srtlaCall("POST","/api/swupdate",{action:"install",confirm:true}); swWasInstalling=true; $("sw_msg").textContent="Update gestartet …"; }catch(x){ $("sw_msg").textContent=x.message; }
+  setTimeout(()=>swLoad(false),1500);
+});
+$("sw_rollback").addEventListener("click",async()=>{
+  if(!confirm("Zur vorherigen Version zurückgehen?\n\nDie Oberfläche startet dabei kurz neu. Es darf nicht gesendet werden.")) return;
+  try{ await srtlaCall("POST","/api/swupdate",{action:"rollback",confirm:true}); swWasInstalling=true; $("sw_msg").textContent="Wird zurückgestellt …"; }catch(x){ $("sw_msg").textContent=x.message; }
+  setTimeout(()=>swLoad(false),1500);
+});
+(function swLoop(){ swLoad(false).finally(()=>setTimeout(swLoop,swWasInstalling?2000:8000)); })();
+async function tick(){
+  try{
+    const resp=await fetch("/api/metrics"); if(resp.status===401){location.reload();return;}
+    const m=await resp.json();
+    const mode=$("mode"); mode.textContent=m.demo?"Demo-Werte":"live"; mode.className="badge"+(m.demo?" demo":"");
+    $("cpu").textContent=fmt(m.cpu.avg,0); if($("cpumax")) $("cpumax").textContent=m.cpu.max==null?"":"höchster Kern "+fmt(m.cpu.max,0)+" %"; $("cpubar").style.width=(m.cpu.avg||0)+"%";
+    $("temp").textContent=fmt(m.temp_c,0);
+    $("fanline").hidden=m.fan_pct==null; if(m.fan_pct!=null) $("fan").textContent=fmt(m.fan_pct,0);
+    $("cores").innerHTML=m.cpu.cores.map((c,i)=>`<div class="core">K${i} ${fmt(c,0)} %<br>${m.cpu.freq_mhz[i]??"–"} MHz</div>`).join("");
+    $("mem").textContent=fmt(m.mem.used_pct,0); $("membar").style.width=(m.mem.used_pct||0)+"%";
+    $("memfree").textContent=(m.mem.avail_mb/1024).toFixed(1)+" GiB";
+    // Nur die Netze zum Senden anzeigen (die mit Häkchen); ohne Treffer alle, damit die Anzeige nie leer ist
+    const upl=((srtlaData&&srtlaData.settings)||{}).uplinks||[];
+    let nets=Object.entries(m.net); const sel=nets.filter(([n])=>upl.includes(n)); if(sel.length) nets=sel;
+    {   // Gesamt-Upload neben dem Live-Status; Farbe nach Höhe
+      const tot=nets.reduce((a,[n,r])=>a+(+r.tx_mbit||0),0), el=$("liveup");
+      el.hidden=!(sendData&&sendData.active);
+      el.innerHTML=`${fmt(tot)} <small>Mbit/s ↑</small>`;
+      el.style.color=tot>=1.5?"var(--ok)":(tot>=0.5?"var(--warn)":"var(--crit)");   // grün ab 1,5 Mbit/s, orange bis dahin, rot fast nichts
+    }
+    let netHtml=nets.map(([n,r])=>
+      `<div class="row"><span>${esc(n)}</span><span><b>${fmt(r.tx_mbit)}</b> <span class="unit">Mbit/s ↑</span> · ${fmt(r.rx_mbit)} ↓</span></div>`).join("");
+    if(nets.length>1){   // Summe über alle verbundenen Netzwerkkarten (Ethernet, WLAN, USB/Mobilfunk)
+      const sum=k=>nets.reduce((a,[n,r])=>a+(+r[k]||0),0);
+      netHtml+=`<div class="row" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px"><span><b>Summe</b> <span class="unit">(${nets.length} ${nets.length===1?"Netz":"Netze"})</span></span><span><b>${fmt(sum("tx_mbit"))}</b> <span class="unit">Mbit/s ↑</span> · ${fmt(sum("rx_mbit"))} ↓</span></div>`;
+    }
+    $("net").innerHTML=netHtml||'<span class="muted">keine Daten</span>';
+    setRates(m.net);
+    renderCams(m.cameras);
+    netRender();
+    try{ const dr=await fetch("/api/dji"); if(dr.ok) djiRender(await dr.json()); }catch(e){}
+    try{ const ur=await fetch("/api/update"); if(ur.ok) renderUpdate(await ur.json()); }catch(e){}
+    $("livehealth").innerHTML=m.alerts.length?m.alerts.map(a=>`<span class="${a.level}">${a.text}</span>`).join(" · "):'<span class="ok">● Alles im grünen Bereich</span>';
+    $("alerts").innerHTML=m.alerts.length?m.alerts.map(a=>`<div class="alert ${a.level}">${a.text}</div>`).join(""):'<div class="alert ok">Alles im grünen Bereich</div>';
+  }catch(e){ $("mode").textContent="keine Verbindung"; }
+}
+// ---- Karten zuklappen: Zustand wird im Browser gemerkt ----
+(function(){
+  const KEY="pb_cards_open"; let st={};
+  try{ st=JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){ st={}; }
+  const cards=[...document.querySelectorAll("details.card[id]")];
+  cards.forEach(d=>{ if(d.id in st) d.open=!!st[d.id]; d.addEventListener("toggle",()=>{ st[d.id]=d.open; try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }); });
+  $("fold_all").addEventListener("click",()=>cards.forEach(d=>d.open=false));
+  $("unfold_all").addEventListener("click",()=>cards.forEach(d=>d.open=true));
+  $("fold_toggle").addEventListener("click",()=>{ const any=cards.some(d=>d.open); cards.forEach(d=>d.open=!any); });   // Handy: ein Knopf
+})();
+
+// ---- Box herunterfahren / neu starten ----
+async function powerDo(action){
+  let st={}; try{ st=await srtlaCall("GET","/api/power"); }catch(e){}
+  if(!st.helper_installed){ $("pwmsg").textContent="Der Helfer ist auf dieser Box noch nicht installiert (install.sh erneut ausführen)."; return; }
+  const what=action==="poweroff"?"herunterfahren":"neu starten";
+  const live=st.sending?"\n\nAchtung: Es wird gerade gesendet. Die Übertragung bricht dabei ab.":"";
+  if(!confirm(`Die Box jetzt ${what}?${live}`)) return;
+  try{ await srtlaCall("POST","/api/power",{action,confirm:true}); }
+  catch(x){ $("pwmsg").textContent=x.message; return; }
+  $("pwmsg").textContent=action==="poweroff"
+    ? "Die Box fährt herunter. Sobald die Lüfter stehen, ist sie aus. Diese Seite ist dann nicht mehr erreichbar."
+    : "Die Box startet neu. Diese Seite lädt sich nach etwa einer Minute wieder.";
+}
+$("pw_off").addEventListener("click",()=>powerDo("poweroff"));
+$("pw_reboot").addEventListener("click",()=>powerDo("reboot"));
+
+setSM(smStart);
+tick(); setInterval(tick,2000);
+</script>
+</body>
+</html>

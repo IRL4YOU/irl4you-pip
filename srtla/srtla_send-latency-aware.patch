@@ -1,0 +1,230 @@
+diff --git a/srtla_send.c b/srtla_send.c
+index ac23d85..9c5b4fb 100644
+--- a/srtla_send.c
++++ b/srtla_send.c
+@@ -17,6 +17,7 @@
+ */
+ 
+ #include <stdlib.h>
++#include <stdint.h>
+ #include <stdio.h>
+ #include <string.h>
+ #include <assert.h>
+@@ -64,8 +65,26 @@ typedef struct conn {
+   int window;
+   int pkt_idx;
+   int pkt_log[PKT_LOG_SZ];
++  /* Laufzeitbewusste Wegewahl (IRL4YOU): Sendezeit je Eintrag, geglaettete Laufzeit je Weg */
++  uint64_t pkt_ms[PKT_LOG_SZ];
++  double srtt_ms;
++  double rttvar_ms;         /* mittlere Abweichung der Laufzeit */
++  double peak_ms;           /* langsam abklingende Spitze (Ausreisser) */
++  uint64_t peak_at_ms;
++  int elig;                 /* Zustand mit Traegheit: 1 = Weg wird genutzt */
++  uint64_t srtt_at_ms;      /* 0 = noch keine Messung */
++  uint64_t ka_sent_ms;
++  unsigned long sent_total;
++  unsigned long sent_prev;
+ } conn_t;
+ 
++/* Ein Weg, dessen Laufzeit mehr als LAT_MARGIN_MS (mindestens) ueber der des besten liegt, bekommt keine Pakete,
++   solange ein schnellerer Weg bereitsteht. Ein einziges verspaetetes Paket auf einem langsamen Weg haelt sonst die
++   kumulative SRT-Bestaetigung fuer ALLE Pakete auf und der Encoder senkt die Bitrate (Sendepuffer-Regler). */
++static int lat_pref = 1;
++static int lat_margin_ms = 20;
++#define LAT_FRESH_MS 5000
++
+ char *source_ip_file = NULL;
+ 
+ int do_update_conns = 0;
+@@ -164,6 +183,7 @@ void reg_pkt(conn_t *c, int32_t packet) {
+   debug("%s (%p): register packet %d at idx %d\n",
+         print_addr(&c->src), c, packet, c->pkt_idx);
+   c->pkt_log[c->pkt_idx] = packet;
++  { uint64_t now_ms; if (get_ms(&now_ms) == 0) c->pkt_ms[c->pkt_idx] = now_ms; }
+   c->pkt_idx++;
+   c->pkt_idx %= PKT_LOG_SZ;
+ 
+@@ -174,10 +194,72 @@ int conn_timed_out(conn_t *c, time_t ts) {
+   return (c->last_rcvd + CONN_TIMEOUT) < ts;
+ }
+ 
++static void update_srtt(conn_t *c, double sample_ms) {
++  uint64_t now_ms;
++  if (sample_ms < 0 || sample_ms > 5000 || get_ms(&now_ms) != 0) return;
++  if (c->srtt_at_ms == 0 || (now_ms - c->srtt_at_ms) > LAT_FRESH_MS) {
++    c->srtt_ms = sample_ms;
++    c->rttvar_ms = 0;
++    c->peak_ms = sample_ms;
++  } else {
++    double e = sample_ms - c->srtt_ms;
++    if (e < 0) e = -e;
++    c->rttvar_ms = c->rttvar_ms * 0.75 + e * 0.25;
++    c->srtt_ms = c->srtt_ms * 0.875 + sample_ms * 0.125;
++    /* Spitze: klingt in etwa 15 s auf null ab, jede hoehere Probe setzt sie neu */
++    double dt = (double)(now_ms - c->peak_at_ms) / 1000.0;
++    double f = 1.0 - dt / 15.0;
++    if (f < 0) f = 0;
++    c->peak_ms *= f;
++    if (sample_ms > c->peak_ms) c->peak_ms = sample_ms;
++  }
++  c->peak_at_ms = now_ms;
++  c->srtt_at_ms = now_ms;
++}
++
++/* Guete eines Wegs (kleiner ist besser): Mittelwert plus Streuung, mindestens die halbe jüngste Spitze */
++static double link_metric(conn_t *c) {
++  double m = c->srtt_ms + 4.0 * c->rttvar_ms;
++  double pk = 0.5 * c->peak_ms;
++  return pk > m ? pk : m;
++}
++
++static int srtt_fresh(conn_t *c, uint64_t now_ms) {
++  return c->srtt_at_ms != 0 && (now_ms - c->srtt_at_ms) <= LAT_FRESH_MS;
++}
++
++/* Ist dieser Weg gegenueber dem besten (kleinste Guete) gut genug? Mit Traegheit: ein ausgeschlossener Weg kommt
++   erst zurueck, wenn er deutlich besser als die Ausschlussgrenze ist. */
++static int link_eligible(conn_t *c, double best_metric, uint64_t now_ms) {
++  if (!lat_pref || best_metric < 0) return 1;                /* keine Messung irgendwo: wie das Original */
++  if (!srtt_fresh(c, now_ms)) { c->elig = 0; return 0; }     /* neuer Weg: erst messen (Keepalive), dann nutzen */
++  double margin = lat_margin_ms;
++  if (best_metric * 0.5 > margin) margin = best_metric * 0.5;
++  double m = link_metric(c);
++  if (c->elig) {
++    if (m > best_metric + margin) c->elig = 0;
++  } else {
++    if (m <= best_metric + margin * 0.5) c->elig = 1;
++  }
++  return c->elig;
++}
++
+ conn_t *select_conn() {
+   conn_t *min_c = NULL;
+   int max_score = -1;
+   int max_window = 0;
++  uint64_t now_ms = 0;
++  double best_ms = -1;
++  get_ms(&now_ms);
++  {
++    time_t t0;
++    get_seconds(&t0);
++    for (conn_t *c = conns; c != NULL; c = c->next) {
++      if (conn_timed_out(c, t0) || !srtt_fresh(c, now_ms)) continue;
++      double m = link_metric(c);
++      if (best_ms < 0 || m < best_ms) best_ms = m;
++    }
++  }
+ 
+   for (conn_t *c = conns; c != NULL; c = c->next) {
+     if (c->window > max_window) {
+@@ -204,6 +286,8 @@ conn_t *select_conn() {
+       continue;
+     }
+ 
++    if (!link_eligible(c, best_ms, now_ms)) continue;
++
+     int score = c->window / (c->in_flight_pkts + 1);
+     if (score > max_score) {
+       min_c = c;
+@@ -211,8 +295,21 @@ conn_t *select_conn() {
+     }
+   }
+ 
++  if (!min_c && lat_pref) {
++    /* nichts geeignet (z. B. alle noch ohne Messung): wie das Original ueber alle aktiven Wege waehlen */
++    for (conn_t *c = conns; c != NULL; c = c->next) {
++      if (conn_timed_out(c, t)) continue;
++      int score = c->window / (c->in_flight_pkts + 1);
++      if (score > max_score) {
++        min_c = c;
++        max_score = score;
++      }
++    }
++  }
++
+   if (min_c) {
+     min_c->last_sent = t;
++    min_c->sent_total++;
+   }
+ 
+   return min_c;
+@@ -409,15 +506,36 @@ void handle_srtla_data(conn_t *c) {
+     // srtla packets below, don't send to SRT
+     case SRTLA_TYPE_ACK: {
+       uint32_t *acks = (uint32_t *)buf;
++      uint64_t now_ms = 0;
++      double min_delay = -1;
++      int have_now = (get_ms(&now_ms) == 0);
+       for (int i = 1; i < n/4; i++) {
+         uint32_t id = be32toh(acks[i]);
+         debug("%s (%p): ack %d\n", print_addr(&c->src), c, id);
++        if (have_now) {
++          /* Verzoegerung dieses Pakets (vom neuesten Eintrag rueckwaerts suchen); vom ganzen Buendel zaehlt
++             das neueste Paket, denn die aelteren warteten nur auf das Fuellen des Buendels */
++          for (int k = 1; k <= PKT_LOG_SZ; k++) {
++            int j = (c->pkt_idx - k + PKT_LOG_SZ) % PKT_LOG_SZ;
++            if (c->pkt_log[j] == (int32_t)id) {
++              double d = (double)(now_ms - c->pkt_ms[j]);
++              if (min_delay < 0 || d < min_delay) min_delay = d;
++              break;
++            }
++          }
++        }
+         register_srtla_ack(id);
+       }
++      if (min_delay >= 0) update_srtt(c, min_delay);
+       return;
+     }
+     case SRTLA_TYPE_KEEPALIVE:
+       debug("%s (%p): got a keepalive\n", print_addr(&c->src), c);
++      if (c->ka_sent_ms != 0) {
++        uint64_t now_ms;
++        if (get_ms(&now_ms) == 0 && now_ms >= c->ka_sent_ms) update_srtt(c, (double)(now_ms - c->ka_sent_ms));
++        c->ka_sent_ms = 0;
++      }
+       return; // don't send to SRT
+ 
+     case SRTLA_TYPE_REG3:
+@@ -589,6 +707,7 @@ void set_srtla_addr(struct addrinfo *addr) {
+ void send_keepalive(conn_t *c) {
+   debug("%s (%p): sending keepalive\n", print_addr(&c->src), c);
+   uint16_t pkt = htobe16(SRTLA_TYPE_KEEPALIVE);
++  { uint64_t now_ms; if (get_ms(&now_ms) == 0) c->ka_sent_ms = now_ms; }
+   // ignoring the result on purpose
+   sendto(c->fd, &pkt, sizeof(pkt), 0, &srtla_addr, addr_len);
+ }
+@@ -685,6 +804,24 @@ void connection_housekeeping() {
+     all_failed_at = 0;
+   }
+ 
++  {
++    static uint64_t last_links = 0;
++    if (last_links == 0 || ms > last_links + 5000) {
++      double best = -1;
++      for (conn_t *c = conns; c != NULL; c = c->next)
++        if (!conn_timed_out(c, time) && srtt_fresh(c, ms) && (best < 0 || link_metric(c) < best)) best = link_metric(c);
++      for (conn_t *c = conns; c != NULL; c = c->next) {
++        if (conn_timed_out(c, time)) continue;
++        unsigned long d = c->sent_total - c->sent_prev;
++        c->sent_prev = c->sent_total;
++        fprintf(stderr, "links: %s srtt=%.0fms var=%.0f peak=%.0f guete=%.0f %s in_flight=%d pkts_5s=%lu\n", print_addr(&c->src),
++                srtt_fresh(c, ms) ? c->srtt_ms : -1.0, c->rttvar_ms, c->peak_ms, srtt_fresh(c, ms) ? link_metric(c) : -1.0,
++                link_eligible(c, best, ms) ? "genutzt" : "reserve", c->in_flight_pkts, d);
++      }
++      last_links = ms;
++    }
++  }
++
+   last_ran = ms;
+ }
+ 
+@@ -698,6 +835,8 @@ int main(int argc, char **argv) {
+     exit(0);
+   }
+   if (argc != 5) exit_help();
++  { const char *e = getenv("SRTLA_LAT_PREF"); if (e && e[0] == '0') lat_pref = 0; }
++  { const char *e = getenv("SRTLA_LAT_MARGIN_MS"); if (e && atoi(e) > 0) lat_margin_ms = atoi(e); }
+ 
+   source_ip_file = ARG_IPS_FILE;
+   int conn_count = setup_conns(source_ip_file);

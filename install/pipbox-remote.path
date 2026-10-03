@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX Fernzugriff-Helfer
+
+[Path]
+PathExists=/var/lib/pipbox/remote-request
+Unit=pipbox-remote.service
+
+[Install]
+WantedBy=multi-user.target

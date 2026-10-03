@@ -1,0 +1,6 @@
+[Unit]
+Description=IRL4YOU BOX Auslöser für die Sendekette (nur start, stop und restart)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox_send_ctl.py

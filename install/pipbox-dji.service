@@ -1,0 +1,20 @@
+[Unit]
+Description=IRL4YOU BOX Bluetooth-Dienst für DJI-Kameras
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+ExecStart=/usr/bin/python3 -u /opt/pipbox/dji_daemon.py --state /var/lib/pipbox
+Restart=on-failure
+RestartSec=3
+User=pipbox
+Group=pipbox
+SupplementaryGroups=bluetooth
+StateDirectory=pipbox
+StateDirectoryMode=0700
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

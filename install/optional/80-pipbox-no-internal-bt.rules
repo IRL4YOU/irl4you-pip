@@ -1,0 +1,4 @@
+# Schaltet das eingebaute Bluetooth-Modul der Radxa ROCK 5B+ (Realtek 13d3:3572) ab, damit nur der
+# USB-Bluetooth-Stick benutzt wird. Das eingebaute Modul empfängt wegen der Antenne nichts und
+# doppelt nur die Arbeit von BlueZ. Rückweg: Datei löschen und neu starten.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="13d3", ATTR{idProduct}=="3572", ATTR{authorized}="0"

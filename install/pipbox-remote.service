@@ -1,0 +1,8 @@
+[Unit]
+Description=IRL4YOU BOX Fernzugriff-Helfer (Tailscale, nur feste Aktionen)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-remote.py
+TimeoutStartSec=20min

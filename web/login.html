@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IRL4YOU BOX</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--text:#f8fafc;--muted:#a8b4c7;--line:#50647f;--accent:#06b6d4;--ok:#22c55e;--warn:#f59e0b;--crit:#ef4444;--bar:#06b6d4}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:15px/1.4 -apple-system,system-ui,sans-serif;padding:16px}
+form{width:100%;max-width:360px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;display:grid;gap:10px}
+h1{font-size:20px;margin:0;color:var(--accent)}
+p{margin:0;color:var(--muted);font-size:13px}
+input,button{font:inherit;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+button{background:var(--bar);color:#0f172a;font-weight:600;border-color:transparent;cursor:pointer}
+.err{color:var(--crit);font-size:13px;min-height:18px}
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>IRL4YOU BOX</h1>
+  <p id="hint">Anmelden</p>
+  <input id="code" placeholder="Setup-Code" autocomplete="off" hidden>
+  <input id="pw" type="password" placeholder="Passwort" autocomplete="current-password" required>
+  <input id="pw2" type="password" placeholder="Passwort wiederholen" autocomplete="new-password" hidden>
+  <button type="submit" id="btn">Anmelden</button>
+  <div class="err" id="err"></div>
+</form>
+<script>
+const $=id=>document.getElementById(id);
+let setup=false;
+fetch("/api/auth").then(r=>r.json()).then(a=>{
+  if(a.authed){location.reload();return;}
+  setup=!a.configured;
+  if(a.mode==="belabox") $("hint").textContent="Anmelden mit dem BELABOX-Passwort";
+  if(setup){
+    $("hint").textContent="Ersteinrichtung: Den Setup-Code finden Sie auf der Box in der Datei /var/lib/pipbox/setup-code. Dann Passwort festlegen (mindestens 10 Zeichen).";
+    $("code").hidden=false; $("pw2").hidden=false; $("btn").textContent="Passwort festlegen";
+    $("pw").autocomplete="new-password";
+  }
+});
+$("f").addEventListener("submit",async e=>{
+  e.preventDefault(); $("err").textContent="";
+  if(setup && $("pw").value!==$("pw2").value){ $("err").textContent="Die Passwörter stimmen nicht überein"; return; }
+  const body=setup?{code:$("code").value.trim(),password:$("pw").value}:{password:$("pw").value};
+  const r=await fetch(setup?"/api/setup":"/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(r.ok) location.reload(); else $("err").textContent=(await r.json()).error;
+});
+</script>
+</body>
+</html>

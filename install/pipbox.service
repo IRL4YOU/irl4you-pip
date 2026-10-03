@@ -1,0 +1,18 @@
+[Unit]
+Description=PIPBOX Oberfläche und Auslastungsanzeige
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/pipbox/server.py --host 0.0.0.0 --port 8780 --state /var/lib/pipbox --bela-config /opt/belaUI/config.json --rtmp-app publish --rtmp-stat-url http://127.0.0.1:1936/
+Restart=on-failure
+User=pipbox
+Group=pipbox
+SupplementaryGroups=bluetooth
+StateDirectory=pipbox
+StateDirectoryMode=0700
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

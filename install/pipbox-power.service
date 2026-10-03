@@ -1,0 +1,7 @@
+[Unit]
+Description=IRL4YOU BOX Ein-/Ausschalt-Helfer (nur herunterfahren oder neu starten)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-power.py
+TimeoutStartSec=2min

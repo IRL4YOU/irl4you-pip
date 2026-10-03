@@ -1,0 +1,17 @@
+state/
+cameras.json
+auth.json
+setup-code
+dji-wifi.json
+dji-active.json
+dji-settings.json
+dji-token
+srtla.json
+pipeline.json
+camera-net.json
+send-request
+update-*
+*.log
+__pycache__/
+*.pyc
+.DS_Store

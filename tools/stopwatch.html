@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stoppuhr für den Gleichlauf-Test</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
+  #t{position:absolute;inset:0 0 18% 0;display:flex;align-items:center;justify-content:center;font-size:30vw;font-weight:700;letter-spacing:-.02em;line-height:1}
+  #bar{position:absolute;left:0;bottom:0;height:18%;width:100%;background:#111}
+  #fill{height:100%;width:0;background:#06b6d4}
+  #hint{position:absolute;left:1vw;top:1vh;font-size:1.6vw;color:#888}
+</style>
+</head>
+<body>
+<div id="hint">Alle Kameras auf diese Zahl richten. Zehntel- und Hundertstelstellen zählen.</div>
+<div id="t">00.000</div>
+<div id="bar"><div id="fill"></div></div>
+<script>
+const t=document.getElementById("t"), f=document.getElementById("fill");
+const t0=performance.now();
+function tick(){
+  const ms=performance.now()-t0, s=Math.floor(ms/1000)%100, m=Math.floor(ms%1000);
+  t.textContent=String(s).padStart(2,"0")+"."+String(m).padStart(3,"0");
+  f.style.width=((ms%1000)/10)+"%";
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

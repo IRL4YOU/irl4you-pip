@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX Ein-/Ausschalt-Helfer
+
+[Path]
+PathExists=/var/lib/pipbox/power-request
+Unit=pipbox-power.service
+
+[Install]
+WantedBy=multi-user.target
