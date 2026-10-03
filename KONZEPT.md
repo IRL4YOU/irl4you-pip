@@ -1,8 +1,9 @@
-# PIPBOX – Konzept (Rohbau, Stand 1. Oktober 2026)
+# PIPBOX – Konzept (ursprünglicher Entwurf vom 1. Oktober 2026)
 
 Eigenständiges Zusatzpaket für die BELABOX (ROCK 5B+). Es ersetzt den alten
-PIP-Aufbau unter `flash-pip/`, der nicht weiterentwickelt wird. Stand Alpha:
-den Teststand beschreibt die README.
+PIP-Aufbau unter `flash-pip/`, der nicht weiterentwickelt wird. **Dieser Text ist der ursprüngliche Entwurf
+und in Teilen überholt** (Bausteine, die hier "offen" stehen, sind inzwischen gebaut). Den aktuellen Stand (Beta)
+beschreiben README und CHANGELOG.
 
 ## Leitregeln
 
