@@ -38,7 +38,10 @@ case "${1:-install}" in
     if ! python3 -c "import bleak" 2>/dev/null; then
       echo "Installiere die Bluetooth-Bibliothek bleak (pip)"
       dpkg -s python3-pip >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pip || true
-      pip3 install --disable-pip-version-check "bleak>=0.22" || true
+      # pip 22.0.2 (Ubuntu 22.04) kennt "--root-user-action" nicht: Die harmlose Warnung "Running pip as the 'root' user" (die Installation läuft ohnehin als root)
+      # wird aus der Ausgabe gefiltert, alles andere bleibt sichtbar.
+      pipout=$(pip3 install --disable-pip-version-check "bleak>=0.22" 2>&1) || true
+      printf '%s\n' "$pipout" | grep -v "Running pip as the 'root' user" || true
       if ! python3 -c "import bleak" 2>/dev/null; then
         echo "FEHLER: Die Bluetooth-Bibliothek bleak konnte nicht installiert werden (Internet? pip3?). Der DJI-Dienst braucht sie." >&2
         echo "Von Hand: sudo apt-get install -y python3-pip && sudo pip3 install bleak, danach install.sh erneut ausführen." >&2
