@@ -105,6 +105,15 @@ class Finding(unittest.TestCase):
 class Commands(unittest.TestCase):
     CFG = dict(H.DEFAULTS, source="usb", bitrate=6000)
 
+    def test_h264_1080p_is_cropped_to_the_real_picture_because_the_camera_sends_8_filler_rows(self):
+        a = H.usb_feeder_argv(self.CFG, "/dev/video2", ("h264", 1920, 1080, 30), None)
+        s = " ".join(a)
+        self.assertIn("h264parse config-interval=-1 ! queue ! mppvideodec crop-rectangle=<0,0,1920,1080> height=1080 ! queue ! mpph264enc", s)
+        self.assertIn("bitrate=6000000", s)
+        self.assertFalse(H.usb_h264_padded(("h264", 1280, 720, 30)))
+        self.assertTrue(H.usb_h264_padded(("h264", 1920, 1080, 30)))
+        self.assertFalse(H.usb_h264_padded(("mjpeg", 1920, 1080, 30)))
+
     def test_mjpeg_is_decoded_by_hardware_and_encoded_again(self):
         a = H.usb_feeder_argv(self.CFG, "/dev/video2", ("mjpeg", 1920, 1080, 30), "plughw:CARD=Action6")
         s = " ".join(a)
@@ -114,8 +123,8 @@ class Commands(unittest.TestCase):
         self.assertEqual(a[:2], ["gst-launch-1.0", "-q"])
 
     def test_h264_is_passed_through_without_a_new_encode(self):
-        s = " ".join(H.usb_feeder_argv(self.CFG, "/dev/video2", ("h264", 1920, 1080, 30), None))
-        self.assertIn("video/x-h264,width=1920,height=1080,framerate=30/1 ! h264parse ! queue ! mux.", s)
+        s = " ".join(H.usb_feeder_argv(self.CFG, "/dev/video2", ("h264", 1280, 720, 30), None))
+        self.assertIn("video/x-h264,width=1280,height=720,framerate=30/1 ! h264parse config-interval=-1 ! queue ! mux.", s)
         self.assertNotIn("mpph264enc", s)
 
     def test_raw_uses_videoconvert_and_the_hardware_encoder(self):
@@ -169,12 +178,14 @@ class UsbRig:
     def __init__(self, with_camera=True, probe_ok=("mjpeg", 1280, 720, 30), card=True):
         self.tree = Tree()
         self.tmp = tempfile.mkdtemp()
+        self.usbdir = os.path.join(self.tmp, "usb")
+        os.makedirs(self.usbdir)
         if with_camera:
             self.plug(card)
         self.probes, self.spawned, self.t, self.pub = [], [], [100.0], True
         self.probe_ok = probe_ok
         self.d = H.Daemon(self.tmp, device=os.path.join(self.tmp, "keine-hdmi"), spawn=self._spawn, publishing=lambda key: self.pub, clock=lambda: self.t[0],
-                          sysfs=self.tree.v4l, asound=self.tree.asound, probe=self._probe)
+                          sysfs=self.tree.v4l, asound=self.tree.asound, probe=self._probe, sysusb=self.usbdir)
         self.d.cfg.update(enabled=True, source="usb")
 
     def plug(self, card=True):
@@ -182,6 +193,17 @@ class UsbRig:
         self.tree.video("video3", "Osmo Action 6: USB Camera", 1, usb=("1", "4", "2CA3", "0021"))
         if card:
             self.tree.card(3, "Action6", "001/004")
+
+    def dji(self, num, pid="0025"):
+        """DJI-Gerät am USB ohne Webcam-Knoten (DJI-eigener Modus 2ca3:0025)."""
+        d = os.path.join(self.usbdir, "5-1.3.2")
+        os.makedirs(d, exist_ok=True)
+        for name, val in (("idVendor", "2ca3"), ("idProduct", pid), ("devnum", str(num))):
+            with open(os.path.join(d, name), "w") as f:
+                f.write(val + "\n")
+
+    def dji_gone(self):
+        shutil.rmtree(os.path.join(self.usbdir, "5-1.3.2"), ignore_errors=True)
 
     def unplug(self):
         shutil.rmtree(self.tree.v4l)
@@ -212,10 +234,58 @@ class Supervision(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(r.d.available)                                                 # nicht "diese Box hat keinen HDMI-Eingang"
         self.assertFalse(r.d.status()["usb"]["present"])
 
+    async def test_a_dji_camera_that_keeps_reappearing_without_a_picture_is_reported_as_a_power_problem(self):
+        r = UsbRig(with_camera=False)
+        for num in (19, 20):
+            r.dji(num)
+            await r.d.tick()
+            r.advance(2)
+            r.dji_gone()
+            await r.d.tick()
+            r.advance(3)
+        self.assertTrue(r.d.status()["usb"]["power"])
+        self.assertEqual(r.d.state, "waiting")
+        self.assertIn("Strom", r.d.message)
+        self.assertIn("Netzteil", r.d.message)
+
+    async def test_a_dji_camera_stuck_in_its_own_mode_is_a_power_problem_too(self):
+        r = UsbRig(with_camera=False)
+        r.dji(19)
+        await r.d.tick()
+        self.assertFalse(r.d.status()["usb"]["power"])
+        r.advance(11)
+        await r.d.tick()
+        self.assertTrue(r.d.status()["usb"]["power"])
+
+    async def test_one_short_appearance_or_no_dji_device_is_no_power_problem(self):
+        r = UsbRig(with_camera=False)
+        await r.d.tick()
+        self.assertEqual((r.d.status()["usb"]["power"], r.d.message), (False, "Keine USB-Kamera angeschlossen"))
+        r.dji(19)
+        await r.d.tick()
+        r.advance(2)
+        r.dji_gone()
+        await r.d.tick()
+        self.assertFalse(r.d.status()["usb"]["power"])
+
+    async def test_the_power_hint_goes_away_once_the_camera_delivers_a_picture(self):
+        r = UsbRig(with_camera=False)
+        for num in (19, 20):
+            r.dji(num)
+            await r.d.tick()
+            r.advance(2)
+            r.dji_gone()
+            await r.d.tick()
+            r.advance(3)
+        self.assertTrue(r.d.status()["usb"]["power"])
+        r.plug()
+        await r.d.tick()
+        self.assertFalse(r.d.status()["usb"]["power"])
+
     async def test_with_a_camera_it_probes_the_formats_in_order_and_starts_the_first_that_works(self):
         r = UsbRig(probe_ok=("mjpeg", 1280, 720, 30))
         await r.d.tick()
-        self.assertEqual(len(r.probes), 2)                                             # MJPEG 1080p scheiterte, MJPEG 720p ging
+        self.assertEqual(len(r.probes), 4)                                             # H.264 (1080p, 720p) und MJPEG 1080p scheiterten, MJPEG 720p ging
         self.assertEqual(r.d.state, "starting")
         argv, _ = r.spawned[0]
         self.assertIn("image/jpeg,width=1280,height=720,framerate=30/1", argv)
