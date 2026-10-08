@@ -105,14 +105,22 @@ class Finding(unittest.TestCase):
 class Commands(unittest.TestCase):
     CFG = dict(H.DEFAULTS, source="usb", bitrate=6000)
 
-    def test_h264_1080p_is_cropped_to_the_real_picture_because_the_camera_sends_8_filler_rows(self):
-        a = H.usb_feeder_argv(self.CFG, "/dev/video2", ("h264", 1920, 1080, 30), None)
+    def test_h264_1080p_of_the_action_6_is_cropped_because_it_sends_8_filler_rows(self):
+        a = H.usb_feeder_argv(self.CFG, "/dev/video2", ("h264", 1920, 1080, 30), None, name="OsmoAction6_SN:A0FE77C5: OsmoAc")
         s = " ".join(a)
         self.assertIn("h264parse config-interval=-1 ! queue ! mppvideodec crop-rectangle=<0,0,1920,1080> height=1080 ! queue ! mpph264enc", s)
         self.assertIn("bitrate=6000000", s)
-        self.assertFalse(H.usb_h264_padded(("h264", 1280, 720, 30)))
-        self.assertTrue(H.usb_h264_padded(("h264", 1920, 1080, 30)))
-        self.assertFalse(H.usb_h264_padded(("mjpeg", 1920, 1080, 30)))
+        self.assertTrue(H.usb_h264_padded(("h264", 1920, 1080, 30), "OsmoAction6_SN:A0FE77C5: OsmoAc"))
+        self.assertTrue(H.usb_h264_padded(("h264", 1920, 1080, 30), "Osmo Action 6"))
+        self.assertFalse(H.usb_h264_padded(("h264", 1280, 720, 30), "OsmoAction6_SN:A0FE77C5: OsmoAc"))      # 720 ist ein Vielfaches von 16
+        self.assertFalse(H.usb_h264_padded(("mjpeg", 1920, 1080, 30), "OsmoAction6"))
+
+    def test_h264_1080p_of_other_cameras_such_as_the_action_4_goes_through_unchanged(self):
+        for name in ("Osmo Action 4: USB Camera", "Logitech C920", ""):
+            s = " ".join(H.usb_feeder_argv(self.CFG, "/dev/video2", ("h264", 1920, 1080, 30), None, name=name))
+            self.assertIn("video/x-h264,width=1920,height=1080,framerate=30/1 ! h264parse config-interval=-1 ! queue ! mux.", s)
+            self.assertNotIn("mppvideodec", s)
+            self.assertNotIn("mpph264enc", s)
 
     def test_mjpeg_is_decoded_by_hardware_and_encoded_again(self):
         a = H.usb_feeder_argv(self.CFG, "/dev/video2", ("mjpeg", 1920, 1080, 30), "plughw:CARD=Action6")
