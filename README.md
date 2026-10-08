@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.150 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
+**Version 0.9.151 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
 
 > **Beta heißt:** Es läuft im Alltag, aber noch nicht alles ist über lange Zeit und unterwegs geprüft (siehe "Was noch fehlt oder ungetestet ist"). Neue Versionen gibt es oft; zurück auf eine frühere Version geht in der Oberfläche.
 
@@ -178,8 +178,7 @@ Die eingebauten Bluetooth-Module der Boxen empfangen schlecht, darum ist ein USB
 
 ## Was noch fehlt oder ungetestet ist
 
-- Langzeitstabilität über mehr als acht Stunden und mit mehreren Kameras im Dauerbetrieb im Freien. Es gab unerklärte Totalausfälle der Box (zuletzt zwei in der Nacht zum 2. Oktober 2026, ohne
-  Fehlermeldung im Protokoll); Verdacht: Stromversorgung, wenn ein USB-Router am USB-C-Port der Box hängt, nicht bewiesen. Auf der Orange Pi 5 Plus lief der aktuelle Stand zuletzt über Stunden ohne Ausfall.
+- **Langzeitstabilität:** Das Zustandsprotokoll der Box belegt **47,5 Stunden am Stück** (6. bis 8. Oktober 2026) mit vier DJI-Kameras und einer GoPro, mit zwei gewollten Neustarts am 7. Oktober (Neustart der Box von der Oberfläche aus) und ohne Absturz; der Entwickler berichtet von etwa drei Tagen (älteres Protokoll gibt es nicht mehr). Das lief zu Hause im Heimnetz. Noch nicht geprüft: lange Fahrten unterwegs im Freien. Frühere unerklärte Totalausfälle der Box (zuletzt zwei in der Nacht zum 2. Oktober 2026, ohne Fehlermeldung im Protokoll) sind nicht erklärt; Verdacht: Stromversorgung, wenn ein USB-Router am USB-C-Port der Box hängt, nicht bewiesen.
 - Ungetestet: Pocket 3 und weitere DJI-Modelle (Protokoll vorhanden, nie mit echter Kamera). Eine neue oder zurückgesetzte Kamera muss im Kopplungsmodus sein und die Kopplungsabfrage bestätigen.
 - Sprachen: nur im Browser mit Demo-Werten geprüft (Vollständigkeit, Zeilenumbrüche), nicht von Muttersprachlern und nicht auf echten Handys in jeder Sprache. Zusammengesetzte Texte können in einzelnen Fällen noch deutsch oder englisch bleiben. Die Sprachdateien werden einmal am Ende einer Reihe von Versionen nachgezogen.
 - Mehrere Sendewege: Der Mindestanteil je Weg (10 Prozent bei "alle") und die Umordnungstoleranz 47 am Empfänger sind für **einen klar besseren Weg plus schwächere Zusatzwege** abgestimmt. Zu Hause (schneller DSL-Weg plus Mobilfunk) war das lange erprobt, über **drei Mobilfunkwege** gab es bisher nur einen kurzen Test (siehe "Stand und Test"). Starlink neben 5G ist nicht geprüft. Sind alle Wege gleich unruhig, steigen die Neuübertragungen.

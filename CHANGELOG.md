@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.151 (Beta)
+- **Langzeittest ausgewertet:** Das Zustandsprotokoll der Box (`pipbox-health.log`) zeigt vom 6. Oktober 16:34 bis 8. Oktober 16:06 Uhr UTC **47,5 Stunden** ohne Absturz, mit vier DJI-Kameras und einer GoPro; die einzigen Unterbrechungen sind zwei gewollte Neustarts der Box am 7. Oktober um 17:54 Uhr UTC (von der Oberfläche ausgelöst, zusammen unter zwei Minuten). Höchste Temperatur 52 °C, freier Arbeitsspeicher stets über 6,4 GB. Der Entwickler berichtet von etwa drei Tagen; das ältere Protokoll ist nicht mehr vorhanden. README, `KONZEPT.md` und die Senden-Anleitung nennen diesen Stand; offen bleibt der Dauerbetrieb unterwegs im Freien. Keine Änderung am Programm.
+
 ## 0.9.150 (Beta)
 - **Hotspot der Box bestätigt:** Der Hotspot-Modus ist mit einem echten WLAN-Stick und einer GoPro Hero 8 geprüft (auf der Box nachgesehen: Hotspot `wlan1` läuft mit `10.42.0.1`, die GoPro liefert von `10.42.0.169` seit über einer Stunde ohne Unterbrechung). Der Satz „mit echtem Stick und Kamera noch nicht geprüft“ in README und `ANLEITUNG-Senden.md` ist gestrichen. Keine Änderung am Programm.
 

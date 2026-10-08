@@ -48,6 +48,6 @@ mehrere Netze gleichzeitig) → SRTLA-Server.
 
 ## Offene Punkte
 
-- Langzeittest über mehrere Tage und Gegenprobe auf der ROCK 5B+ (gelegentliches Ausschalten von selbst, Ursache unbekannt).
+- Langzeittest unterwegs im Freien (zu Hause liefen 47,5 Stunden am Stück ohne Absturz) und Gegenprobe auf der ROCK 5B+ (früheres gelegentliches Ausschalten von selbst, Ursache unbekannt).
 - Frische Installation auf weiteren Boxen und Images.
 - Feinabstimmung der Mindestbitrate für schwankende Mobilfunkleitungen.
