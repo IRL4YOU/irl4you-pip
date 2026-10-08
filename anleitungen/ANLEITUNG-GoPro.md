@@ -2,14 +2,14 @@
 
 Eine GoPro sendet als **ganz normale RTMP-Kamera** zur Box. Die Box steuert sie nicht (kein Bluetooth, kein Start von der Box aus, kein Akkustand). Du richtest die GoPro einmal ein und startest den Livestream an der Kamera oder in der GoPro-App.
 
-**Stand (9. Oktober 2026):** Mit einer **Hero 8** und der **Labs-Firmware** funktionieren die **QR-Codes** (Weg B): Die Kamera sendet über den Hotspot der Box mit etwa 3 Mbit/s und läuft im Dauerbetrieb (vom Entwickler bestätigt, auf der Box nachgesehen). Zuvor war schon der Weg über die **GoPro-App** (Weg A) mit der Hero 8 nachgewiesen (1080p, H.264, mehrere Minuten stabil). Andere Modelle (Hero 9 bis 13) sind nicht geprüft. Die GoPro ist die Kamera, bei der es am ehesten klemmt; die Tabelle unten sammelt, woran es meist liegt.
+**Stand (8. Oktober 2026):** Mit einer **Hero 8** und der **Labs-Firmware** funktionieren die **QR-Codes** (Weg B): Die Kamera sendet über den Hotspot der Box mit etwa 3 Mbit/s und läuft im Dauerbetrieb (vom Entwickler bestätigt, auf der Box nachgesehen). Zuvor war schon der Weg über die **GoPro-App** (Weg A) mit der Hero 8 nachgewiesen (1080p, H.264, mehrere Minuten stabil). Andere Modelle (Hero 9 bis 13) sind nicht geprüft. Die GoPro ist die Kamera, bei der es am ehesten klemmt; die Tabelle unten sammelt, woran es meist liegt.
 
 ## Was du brauchst
 
 - Eine GoPro **Hero 8 bis 13**. Für die QR-Codes muss die **GoPro-Labs-Firmware** auf der Kamera sein (Firmware-Änderung an der Kamera, die du selbst machst; Anleitung bei GoPro Labs). Für den Weg über die GoPro-App brauchst du sie nicht.
 - Einen **WLAN-Stick an der Box mit eingeschaltetem Hotspot** (siehe unten). Die GoPro verbindet sich mit diesem WLAN der Box; die Codes der Oberfläche sind auf den Hotspot der Box abgestimmt.
 - Die Box mit der Oberfläche (Port 8780) im selben Netz wie dein Handy.
-- **Wichtig (Hinweis vom Entwickler, 9. Oktober 2026):** Die GoPro darf **nicht frisch zurückgesetzt** sein. Sie muss **einmal vorher mit der GoPro-App verbunden** worden sein, und das **WLAN der Box** (der Hotspot) muss in der Kamera **einmal eingerichtet** sein (Schritt 2). Danach läuft es nach seinen bisherigen Erfahrungen sehr gut.
+- **Wichtig (Hinweis vom Entwickler, 8. Oktober 2026):** Die GoPro darf **nicht frisch zurückgesetzt** sein. Sie muss **einmal vorher mit der GoPro-App verbunden** worden sein, und das **WLAN der Box** (der Hotspot) muss in der Kamera **einmal eingerichtet** sein (Schritt 2). Danach läuft es nach seinen bisherigen Erfahrungen sehr gut.
 
 ## Schritt 1: Hotspot der Box einschalten
 

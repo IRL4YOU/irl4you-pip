@@ -5,7 +5,7 @@ Mit dem Bereich **Chat** liest und schreibst du im Twitch-Chat deines Kanals, di
 im Chat warnen lassen. Alles ist freiwillig; ohne Anmeldung kannst du den Chat nur lesen.
 
 **Ehrlicher Stand (Beta):** Die Anmeldung, das Senden einer Testnachricht und das **Bot-Konto** (angemeldet, schreibt
-im richtigen Kanal) hat der Entwickler am 9. Oktober 2026 auf einer echten Box bestätigt. **EventSub** (Follows,
+im richtigen Kanal) hat der Entwickler am 8. Oktober 2026 auf einer echten Box bestätigt. **EventSub** (Follows,
 Kanalpunkte) und das **Senden über die Twitch-Schnittstelle** sind bisher nur gegen nachgebaute Testserver geprüft,
 nicht gegen echtes Twitch. Die **Akku-Warnung** hat bei einem wirklich niedrigen Kamera-Akku funktioniert (Test kurz nach
 dem Einbau, noch ohne Bot-Konto); über das Bot-Konto ist bisher nur die Testnachricht gesehen. Wenn etwas nicht
