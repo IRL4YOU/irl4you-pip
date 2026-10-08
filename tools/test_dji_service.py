@@ -1548,6 +1548,40 @@ class DjiServiceTests(unittest.TestCase):
             self.svc.command({"cmd": "update", "addr": ADDR, "status_only": False})    # zurück: nichts wird gelöscht
         self.assertEqual(len(self.cams.cams), 2)
 
+    def test_removing_a_dji_camera_in_its_card_removes_it_from_the_camera_list_too_and_it_does_not_come_back(self):
+        self.cams.add("Osmo Action 4", "dji-f04fe2", "extra")
+        cfg = {ADDR: {"rtmp_key": "dji-f04fe2"}}
+        with mock.patch.object(self.svc, "_config", lambda: cfg):
+            self.svc.command({"cmd": "remove", "addr": ADDR})
+        self.assertEqual(self.cams.cams, [])
+        self.assertEqual(self.srv.seen[-1]["cmd"], "remove")
+        self.assertIn("dji-f04fe2", self.cams.forgotten)
+        with mock.patch.object(self.cams, "live_streams", lambda: {"dji-f04fe2": {}}):
+            self.assertEqual(self.cams.auto_add(), [])                           # die Kamera sendet noch, kommt aber nicht von selbst zurück
+        self.assertEqual(self.cams.cams, [])
+
+    def test_removing_a_dji_camera_in_the_camera_list_removes_it_from_the_dji_service(self):
+        with mock.patch.object(self.svc, "_config", lambda: {ADDR: {"rtmp_key": "dji-f04fe2"}}):
+            self.assertEqual(self.svc.addr_for_key("dji-f04fe2"), ADDR)
+            self.assertTrue(self.svc.remove_for_key("dji-f04fe2"))
+        self.assertEqual((self.srv.seen[-1]["cmd"], self.srv.seen[-1]["addr"]), ("remove", ADDR))
+        n = len(self.srv.seen)
+        with mock.patch.object(self.svc, "_config", lambda: {ADDR: {"rtmp_key": "hdmi", "status_only": True}}):
+            self.assertFalse(self.svc.remove_for_key("hdmi"))                    # Nur-Akku-Kamera und fremde Schlüssel bleiben unberührt
+            self.assertFalse(self.svc.remove_for_key("cam-123456"))
+            self.assertIsNone(self.svc.addr_for_key("dji-ffffff"))
+        self.assertEqual(len(self.srv.seen), n)
+
+    def test_a_removed_key_can_be_added_again_by_hand_or_by_setting_the_camera_up_again(self):
+        self.cams.forget("dji-f04fe2")
+        self.cams.forget("cam-abc")
+        self.assertEqual(server.CameraStore(self.cams.path, "publish", "", False).forgotten, {"dji-f04fe2", "cam-abc"})   # übersteht den Neustart
+        self.svc._ensure_listed([{"rtmp_key": "dji-f04fe2", "name": "Osmo Action 4"}])
+        self.assertEqual([c["key"] for c in self.cams.cams], ["dji-f04fe2"])
+        self.assertNotIn("dji-f04fe2", self.cams.forgotten)
+        self.cams.add("Von Hand", "cam-abc", "extra")
+        self.assertNotIn("cam-abc", self.cams.forgotten)
+
     def test_status_only_is_part_of_the_settings_backup(self):
         t = server.SettingsTransfer.__new__(server.SettingsTransfer)
         clean_dji = t._clean_dji
