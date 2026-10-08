@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.146 (Beta)
+- **GoPro bestätigt:** Mit einer **Hero 8** und der Labs-Firmware funktionieren die **QR-Codes** im Dauerbetrieb (am 9. Oktober 2026 vom Entwickler bestätigt; die Box zeigte die GoPro über den Hotspot mit etwa 3 Mbit/s). Die Anleitung `anleitungen/ANLEITUNG-GoPro.md` und das README nennen jetzt diesen geprüften Stand statt „ungeprüft“; Hero 9 bis 13 bleiben als nicht geprüft vermerkt. Neu in der Anleitung: Die GoPro darf nicht zurückgesetzt sein; sie muss einmal mit der GoPro-App verbunden und das WLAN der Box dort eingerichtet worden sein (nach einem Zurücksetzen wiederholen). Keine Änderung am Programm.
+
 ## 0.9.145 (Beta)
 - **Anleitungen für alles:** Neuer Ordner `anleitungen/` mit je einer Anleitung für **Kameras** (RTMP und Handy-Apps, DJI per Bluetooth, HDMI), **GoPro** (über die GoPro-App und mit QR-Codes, mit Fehlertabelle und Protokoll-Hinweisen), **Senden** (SRTLA, Sendewege, Hotspot, Bildaufbau, Live), **Twitch-Chat** (Anmeldung, Moderation, Ereignisse, Akku-Warnung mit Bot-Konto) und **Betrieb** (Installation, Updates, Sicherung, Protokolle, Fehler melden), dazu ein Index. Die Anleitung zum Fernzugriff bleibt im Hauptordner. Das README verlinkt sie. Was nicht mit echten Geräten geprüft ist, steht in den Anleitungen ehrlich dabei.
 - **README und KONZEPT auf den heutigen Stand:** Chat und „Hinweise bei Ausfällen“ stehen jetzt unter „Was geht“; die Bedienung der Kamera-Knöpfe in der Fußleiste stimmt mit der Oberfläche überein (kurz = Hauptbild, doppelt = aus-/einblenden, lang = deaktivieren); der tote Verweis auf die GoPro-Notiz und ein doppelter Satz sind weg; `KONZEPT.md` nennt alle Bausteine (HDMI-Dienst, Live-Steuerung, belacoder-Patches, Bluetooth-Quellen).
