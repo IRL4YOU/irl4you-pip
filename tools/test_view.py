@@ -1,5 +1,5 @@
 """Tests für die Ansicht im Betrieb (Issue #19, Vorbereitung): kleine Bilder ein-/ausblenden, Tonquelle und stumm ohne Neustart der Sendung.
-Prüft die Seite des Servers und des Senders; der Baustein selbst (gst/gstpbpip.c) wird auf der Box mit tools/boxtest_view*.py geprüft."""
+Prüft die Seite des Servers und des Senders; der Baustein selbst (gst/gstpbpip.c) wurde auf der Box mit Messskripten geprüft (nicht mehr im Repository, siehe Git-Historie bis 0.9.144)."""
 import json
 import os
 import re

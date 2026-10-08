@@ -1,5 +1,5 @@
 """Tests für "alle Kameras immer bereit" (Issue #19): Zubringer, Platzzuordnung, Wahl von Haupt- und kleinen Bildern bei Ausfall und Rückkehr,
-Steuerung, Pipeline-Text, Einstellungen und Fußleiste. Die Sendekette selbst prüft tools/boxtest_always.py auf der Box."""
+Steuerung, Pipeline-Text, Einstellungen und Fußleiste. Die Sendekette selbst wurde mit Messskripten auf der Box geprüft (nicht mehr im Repository, siehe Git-Historie bis 0.9.144)."""
 import os
 import sys
 import tempfile

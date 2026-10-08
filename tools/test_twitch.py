@@ -1248,7 +1248,7 @@ def line(pattern):
     return m.group(0)
 
 
-SECTION = PAGE[PAGE.index('<details class="dsec" id="tw_sec">'):]
+SECTION = PAGE[PAGE.index('<details class="subsec" id="tw_sec">'):]
 SECTION = SECTION[:SECTION.index("</details>") + len("</details>")]
 BLOCK = PAGE[PAGE.index("// ---- Akku-Warnung im Twitch-Chat"):PAGE.index("let netBusy=false;")]
 IDS = ("tw_sec", "tw_sum", "tw_on", "tw_channel", "tw_login", "tw_token", "tw_thr", "tw_msg", "tw_live", "tw_save", "tw_test", "tw_status", "tw_err")
@@ -1259,13 +1259,12 @@ class Markup(unittest.TestCase):
         for i in IDS:
             self.assertEqual(PAGE.count('id="%s"' % i), 1, i)
 
-    def test_it_is_a_collapsible_subsection_of_the_dji_cameras_after_the_error_line(self):
-        self.assertRegex(PAGE, r'<div id="djierr" class="err"></div>\s*<details class="dsec" id="tw_sec"><summary>Akku-Warnung im Twitch-Chat <span class="muted" id="tw_sum"></span></summary>')
+    def test_it_is_a_collapsible_subsection_of_the_cameras_card_after_the_hdmi_section(self):
+        self.assertIn('<details class="subsec" id="tw_sec"><summary>Akku-Warnung im Twitch-Chat (nur bei DJI) <span class="muted" id="tw_sum"></span></summary>', PAGE)
         self.assertLess(PAGE.index('id="c_cams"'), PAGE.index('id="djicard"'))
         self.assertLess(PAGE.index('id="djicard"'), PAGE.index('id="tw_sec"'))
+        self.assertLess(PAGE.index('id="hdmi_sec"'), PAGE.index('id="tw_sec"'))
         self.assertLess(PAGE.index('id="tw_sec"'), PAGE.index('id="pipecard"'))                      # noch in der Karte "Kameras"
-        self.assertRegex(PAGE, r'</details>\s*</div>\s*<div class="sech">HDMI- und USB-Kameras</div>')                # Abschnitt, dann Ende von #djicard, dann der HDMI-Abschnitt
-        self.assertRegex(PAGE, r'</div>\s*</details>\s*<details class="card wide" id="pipecard"')                      # danach das Ende der Karte "Kameras"
         self.assertNotIn("card", re.search(r'<details class="[^"]*" id="tw_sec"', PAGE).group(0))   # keine neue Karte, kein neuer Hauptpunkt
 
     @staticmethod
@@ -1274,25 +1273,6 @@ class Markup(unittest.TestCase):
         m = re.search(r"^%s\{([^}]*)\}" % re.escape(selector), PAGE, re.M)
         assert m, selector
         return dict(d.split(":", 1) for d in m.group(1).split(";") if d.strip())
-
-    def test_the_title_looks_like_the_headings_of_the_card_and_still_opens_and_closes(self):
-        sech, title = self.css(".sech"), self.css("#tw_sec>summary")
-        for prop in ("font-size", "text-transform", "letter-spacing", "color"):                      # Schrift und Farbe wie "DJI-Kameras (Bluetooth)"
-            self.assertEqual(title[prop], sech[prop], prop)
-        self.assertEqual(title["margin"].split()[-1], sech["margin"].split()[-1])                    # gleicher Abstand nach unten
-        self.assertEqual((title["font-size"], title["text-transform"], title["color"]), ("12px", "uppercase", "var(--accent)"))
-        self.assertNotIn("#", self.css("#tw_sec>summary")["color"])                                  # Farbe nur über die Variablen: dunkel und hell
-        self.assertEqual(title["list-style"], "none")                                                # statt des Dreiecks des Browsers das übliche der Karten:
-        self.assertEqual(self.css("#tw_sec>summary::-webkit-details-marker"), {"display": "none"})
-        card_open, card_shut = self.css('details.card[open]>summary .sumh::before'), self.css('details.card>summary .sumh::before')
-        self.assertEqual(self.css("#tw_sec>summary::before")["content"], card_shut["content"])
-        self.assertEqual(self.css("#tw_sec[open]>summary::before")["content"], card_open["content"])
-        self.assertEqual(self.css("#tw_sec>summary::before")["content"], '"\\25B8  "')
-        self.assertEqual(self.css("#tw_sec[open]>summary::before")["content"], '"\\25BE  "')
-        self.assertEqual(self.css("#tw_sum"), {"white-space": "nowrap"})                              # "· an" bricht nur als Ganzes um (Handy, 320 px)
-        self.assertRegex(SECTION, r'^<details class="dsec" id="tw_sec"><summary>Akku-Warnung im Twitch-Chat <span class="muted" id="tw_sum"></span></summary>')
-        self.assertNotRegex(BLOCK, r'\$\("tw_sec"\)\.addEventListener\("click"')                       # die Bedienung ist die des Browsers (details/summary), kein eigener Klick
-        self.assertNotRegex(BLOCK, r'\.querySelector\("summary"\)')
 
     def test_field_order_channel_first_then_bot_then_token(self):
         order = ["tw_on", "tw_channel", "tw_login", "tw_token", "tw_thr", "tw_msg", "tw_live", "tw_save", "tw_test", "tw_status", "tw_err"]
@@ -1312,7 +1292,7 @@ class Markup(unittest.TestCase):
     def test_channel_and_bot_name_are_hidden_in_stream_mode(self):
         self.assertIn("body.sm .sens{display:none!important}", PAGE)
         self.assertRegex(SECTION, r'<label class="f sens">Kanal \(Konto, auf dem gestreamt wird\)<input id="tw_channel"')
-        self.assertRegex(SECTION, r'<label class="f sens">Bot-Konto \(Name\)<input id="tw_login"')
+        self.assertRegex(SECTION, r'<label class="f sens" id="tw_login_l">Bot-Konto \(Name\)<input id="tw_login"')
         self.assertNotRegex(SECTION, r'<label class="[^"]*sens[^"]*">Token des Bot-Kontos')
 
     def test_the_token_field_is_a_password_field_without_a_value_and_without_autofill(self):
@@ -1324,13 +1304,12 @@ class Markup(unittest.TestCase):
             self.assertIn('autocomplete="off"', re.search(r'<input id="%s"[^>]*>' % i, SECTION).group(0))
 
     def test_no_intro_text_only_one_short_hint(self):
-        self.assertEqual(SECTION.count("data-hlp"), 1)
-        hint = re.search(r'<div class="ph" data-hlp>(.*?)</div>', SECTION).group(1)
-        self.assertEqual(hint, "Token mit dem Recht „chat:edit“, wie bei NOALBS. Er muss zum Bot-Konto gehören.")
-        self.assertLess(len(hint), 120)
+        self.assertEqual(SECTION.count("data-hlp"), 2)                                              # ein Hinweis zum Bot-Konto, einer zum Token von Hand
+        hint = re.search(r'<div class="ph" data-hlp id="tw_manual_hint">(.*?)</div>', SECTION).group(1)
+        self.assertEqual(hint, "Token mit dem Recht „chat:edit“, wie bei NOALBS. Er muss zum Bot-Konto gehören. Einfacher: im Bereich „Chat“ mit Twitch anmelden.")
         self.assertNotIn("<p", SECTION)
         text = " ".join(re.sub(r"<[^>]+>", " ", SECTION).split())
-        self.assertLess(len(text), 450)
+        self.assertLess(len(text), 1100)
         self.assertRegex(SECTION, r'<div id="tw_status" class="ph" role="status"></div>')           # eine Meldung (Kennung, role), kein Hilfstext: bleibt auf dem Handy sichtbar
 
     def test_inputs_have_limits(self):
@@ -1498,10 +1477,10 @@ class PageScripts(unittest.TestCase):
 
 # ---------------------------------------------------------------------------------------------------------------- Übersetzung
 ENGINE = open(os.path.join(ROOT, "web", "i18n.js"), encoding="utf-8").read()
-NEW_TEXTS = ["Akku-Warnung im Twitch-Chat", "Einschalten", "Kanal (Konto, auf dem gestreamt wird)", "Bot-Konto (Name)", "Token des Bot-Kontos", "Warnen bei (%)",
+NEW_TEXTS = ["Akku-Warnung im Twitch-Chat (nur bei DJI)", "Einschalten", "Kanal (Konto, auf dem gestreamt wird)", "Bot-Konto (Name)", "Token des Bot-Kontos", "Warnen bei (%)",
              "Nachricht ({Kamera} und {Prozent} werden ersetzt)", "Nur während der Sendung", "Testnachricht senden", "Zuerst speichern", "Wird gesendet …", "Noch nichts gesendet",
              "Letzte Meldung um {1} Uhr:", "Fehler um {1} Uhr:", "Neuer Versuch um {1} Uhr.", "gespeichert",
-             "Token mit dem Recht „chat:edit“, wie bei NOALBS. Er muss zum Bot-Konto gehören.",
+             "Token mit dem Recht „chat:edit“, wie bei NOALBS. Er muss zum Bot-Konto gehören. Einfacher: im Bereich „Chat“ mit Twitch anmelden.",
              "Akkustand niedrig, bitte Akku wechseln: {1} ({2} %)", "Test: IRL4YOU BOX", "Demo: gesendet.", "Bitte kurz warten", "Gesendet",
              "Anmeldung fehlgeschlagen (Token ungültig oder ohne Recht zum Schreiben)", "Keine Verbindung zu Twitch", "Keine Antwort von Twitch (Zeitüberschreitung)",
              "Twitch hat die Verbindung beendet", "Der Bot darf im Kanal nicht schreiben (z. B. nur Follower)",

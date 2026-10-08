@@ -1,6 +1,6 @@
 """Tests für die Engine "alle Kameras immer bereit" mit Compositor (pipbox_live.py): Geometrie wie im Baustein pbpipmix, Pipeline-Text (feste Form,
 alle Plätze, feste Ausgabe), Befehle für den Steuerkanal (nur Änderungen, oberstes Bild zuletzt), Regler (Zweige starten/stoppen, Wahl von Haupt- und
-kleinen Bildern, anderer Schlüssel ohne Neustart, Ansicht) und die Anbindung an server.py. Die echte Kette prüft tools/boxtest_live.py auf der Box."""
+kleinen Bildern, anderer Schlüssel ohne Neustart, Ansicht) und die Anbindung an server.py. Die echte Kette wurde mit Messskripten auf der Box geprüft (nicht mehr im Repository, siehe Git-Historie bis 0.9.144)."""
 import os
 import sys
 import tempfile
