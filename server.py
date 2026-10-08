@@ -2052,9 +2052,15 @@ class CameraStore:
         self.cams = []
         self.ipfn = lan_ip
         self.ifaces = iface_ips     # in Tests ersetzbar
+        self.forgotten = set()      # Schlüssel entfernter Kameras: ein noch sendender Stream wird nicht von selbst wieder aufgenommen
         try:
             with open(path) as f:
                 self.cams = json.load(f)
+        except (OSError, ValueError):
+            pass
+        try:
+            with open(path + ".removed") as f:
+                self.forgotten = {k for k in json.load(f) if isinstance(k, str)}
         except (OSError, ValueError):
             pass
 
@@ -2064,6 +2070,19 @@ class CameraStore:
         with open(tmp, "w") as f:
             json.dump(self.cams, f, indent=1)
         os.replace(tmp, self.path)
+
+    def _save_forgotten(self):
+        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        tmp = self.path + ".removed.tmp"
+        with open(tmp, "w") as f:
+            json.dump(sorted(self.forgotten)[-200:], f)
+        os.replace(tmp, self.path + ".removed")
+
+    def forget(self, key):
+        """Nach "Kamera entfernen": ein Stream mit diesem Schlüssel kommt nicht von selbst wieder in die Liste (Hinzufügen von Hand oder eine neu eingerichtete DJI-Kamera heben das auf)."""
+        if key and key not in self.forgotten:
+            self.forgotten.add(key)
+            self._save_forgotten()
 
     def add(self, name, key, role):
         name = (name or "").strip()[:40]
@@ -2077,6 +2096,9 @@ class CameraStore:
         with self.lock:
             if any(c["key"] == key for c in self.cams):
                 raise ValueError("Schlüssel existiert schon")
+            if key in self.forgotten:
+                self.forgotten.discard(key)
+                self._save_forgotten()
             if role in ("main", "pip") and any(c["role"] == role for c in self.cams):
                 raise ValueError("Diese Rolle ist schon vergeben")
             cam = {"id": secrets.token_hex(4), "name": name, "key": key, "role": role}
@@ -2099,7 +2121,7 @@ class CameraStore:
         with self.lock:
             known = {c["key"] for c in self.cams}
             for key in sorted(live):
-                if key in known or not KEY_RE.match(key) or key.startswith("test-"):
+                if key in known or key in self.forgotten or not KEY_RE.match(key) or key.startswith("test-"):
                     continue   # "test-…" sind Testquellen und gehören nicht in die Kameraliste
                 roles = {c["role"] for c in self.cams}
                 role = "main" if "main" not in roles else "pip" if "pip" not in roles else "extra"
@@ -3970,6 +3992,25 @@ class DjiService:
         except (OSError, ValueError):
             return {}
 
+    def addr_for_key(self, key):
+        """Geräteadresse der DJI-Kamera mit diesem Stream-Schlüssel (dji-xxxxxx) oder None. Nur-Akku-Kameras (Schlüssel des HDMI-Eingangs) zählen nicht."""
+        if not (isinstance(key, str) and key.startswith("dji-")):
+            return None
+        for addr, cfg in self._config().items():
+            if cfg.get("rtmp_key") == key and not cfg.get("status_only"):
+                return addr
+        return None
+
+    def remove_for_key(self, key):
+        """Die DJI-Kamera mit diesem Schlüssel aus dem Kamera-Dienst entfernen (für "Kamera entfernen" in der Kameraliste). True, wenn es sie gab."""
+        addr = self.addr_for_key(key)
+        if not addr:
+            return False
+        try:
+            return not self._call({"cmd": "remove", "addr": addr}).get("error")
+        except (RuntimeError, ValueError):
+            return False
+
     def fps_for_key(self, key):
         """Eingestellte Bildrate einer DJI-Kamera (Schlüssel dji-xxxxxx), sonst None. Manche DJI-Modelle melden in ihren
         Stream-Metadaten keine Bildrate; dann zeigen wir den Wert, mit dem wir sie starten."""
@@ -4072,6 +4113,11 @@ class DjiService:
                 cam = None                                    # die Kamera der Liste gehört dem HDMI-Eingang, nicht umbenennen
             if cam and str(req["name"]).strip() and cam["name"] != str(req["name"]).strip()[:40]:
                 self.cams.update(cam["id"], name=str(req["name"]))
+        gone_key = None
+        if cmd == "remove" and self.cams:
+            cfg = self._config().get(str(req.get("addr", "")).upper()) or {}
+            if not cfg.get("status_only"):
+                gone_key = cfg.get("rtmp_key")
         old_key = None
         if cmd == "update" and req.get("status_only") is True and self.cams:
             old_key = (self._config().get(str(req.get("addr", "")).upper()) or {}).get("rtmp_key")
@@ -4081,6 +4127,12 @@ class DjiService:
             cam = next((c for c in self.cams.cams if c["key"] == old_key), None)
             if cam:
                 self.cams.remove(cam["id"])
+        if gone_key and not res.get("error") and self.cams:
+            # "Entfernen" heißt entfernen: auch der Eintrag in der Kameraliste verschwindet, und ein noch sendender Stream kommt nicht von selbst zurück
+            cam = next((c for c in self.cams.cams if c["key"] == gone_key), None)
+            if cam:
+                self.cams.remove(cam["id"])
+            self.cams.forget(gone_key)
         if cmd == "add" and res.get("key") and self.cams:
             self._ensure_listed([{"rtmp_key": res["key"], "model": req.get("model"), "name": req.get("name")}])
         return {k: v for k, v in res.items() if k not in ("reply_to", "token")}
@@ -7795,6 +7847,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {"error": "nicht gefunden"})
         if cam and cam.get("key") == HDMI_KEY and self.hdmi:
             self.hdmi.on_camera_removed()                    # die Kamera "HDMI" ist weg: die Einspeisung ausschalten
+        if cam:
+            self.cams.forget(cam.get("key"))                 # ein noch sendender Stream kommt nicht von selbst zurück
+            if getattr(self, "djisvc", None):
+                self.djisvc.remove_for_key(cam.get("key"))   # eine DJI-Kamera auch aus dem Kamera-Dienst nehmen, sonst trägt ihn die Box gleich wieder ein
         self.reply(200, {"ok": True})
 
 
