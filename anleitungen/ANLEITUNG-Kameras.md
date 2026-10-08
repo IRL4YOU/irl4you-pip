@@ -117,7 +117,7 @@ Fällt etwas aus, erscheint im Status eine Meldung mit der Uhrzeit. Ein Klick au
 | DJI-Kamera ausgefallen (mit Name) | Bluetooth getrennt, Akku leer oder Kamera ausgeschaltet. Kamera aufwecken und die Verbindung prüfen. |
 | Kamera ausgefallen (mit Name) | Die Kamera sendet nicht mehr. Akku, WLAN-Verbindung und Kabel prüfen. |
 | HDMI: kein Signal | Kabel prüfen und die Kamera einschalten. |
-| USB-Gerät getrennt (zum Beispiel USB-WLAN-Adapter, USB-Bluetooth-Adapter) | Gerät getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen. |
+| USB-Gerät getrennt (zum Beispiel USB-WLAN-Adapter, USB-Bluetooth-Adapter) | Gerät getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen. Kommt das Gerät von selbst wieder, steht „wieder da“ dabei und die Meldung verschwindet nach 10 Minuten. Sonst schließt du sie mit dem **×**, spätestens nach 24 Stunden ist sie weg. |
 | ... mit "Bitte Stromversorgung prüfen" | Der USB-Anschluss wurde abgeschaltet (Störung oder Spannungseinbruch). Netzteil und USB-Hub prüfen, den Adapter möglichst direkt am Board anstecken. |
 
 Fällt eine Kamera aus, schaltet die Box auf die übrigen um. Das dauert etwa 5 Sekunden ohne Bild.
