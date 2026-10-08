@@ -63,6 +63,55 @@ class Usb(unittest.TestCase):
         w.last = t[0]
         self.assertEqual(w.alerts(), [])                                               # nach 24 Stunden ist die Meldung weg
 
+    BACK = """2026-10-08T18:10:51,000000+00:00 usb 2-1: USB disconnect, device number 2
+2026-10-08T18:10:52,500000+00:00 usb 2-1: new high-speed USB device number 3 using ehci-platform
+2026-10-08T18:10:52,700000+00:00 usb 2-1: Product: 802.11ac NIC
+"""
+
+    def test_a_device_that_comes_back_is_marked_and_the_alert_goes_away_after_ten_minutes(self):
+        w, t = watch(self.BACK)
+        ev = w._parse(self.BACK)
+        self.assertEqual(len(ev), 1)
+        self.assertTrue(ev[0]["back"] > ev[0]["t"])                                    # am selben Anschluss neu erkannt
+        t[0] = ev[0]["back"] + 60
+        w.last = 0.0
+        al = w.alerts()
+        self.assertEqual(len(al), 1)
+        self.assertTrue(al[0]["back"])                                                 # "wieder da" steht dabei
+        t[0] = ev[0]["back"] + server.UsbWatch.BACK_SHOW + 5
+        w.last = t[0]
+        self.assertEqual(w.alerts(), [])                                               # nach zehn Minuten weg, ohne 24 Stunden zu warten
+
+    def test_a_device_that_does_not_come_back_stays_until_dismissed_or_24_hours(self):
+        text = "2026-10-08T18:10:51,000000+00:00 usb 2-1: USB disconnect, device number 2\n"
+        w, t = watch(text)
+        ev = w._parse(text)[0]
+        self.assertNotIn("back", ev)
+        t[0] = ev["t"] + 3 * 3600
+        w.last = 0.0
+        al = w.alerts()
+        self.assertEqual(len(al), 1)
+        self.assertFalse(al[0]["back"])
+        self.assertTrue(w.dismiss(al[0]["t"]))                                         # der Nutzer schließt die Meldung
+        w.last = t[0]
+        self.assertEqual(w.alerts(), [])
+        self.assertFalse(w.dismiss(al[0]["t"]))                                        # zweites Mal: nichts mehr zu schließen
+        for bad in ("x", None, True):
+            with self.assertRaises(ValueError):
+                w.dismiss(bad)
+
+    def test_dismissal_survives_a_restart(self):
+        text = "2026-10-08T18:10:51,000000+00:00 usb 2-1: USB disconnect, device number 2\n"
+        path = tempfile.mktemp()
+        w, t = watch(text, path=path)
+        w.scan()
+        t[0] = w.events[0]["t"] + 60
+        w.last = 0.0
+        self.assertEqual(len(w.alerts()), 1)
+        w.dismiss(w.events[0]["t"])
+        w2 = server.UsbWatch(path, runner=lambda: text, clock=lambda: t[0])
+        self.assertEqual(w2.alerts(), [])                                              # auch nach einem Neustart nicht wieder da
+
     def test_events_survive_a_restart_and_are_not_added_twice(self):
         path = tempfile.mktemp()
         w, t = watch(path=path)
