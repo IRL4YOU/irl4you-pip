@@ -4642,16 +4642,21 @@ class ChatPaths:
                 self.fail(src, 120.0)
         raise last
 
-    def request(self, method, url, data=None, headers=None, timeout=15.0, limit=200_000, once=False):
+    def request(self, method, url, data=None, headers=None, timeout=15.0, limit=200_000, once=False, prefer=False):
         """(Status, Antworttext als Bytes) einer HTTP(S)-Anfrage über den ersten Weg, der antwortet; (0, b"") ohne Verbindung.
         once=True für Anfragen, die sich nicht wiederholen lassen (Erneuern des Zugangs mit einmaligem Schlüssel): Nur ein Fehler beim Verbinden führt zum
-        nächsten Weg; ist die Anfrage erst gesendet und die Antwort geht verloren, wird nicht ein zweites Mal gesendet."""
+        nächsten Weg; ist die Anfrage erst gesendet und die Antwort geht verloren, wird nicht ein zweites Mal gesendet (Ergebnis dann (-1, b"")).
+        prefer: ein Weg (auch None = normale Route), der zuerst versucht wird, zum Beispiel der, über den gerade eine Verbindung steht."""
         import http.client
         import urllib.parse
         u = urllib.parse.urlsplit(url)
         cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
         target = u.path + ("?" + u.query if u.query else "")
-        for src in self.order():
+        order = self.order()
+        if prefer is not False and prefer in order:
+            order.remove(prefer)
+            order.insert(0, prefer)
+        for src in order:
             conn = None
             try:
                 conn = cls(u.hostname, u.port, timeout=timeout, source_address=(src, 0) if src else None)
@@ -4665,11 +4670,18 @@ class ChatPaths:
                 try:
                     conn.request(method, target, body=data, headers=headers or {})
                     r = conn.getresponse()
-                    return r.status, r.read(limit)
+                    status = r.status
+                    try:
+                        return status, r.read(limit)
+                    except (OSError, http.client.HTTPException, ValueError):
+                        self.fail(src, 120.0)
+                        if once:
+                            return status, b""                         # Antwortzeile da, Rumpf verloren: der Status gilt
+                        raise
                 except (OSError, http.client.HTTPException, ValueError):
                     self.fail(src, 120.0)
                     if once:
-                        return 0, b""
+                        return -1, b""                                 # gesendet, aber keine Antwort: nicht noch einmal senden
             except (OSError, http.client.HTTPException, ValueError):
                 self.fail(src, 120.0)
             finally:
@@ -4692,8 +4704,10 @@ class TwitchLogin:
     Anmeldung ohne Netz ab. Adresse, Uhr und Wartezeit sind für Tests einstellbar."""
     CLIENT_ID = "a9w1hzb4d6nu70re8wxt6rpyxths35"
     ID_BASE = "https://id.twitch.tv/oauth2/"
-    SCOPES = "chat:read chat:edit"
-    SCOPES_MOD = "chat:read chat:edit moderator:manage:banned_users moderator:manage:chat_messages"      # nur, wenn der Nutzer die Moderation einschaltet
+    SCOPES = "chat:read chat:edit user:write:chat"                       # Lesen und Schreiben im Chat (user:write:chat: Senden über die Twitch-Schnittstelle mit Rückmeldung)
+    MOD_SCOPES = "moderator:manage:banned_users moderator:manage:chat_messages"
+    EVENT_SCOPES = "moderator:read:followers channel:read:redemptions"          # Follows und Kanalpunkte-Einlösungen (EventSub); nur, wenn der Nutzer die Ereignisse einschaltet
+    SCOPES_MOD = "chat:read chat:edit user:write:chat moderator:manage:banned_users moderator:manage:chat_messages"      # nur, wenn der Nutzer die Moderation einschaltet
     GRANT = "urn:ietf:params:oauth:grant-type:device_code"
     REFRESH_BEFORE = 600                       # Sekunden vor dem Ablauf erneuern
     KEEP_EVERY = 30.0
@@ -4770,9 +4784,12 @@ class TwitchLogin:
         t, p, state = self.tokens, self.pending, self.state                # nur lesen: nie hinter einer laufenden Anfrage an Twitch warten
         scopes = list((t or {}).get("scopes", []))
         has = "moderator:manage:banned_users" in scopes and "moderator:manage:chat_messages" in scopes
+        ev = all(x in scopes for x in self.EVENT_SCOPES.split())
         out = {"state": state, "login": (t or {}).get("login", ""), "scopes": scopes, "error": self.error,
                "mod": has and not (t or {}).get("mod_off"),           # Moderation ist an: Rechte vorhanden und nicht von Hand ausgeschaltet
-               "mod_scope": has}                                      # die Rechte hat der Zugang (Einschalten geht dann ohne neue Anmeldung bei Twitch)
+               "mod_scope": has,                                      # die Rechte hat der Zugang (Einschalten geht dann ohne neue Anmeldung bei Twitch)
+               "events": ev,                                          # Rechte für Follows und Kanalpunkte sind da
+               "helix_chat": "user:write:chat" in scopes}             # Senden über die Twitch-Schnittstelle ist möglich
         if p and state == "wartet":
             out.update(code=p["user_code"], uri=p["uri"], expires_in=max(0, int(p["expires_at"] - self.clock())))
         return out
@@ -4805,8 +4822,19 @@ class TwitchLogin:
         return ""
 
     # ---- Anmelden
-    def start(self, mod=False):
-        scopes = self.SCOPES_MOD if mod else self.SCOPES
+    def scopes_for(self, mod=False, events=False):
+        """Die Rechte für eine neue Anmeldung: immer die Grundrechte, Moderation und Ereignisse nur auf Wunsch, und was der Zugang schon hat, bleibt erhalten
+        (wer die Ereignisse einschaltet, verliert die Moderation nicht, und umgekehrt)."""
+        want = self.SCOPES.split()
+        have = set(((self.tokens or {}).get("scopes")) or [])
+        for flag, group in ((mod, self.MOD_SCOPES), (events, self.EVENT_SCOPES)):
+            for sc in group.split():
+                if (flag or sc in have) and sc not in want:
+                    want.append(sc)
+        return " ".join(want)
+
+    def start(self, mod=False, events=False):
+        scopes = self.scopes_for(mod, events)
         with self.lock:
             if self.state == "wartet" and self.pending and self.pending["expires_at"] > self.clock() and self.pending.get("scopes") == scopes:
                 return self.status()
@@ -4870,7 +4898,7 @@ class TwitchLogin:
                 if st == 400 and "slow_down" in msg:
                     self.pending["interval"] = min(30, self.pending["interval"] + 5)
                     continue
-                if st == 0 or st >= 500:
+                if st <= 0 or st >= 500:
                     continue                                    # Netz kurz weg oder Twitch hakt: weiter versuchen, bis der Code abläuft
                 if st == 429:
                     self.pending["interval"] = min(30, self.pending["interval"] + 5)
@@ -4924,7 +4952,7 @@ class TwitchLogin:
                 self.fails, self.next_try = 0, 0.0
                 self._adopt(d)
                 return True
-            if st == 0 or st == 429 or st >= 500:
+            if st <= 0 or st == 429 or st >= 500:
                 self.fails = getattr(self, "fails", 0) + 1
                 self.next_try = self.clock() + min(300.0, 15.0 * 2 ** min(self.fails, 5))
                 return False
@@ -5126,6 +5154,7 @@ class TwitchReader:
     def __init__(self, store, demo=False, host=None, port=None, tls=True, context=None, clock=time.monotonic, wall=time.time, sleep=time.sleep, paths=None, third=None):
         self.paths = paths or ChatPaths()
         self.third = third or ThirdPartyEmotes(self.paths)
+        self.events = None                  # TwitchEvents (EventSub), wird nach dem Start gesetzt
         self.store, self.demo = store, demo
         self.host, self.port, self.tls, self.context = host or self.HOST, port or self.PORT, tls, context
         self.clock, self.wall, self.sleep = clock, wall, sleep
@@ -5306,6 +5335,8 @@ class TwitchReader:
         else:
             self._ensure(ch)
             state = self.state
+            if self.events is not None:
+                self.events.ensure()                        # Follows und Kanalpunkte (nur mit Rechten, nur eigener Kanal, nur solange abgefragt wird)
         with self.lock:
             last = self.next_id - 1
             if since > last:
@@ -5429,6 +5460,10 @@ class TwitchReader:
                        "mid": "%08x-0000-4000-8000-000000000000" % n, "uid": "102", "login": "lena", "badges": ["vip", "subscriber"]})
         elif n % 19 == 0:
             self._add({"type": "sub", "name": "", "color": "", "text": "nightowl verschenkt 5 Abos an die Community", "emotes": [], "ev": {"k": "gift", "n": 5}})
+        elif n % 23 == 0:
+            self._add({"type": "notice", "name": "", "color": "", "text": "Anna_Streams", "emotes": [], "ev": {"k": "follow", "n": 0}})
+        elif n % 29 == 0:
+            self._add({"type": "notice", "name": "", "color": "", "text": "Lena: Trink etwas Wasser", "emotes": [], "ev": {"k": "points", "n": 500}})
         elif n % 7 == 0 and (self.third.ensure("") or True) and self.third.snapshot():             # Vorschau: echte globale Emotes von 7TV/BTTV/FFZ
             names = sorted(self.third.snapshot())
             a, b = names[n % len(names)], names[(n * 7) % len(names)]
@@ -5459,6 +5494,7 @@ class TwitchMod:
     ERR_AUTH = "Anmeldung abgelaufen, bitte neu anmelden"
     ERR_FORBIDDEN = "Dazu fehlt die Berechtigung (Moderator im Kanal?)"
     ERR_OTHER = "Twitch hat die Anfrage nicht angenommen"
+    ERR_UNSURE = "Verbindung gestört, unklar ob es angekommen ist"
 
     def __init__(self, store, account, api_base=None, client_id=None, demo_reader=None, demo=False, paths=None):
         self.store, self.account = store, account
@@ -5469,11 +5505,11 @@ class TwitchMod:
         self.ids = {}
         self.lock = threading.Lock()
 
-    def _call(self, method, path, params=None, body=None):
+    def _call(self, method, path, params=None, body=None, once=False, timeout=15.0, token=None, prefer=False, accept=()):
         import urllib.error
         import urllib.parse
         import urllib.request
-        tok = self.account.token()
+        tok = token or self.account.token()
         if not tok:
             raise ValueError(self.ERR_LOGIN)
         url = self.api + path + ("?" + urllib.parse.urlencode(params) if params else "")
@@ -5481,18 +5517,20 @@ class TwitchMod:
         hdr = {"Authorization": "Bearer " + tok, "Client-Id": self.client_id, "User-Agent": "irl4you-box"}
         if data is not None:
             hdr["Content-Type"] = "application/json"
-        status, raw = self.paths.request(method, url, data, hdr)
-        if status == 401 and self.account.refresh_now():                  # Zugang war abgelaufen (zum Beispiel falsche Uhr): einmal erneuern, einmal wiederholen
+        status, raw = self.paths.request(method, url, data, hdr, timeout=timeout, once=once, prefer=prefer)
+        if status == 401 and token is None and self.account.refresh_now():                  # Zugang war abgelaufen (zum Beispiel falsche Uhr): einmal erneuern, einmal wiederholen
             hdr["Authorization"] = "Bearer " + self.account.token()
-            status, raw = self.paths.request(method, url, data, hdr)
+            status, raw = self.paths.request(method, url, data, hdr, timeout=timeout, once=once, prefer=prefer)
         if status == 0:
             raise ValueError(self.ERR_NET)
+        if status == -1:
+            raise ValueError(self.ERR_UNSURE)
         try:
             out = json.loads(raw.decode("utf-8", "replace") or "{}")
         except ValueError:
             out = {}
         out = out if isinstance(out, dict) else {}
-        if status in (200, 201, 204):
+        if status in (200, 201, 202, 204) or status in accept:
             return out
         if status == 401:
             raise ValueError(self.ERR_AUTH)
@@ -5588,8 +5626,8 @@ class TwitchSender:
     COMMANDS = ("ban", "timeout", "unban")
     MIN_GAP = 1.0
 
-    def __init__(self, store, chat=None, clock=time.monotonic, demo_reader=None, mod=None):
-        self.store, self.chat, self.clock, self.mod = store, chat or TwitchChat(), clock, mod
+    def __init__(self, store, chat=None, clock=time.monotonic, demo_reader=None, mod=None, helix=None):
+        self.store, self.chat, self.clock, self.mod, self.helix = store, chat or TwitchChat(), clock, mod, helix
         self.demo_reader = demo_reader              # nur im Vorschau-Modus: die Nachricht erscheint im Beispiel-Chat, nichts geht ins Netz
         self.last = -1e9
         self.lock = threading.Lock()
@@ -5631,10 +5669,451 @@ class TwitchSender:
         if self.demo_reader is not None:
             self.demo_reader._add({"type": "msg", "name": cfg["login"], "color": "#9146FF", "text": TwitchChat.clean_text(t) or "", "emotes": []})
             return {"ok": True, "message": TwitchChat.OK}
+        t = TwitchChat.clean_text(t)
+        if not t:
+            raise ValueError("Nachricht ungültig")
+        if self.helix is not None and self.helix.usable():             # über die Twitch-Schnittstelle: mit Rückmeldung, ob die Nachricht wirklich gesendet wurde
+            return {"ok": True, "message": self.helix.send(cfg["channel"], t)}
         ok, msg = self.chat.send(cfg["login"], cfg["token"], cfg["channel"], t)
         if not ok:
             raise ValueError(msg)
         return {"ok": True, "message": msg}
+
+
+class HelixChat:
+    """Chat senden über die Twitch-Schnittstelle (POST chat/messages, Recht user:write:chat). Twitch antwortet auch dann mit 200, wenn die Nachricht verworfen wurde
+    (Spam- oder Tempofilter, nur Abonnenten, langsamer Modus ...): darum zählt nur "is_sent", sonst steht der Grund von Twitch in der Meldung. Ohne das Recht
+    (ältere Anmeldung) bleibt das Senden über IRC (TwitchChat), bis man sich neu anmeldet. Alle Aufrufe laufen über TwitchMod._call (Wege, Erneuern bei 401)."""
+    ERR_DROP = "Twitch hat die Nachricht nicht gesendet"
+    ERR_FORBIDDEN = "Twitch erlaubt das Senden hier gerade nicht (zum Beispiel nur für Abonnenten oder Follower)"
+
+    def __init__(self, account, mod):
+        self.account, self.mod = account, mod
+
+    def usable(self):
+        try:
+            return bool(self.account.ready() and "user:write:chat" in (self.account.status().get("scopes") or []))
+        except Exception:
+            return False
+
+    def send(self, channel, text):
+        me = self.account.user_id()
+        if not me:
+            raise ValueError("Zuerst mit Twitch anmelden")
+        ch = str(channel or "").strip().lstrip("#").lower()
+        bid = me if (not ch or ch == self.account.login()) else self.mod.lookup(ch)
+        try:
+            d = self.mod._call("POST", "chat/messages", None, {"broadcaster_id": bid, "sender_id": me, "message": text}, once=True)
+        except ValueError as e:
+            if str(e) == self.mod.ERR_FORBIDDEN:
+                raise ValueError(self.ERR_FORBIDDEN)
+            raise                                                          # auch ERR_UNSURE (gesendet, Antwort verloren): "unklar, ob es angekommen ist"
+        rows = d.get("data") if isinstance(d.get("data"), list) else []
+        row = rows[0] if rows and isinstance(rows[0], dict) else {}
+        if row.get("is_sent") is True:
+            return TwitchChat.OK
+        why = row.get("drop_reason") if isinstance(row.get("drop_reason"), dict) else {}
+        msg = TwitchReader._clean(str(why.get("message") or ""), 120)
+        raise ValueError(self.ERR_DROP + (": " + msg if msg else ""))
+
+
+class WebSocketLite:
+    """Kleiner WebSocket-Client nach RFC 6455 (nur Standardbibliothek) für EventSub: Aufbau mit Prüfung der Antwort, Text-Nachrichten (auch in Teilen), Ping wird mit
+    Pong beantwortet, Schließen beendet. Keine Erweiterungen, der Server darf nicht maskieren, jede Nachricht höchstens MAX Byte. Zeitüberschreitungen verlieren
+    keine halb gelesene Nachricht."""
+    GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    MAX = 1 << 20
+
+    def __init__(self, sock, clock=time.monotonic):
+        self.sock, self.clock = sock, clock
+        self.buf = bytearray()
+        self.parts, self.first = bytearray(), None
+        self.last_rx = clock()                                              # wann zuletzt Daten von der Gegenstelle kamen (auch Ping zählt)
+
+    @classmethod
+    def handshake(cls, sock, host, path, clock=time.monotonic, timeout=10.0):
+        key = base64.b64encode(os.urandom(16)).decode()
+        sock.sendall(b"GET " + path.encode("ascii") + b" HTTP/1.1\r\nHost: " + host.encode("ascii") + b"\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: "
+                     + key.encode("ascii") + b"\r\nSec-WebSocket-Version: 13\r\nUser-Agent: irl4you-box\r\n\r\n")
+        buf, deadline = b"", clock() + timeout
+        while b"\r\n\r\n" not in buf:
+            left = deadline - clock()
+            if left <= 0 or len(buf) > 16384:
+                raise OSError("ws-handshake-timeout")
+            sock.settimeout(left)
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise EOFError("ws-eof")
+            buf += chunk
+        head, _, rest = buf.partition(b"\r\n\r\n")
+        lines = head.decode("latin-1").split("\r\n")
+        if not re.match(r"HTTP/1\.[01] 101\b", lines[0]):
+            raise OSError("ws-no-upgrade")
+        hdr = {k.strip().lower(): v.strip() for k, _, v in (l.partition(":") for l in lines[1:])}
+        want = base64.b64encode(hashlib.sha1(key.encode("ascii") + cls.GUID).digest()).decode()
+        if hdr.get("sec-websocket-accept") != want:
+            raise OSError("ws-bad-accept")
+        ws = cls(sock, clock)
+        ws.buf += rest
+        return ws
+
+    @staticmethod
+    def frame(opcode, payload=b""):
+        mask, n = os.urandom(4), len(payload)
+        head = bytes([0x80 | opcode])
+        head += bytes([0x80 | n]) if n < 126 else (bytes([0x80 | 126]) + n.to_bytes(2, "big") if n < 65536 else bytes([0x80 | 127]) + n.to_bytes(8, "big"))
+        return head + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+
+    def close(self):
+        try:
+            self.sock.sendall(self.frame(8, b"\x03\xe8"))
+        except OSError:
+            pass
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+    def _need(self, n, deadline):
+        while len(self.buf) < n:
+            left = deadline - self.clock()
+            if left <= 0:
+                return False
+            self.sock.settimeout(left)
+            try:
+                chunk = self.sock.recv(65536)
+            except socket.timeout:
+                return False
+            if not chunk:
+                raise EOFError("ws-eof")
+            self.last_rx = self.clock()
+            self.buf += chunk
+        return True
+
+    def recv_message(self, timeout):
+        """Die nächste Text-Nachricht oder None, wenn in `timeout` Sekunden keine vollständige da ist. EOFError: Gegenstelle hat geschlossen; OSError: Verstoß."""
+        deadline = self.clock() + timeout
+        while True:
+            if self.clock() > deadline:
+                return None                                              # auch ein Strom von Steuerrahmen hält die Schleife nicht fest
+            if not self._need(2, deadline):
+                return None
+            b0, b1 = self.buf[0], self.buf[1]
+            fin, op = b0 & 0x80, b0 & 0x0f
+            if (b0 & 0x70) or (b1 & 0x80):
+                raise OSError("ws-protocol")            # Erweiterungen und maskierte Server-Rahmen gibt es nicht
+            ln, off = b1 & 0x7f, 2
+            if ln == 126:
+                if not self._need(4, deadline):
+                    return None
+                ln, off = int.from_bytes(self.buf[2:4], "big"), 4
+            elif ln == 127:
+                if not self._need(10, deadline):
+                    return None
+                ln, off = int.from_bytes(self.buf[2:10], "big"), 10
+            if ln > self.MAX or (op >= 8 and (not fin or ln > 125)):
+                raise OSError("ws-protocol")
+            if not self._need(off + ln, deadline):
+                return None
+            payload = bytes(self.buf[off:off + ln])
+            del self.buf[:off + ln]
+            if op == 9:
+                self.sock.sendall(self.frame(10, payload))
+                continue
+            if op == 10:
+                continue
+            if op == 8:
+                raise EOFError("ws-closed")
+            if op in (1, 2):
+                if self.first is not None:
+                    raise OSError("ws-protocol")
+                self.first = op
+            elif op == 0:
+                if self.first is None:
+                    raise OSError("ws-protocol")
+            else:
+                raise OSError("ws-protocol")
+            self.parts += payload
+            if len(self.parts) > self.MAX:
+                raise OSError("ws-too-big")
+            if fin:
+                data, kind = bytes(self.parts), self.first
+                self.parts, self.first = bytearray(), None
+                if kind != 1:
+                    raise OSError("ws-not-text")
+                return data.decode("utf-8")
+
+
+class TwitchEvents:
+    """Live-Ereignisse des eigenen Kanals über EventSub (WebSocket, Twitch-Anleitung): Follows und Kanalpunkte-Einlösungen. Subs, Geschenk-Abos, Raids und Cheers liest der
+    Chat schon vollständiger (EventSub meldet zum Beispiel Resubs ohne Text nicht), darum kommen sie weiter aus dem Chat und werden nicht doppelt gezeigt.
+
+    Ablauf: verbinden (über die Sendewege wie der Chat), auf session_welcome warten, dann in einem eigenen Faden (damit Ping und Keepalive weiterlaufen) die Abonnements
+    anlegen, je eines für sich: fehlt ein Recht, fällt nur dieses weg. Benachrichtigungen werden über message_id entdoppelt (Twitch liefert "mindestens einmal"). Bleibt
+    die Gegenstelle länger als das 1,5-fache des Keepalive-Werts still, wird neu verbunden; bei session_reconnect geht es zur genannten Adresse, ohne neu zu abonnieren.
+    Die Verbindung steht nur, solange die Oberfläche den Chat abfragt, nur für den eigenen Kanal und nur mit den nötigen Rechten. Der Zugangsschlüssel kommt jedes Mal
+    frisch aus TwitchLogin (wird erneuert) und steht nie in einem Protokoll."""
+    HOST, PORT, PATH = "eventsub.wss.twitch.tv", 443, "/ws?keepalive_timeout_seconds=30"
+    SUBS = (("channel.follow", "2", "moderator:read:followers"),
+            ("channel.channel_points_custom_reward_redemption.add", "1", "channel:read:redemptions"))
+    ID_RE = re.compile(r"[A-Za-z0-9_\-]{1,100}")
+    KEEP_MIN = 10.0                       # kleinster erlaubter Keepalive-Wert in Sekunden (Tests setzen ihn kleiner)
+    RETRY_FIRST = 5.0                     # Wartezeit vor dem ersten neuen Versuch (danach verdoppelt, höchstens 60 s)
+    SUB_DELAYS = (0.0, 5.0, 15.0)         # Abonnieren: sofort, dann was fehlt nach 5 und nach weiteren 15 Sekunden noch einmal
+
+    def __init__(self, store, account, mod, reader, paths=None, host=None, port=None, tls=True, clock=time.monotonic, sleep=time.sleep):
+        self.store, self.account, self.mod, self.reader = store, account, mod, reader
+        self.paths = paths or getattr(account, "paths", None) or ChatPaths()
+        self.host, self.port, self.tls = host or self.HOST, port or self.PORT, tls
+        self.clock, self.sleep = clock, sleep
+        self.lock = threading.Lock()
+        self.thread, self.gen, self.sid = None, 0, None
+        self.state, self.error, self.types = "aus", "", set()
+        self.seen, self.seen_set = collections.deque(maxlen=300), set()
+
+    # ---- Voraussetzungen (ohne Sperre und ohne Anfrage an Twitch: wird von der Oberfläche alle paar Sekunden aufgerufen)
+    def granted(self):
+        """Die Abonnements, die der Zugang erlaubt, und die Kennung des Kontos (oder ([], ""))."""
+        try:
+            if not self.account.ready():
+                return [], ""
+            have = set(self.account.status().get("scopes") or [])
+            mine = self.account.login()
+            if str((self.store.data or {}).get("channel") or mine).lower() != mine:
+                return [], ""                                           # fremder Kanal: die Rechte gelten nur für den eigenen
+            return [t for t in self.SUBS if t[2] in have], self.account.user_id()
+        except Exception:
+            return [], ""
+
+    def status(self):
+        subs, uid = self.granted()
+        return {"state": self.state if subs and uid else "aus", "types": sorted(self.types), "error": self.error if self.state == "fehler" else ""}
+
+    # ---- Faden
+    def ensure(self):
+        subs, uid = self.granted()
+        if not subs or not uid:
+            return
+        with self.lock:
+            if self.thread is not None and self.thread.is_alive():
+                return
+            self.gen += 1
+            gen = self.gen
+            self.state, self.error, self.types, self.sid = "verbinde", "", set(), None
+            t = threading.Thread(target=self._run, args=(gen,), daemon=True)
+            self.thread = t
+        t.start()
+
+    def _alive(self, gen):
+        return self.gen == gen and not self.reader._idle() and bool(self.granted()[0])
+
+    def _run(self, gen):
+        wait, url = self.RETRY_FIRST, None
+        while self._alive(gen):
+            began = self.clock()
+            try:
+                self._session(gen)
+            except Exception as e:
+                with self.lock:
+                    if self.gen == gen:
+                        self.state, self.error = "fehler", ("Keine Verbindung zu Twitch" if isinstance(e, (OSError, EOFError)) else "Ereignisse gestört")
+            if self.clock() - began > 60:
+                wait = self.RETRY_FIRST
+            end = self.clock() + wait
+            while self.clock() < end and self._alive(gen):
+                self.sleep(0.5)
+            wait = min(wait * 2, 60.0)
+        with self.lock:
+            if self.gen == gen:
+                self.state, self.types, self.sid = "aus", set(), None
+
+    @classmethod
+    def _split_url(cls, url, allow=None):
+        """(Host, Pfad samt Abfrage) einer wss-Adresse von Twitch; alles andere (auch fremde Hosts mit Twitch im Namen) ist ein Fehler. Twitch schickt die
+        Adresse bei session_reconnect mit und ohne Pfad ("wss://host/ws?x=1" oder "wss://host?x=1")."""
+        m = re.fullmatch(r"wss://([A-Za-z0-9.\-]{1,100})(/[A-Za-z0-9_\-./%]{0,200})?(\?[A-Za-z0-9_\-./=&%]{0,300})?", url or "")
+        if not m or not (m.group(1) == (allow or cls.HOST) or m.group(1).endswith(".twitch.tv")):
+            raise OSError("ws-bad-url")
+        path = (m.group(2) or "") + (m.group(3) or "")
+        return m.group(1), path if path.startswith("/") else "/" + path
+
+    def _open(self, host, path):
+        """Verbindung über die Sendewege, TLS, Aufbau; liefert (WebSocket, Weg)."""
+        sock, src = self.paths.connect(host, self.port, timeout=8)
+        try:
+            if self.tls:
+                sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+            return WebSocketLite.handshake(sock, host, path, self.clock), src
+        except BaseException:
+            try:
+                sock.close()
+            except OSError:
+                pass
+            raise
+
+    @staticmethod
+    def _welcome(payload):
+        sess = payload.get("session") or {}
+        sid = sess.get("id")
+        if not (isinstance(sid, str) and TwitchEvents.ID_RE.fullmatch(sid)):
+            raise OSError("ws-bad-session")
+        try:
+            keep = float(sess.get("keepalive_timeout_seconds") or 30)
+        except (TypeError, ValueError):
+            keep = 30.0
+        return sid, keep
+
+    def _session(self, gen):
+        ws, src = self._open(self.host, self.PATH)
+        try:
+            tok = self.account.token()                                   # einmal vor dem Abonnieren: kein Warten hinter einer Erneuerung, wenn Twitch die 10 Sekunden zählt
+            heard, keep, sig = self.clock(), 30.0, None
+            while self._alive(gen):
+                msg = ws.recv_message(1.0)
+                heard = max(heard, ws.last_rx)                           # auch ein Ping der Gegenstelle zeigt, dass sie lebt
+                if msg is None:
+                    if self.clock() - heard > keep * 1.5:
+                        self.paths.fail(src, 120.0)
+                        raise OSError("still")
+                    if sig is not None and tuple(t[0] for t in self.granted()[0]) != sig:
+                        return                                           # Rechte haben sich geändert: neue Sitzung, neu abonnieren
+                    continue
+                try:
+                    d = json.loads(msg)
+                except ValueError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                meta, payload = d.get("metadata") or {}, d.get("payload") or {}
+                typ = meta.get("message_type")
+                if typ == "session_welcome":
+                    sid, k = self._welcome(payload)
+                    keep, heard = min(600.0, max(self.KEEP_MIN, k)), self.clock()
+                    sig = tuple(t[0] for t in self.granted()[0])
+                    with self.lock:
+                        self.sid, self.types = sid, set()
+                    threading.Thread(target=self._subscribe, args=(gen, sid, tok, src), daemon=True).start()          # eigener Faden: die Empfangsschleife bleibt frei
+                elif typ == "session_reconnect":
+                    # Vorgehen laut Twitch: erst die neue Verbindung aufbauen und ihr session_welcome abwarten, dann die alte schließen (die Abonnements ziehen mit um)
+                    host, path = self._split_url((payload.get("session") or {}).get("reconnect_url"), self.host)
+                    ws2, src2 = self._open(host, path)
+                    try:
+                        end = self.clock() + 10.0
+                        while True:
+                            m2 = ws2.recv_message(1.0)
+                            if m2 is not None:
+                                d2 = json.loads(m2)
+                                if isinstance(d2, dict) and (d2.get("metadata") or {}).get("message_type") == "session_welcome":
+                                    sid2, k2 = self._welcome(d2.get("payload") or {})
+                                    keep = min(600.0, max(self.KEEP_MIN, k2))
+                                    break
+                            if self.clock() > end:
+                                raise OSError("still")
+                    except BaseException:
+                        ws2.close()
+                        raise
+                    ws.close()
+                    ws, src, heard = ws2, src2, self.clock()
+                    with self.lock:
+                        self.sid = sid2
+                elif typ == "notification":
+                    self._notify(meta, payload)
+                elif typ == "revocation":
+                    sub = (payload.get("subscription") or {}).get("type")
+                    with self.lock:
+                        self.types.discard(sub)
+                        gone = not self.types
+                    if gone:
+                        return                                           # nichts mehr abonniert: neue Sitzung, neu abonnieren
+        finally:
+            ws.close()
+
+    def _subscribe(self, gen, sid, tok, src):
+        """Abonnements anlegen: beide gleichzeitig, mit kurzer Zeitgrenze und zuerst über den Weg, auf dem die Verbindung steht (Twitch schließt nach 10 s ohne Abonnement);
+        was scheitert, wird nach 5 und nach 20 Sekunden noch einmal versucht. Schreibt nur, solange diese Sitzung die aktuelle ist."""
+        subs, uid = self.granted()
+        todo, last = {t[0]: t for t in subs}, ""
+        for delay in self.SUB_DELAYS:
+            end = self.clock() + delay
+            while self.clock() < end and todo:
+                self.sleep(0.2)
+                if not self._alive(gen) or self.sid != sid:
+                    return
+            if not todo or not self._alive(gen) or self.sid != sid:
+                break
+            results = {}
+
+            def one(typ, ver):
+                cond = {"broadcaster_user_id": uid}
+                if typ == "channel.follow":
+                    cond["moderator_user_id"] = uid
+                try:
+                    self.mod._call("POST", "eventsub/subscriptions", None,
+                                   {"type": typ, "version": ver, "condition": cond, "transport": {"method": "websocket", "session_id": sid}},
+                                   timeout=4.0, token=tok, prefer=src, accept=(409,))        # 409: gibt es schon (eine verlorene Antwort wurde wiederholt)
+                    results[typ] = ""
+                except ValueError as e:
+                    results[typ] = str(e) if str(e) == self.mod.ERR_NET else "Twitch hat die Ereignisse nicht angenommen"
+            ths = [threading.Thread(target=one, args=(t[0], t[1]), daemon=True) for t in todo.values()]
+            for th in ths:
+                th.start()
+            for th in ths:
+                th.join(8.0)
+            for typ, err in results.items():
+                if err == "":
+                    todo.pop(typ, None)
+                    with self.lock:
+                        if self.sid == sid:
+                            self.types.add(typ)
+                else:
+                    last = err
+            with self.lock:
+                if self.gen != gen or self.sid != sid:
+                    return
+                if self.types:
+                    self.state, self.error = "ok", ""
+                elif not todo or delay == self.SUB_DELAYS[-1]:
+                    self.state, self.error = "fehler", last or "Twitch hat die Ereignisse nicht angenommen"
+            if not todo:
+                break
+
+    # ---- Benachrichtigungen
+    def _notify(self, meta, payload):
+        mid = meta.get("message_id")
+        if isinstance(mid, str) and mid:
+            with self.lock:
+                if mid in self.seen_set:
+                    return                                             # Twitch liefert "mindestens einmal": Wiederholung nach einem Neuaufbau
+                if len(self.seen) == self.seen.maxlen:
+                    self.seen_set.discard(self.seen[0])
+                self.seen.append(mid)
+                self.seen_set.add(mid)
+        item = self.map_event((payload.get("subscription") or {}).get("type"), payload.get("event"))
+        if item:
+            self.reader._add(item)
+
+    @staticmethod
+    def map_event(typ, ev):
+        """Ein Ereignis von Twitch -> Eintrag für den Chat (mit "ev" für die farbige Karte) oder None. Alle Texte werden bereinigt und gekürzt."""
+        if not isinstance(ev, dict):
+            return None
+        clean = lambda v, n: TwitchReader._clean(str(v or ""), n)
+        who = clean(ev.get("user_name") or ev.get("user_login"), 40)
+        if typ == "channel.follow":
+            if not who:
+                return None
+            return {"type": "notice", "name": "", "color": "", "text": who, "emotes": [], "ev": {"k": "follow", "n": 0}}
+        if typ == "channel.channel_points_custom_reward_redemption.add":
+            rw = ev.get("reward") if isinstance(ev.get("reward"), dict) else {}
+            title = clean(rw.get("title"), 80)
+            inp = clean(ev.get("user_input"), 200)
+            cost = rw.get("cost")
+            n = min(int(cost), 100_000_000) if isinstance(cost, int) and not isinstance(cost, bool) and cost >= 0 else 0
+            text = ": ".join(x for x in (who, title) if x) + (" – " + inp if inp else "")
+            if not text:
+                return None
+            return {"type": "notice", "name": "", "color": "", "text": text, "emotes": [], "ev": {"k": "points", "n": n}}
+        return None
 
 
 class TwitchNotifier:
@@ -6970,6 +7449,7 @@ class Handler(BaseHTTPRequestHandler):
                 since = 0
             out = self.chatreader.poll(since)
             out["account"] = self.twitchlogin.status()
+            out["events"] = self.chatevents.status() if getattr(self, "chatevents", None) else {"state": "aus", "types": [], "error": ""}
             return self.reply(200, out)
         if path == "/api/hdmi":
             return self.reply(200, self.hdmi.status())
@@ -7146,7 +7626,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/twitch/login":
                 act = d.get("action")
                 if act == "start":
-                    return self.reply(200, self.twitchlogin.start(mod=d.get("mod") is True))
+                    return self.reply(200, self.twitchlogin.start(mod=d.get("mod") is True, events=d.get("events") is True))
                 if act == "cancel":
                     return self.reply(200, self.twitchlogin.cancel())
                 if act == "mod" and isinstance(d.get("on"), bool):
@@ -7272,7 +7752,11 @@ def main():
         threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
     Handler.chatreader = TwitchReader(Handler.twitch.store, demo=args.demo, paths=Handler.chatpaths)
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
-    Handler.chatsender = TwitchSender(Handler.twitch.store, chat=TwitchChat(paths=Handler.chatpaths), demo_reader=Handler.chatreader if args.demo else None, mod=Handler.chatmod)       # liest den Kanal der Twitch-Karte (dieselben Einstellungen)
+    Handler.chathelix = HelixChat(Handler.twitchlogin, Handler.chatmod)
+    Handler.chatsender = TwitchSender(Handler.twitch.store, chat=TwitchChat(paths=Handler.chatpaths), demo_reader=Handler.chatreader if args.demo else None, mod=Handler.chatmod, helix=Handler.chathelix)
+    Handler.chatevents = TwitchEvents(Handler.twitch.store, Handler.twitchlogin, Handler.chatmod, Handler.chatreader, paths=Handler.chatpaths)
+    if not args.demo:
+        Handler.chatreader.events = Handler.chatevents       # liest den Kanal der Twitch-Karte (dieselben Einstellungen)
     Handler.hdmi = HdmiService(args.state, Handler.cams, args.demo)
     Handler.transfer.hdmi, Handler.transfer.twitch = Handler.hdmi, Handler.twitch.store
     if not args.demo:
