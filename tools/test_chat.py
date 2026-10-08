@@ -122,6 +122,21 @@ class Polling(unittest.TestCase):
         self.assertEqual(out["state"], "kein-kanal")
         self.assertIsNone(r.thread)
 
+    def test_the_channel_of_the_signed_in_account_is_used_when_none_is_entered(self):
+        import tempfile
+        import types
+        store = server.TwitchStore(os.path.join(tempfile.mkdtemp(), "twitch.json"))
+        store.account = types.SimpleNamespace(login=lambda: "meinkonto")       # per Geräte-Code angemeldet, im Feld steht nichts
+        r = server.TwitchReader(store)
+        r._ensure = lambda ch: setattr(r, "channel", ch)                       # keine Verbindung aufbauen
+        out = r.poll(0)
+        self.assertEqual((out["state"], out["channel"]), (r.state, "meinkonto"))
+        self.assertNotEqual(out["state"], "kein-kanal")
+        store.account = None
+        self.assertEqual(r.poll(0)["state"], "kein-kanal")                     # ohne Konto und ohne Eintrag weiter: kein Kanal
+        store.set({"channel": "Anderer_Kanal"})
+        self.assertEqual(r.poll(0)["channel"], "anderer_kanal")                 # der eingetragene Kanal geht vor
+
     def test_since_returns_only_new_items_and_numbers_restart_cleanly(self):
         r = reader()
         for i in range(5):
