@@ -4,10 +4,11 @@ Mit dem Bereich **Chat** liest und schreibst du im Twitch-Chat deines Kanals, di
 (Port 8780). Du kannst moderieren, Follows und Kanalpunkte als Karten sehen und dich bei leerem Kamera-Akku
 im Chat warnen lassen. Alles ist freiwillig; ohne Anmeldung kannst du den Chat nur lesen.
 
-**Ehrlicher Stand (Beta):** Die Anmeldung und das Senden einer Testnachricht hat der Entwickler auf einer echten Box
-bestätigt. **EventSub** (Follows, Kanalpunkte), das **Senden über die Twitch-Schnittstelle** und das **Bot-Konto**
-sind bisher nur gegen nachgebaute Testserver geprüft, nicht gegen echtes Twitch. Wenn etwas nicht klappt,
-sag es bitte.
+**Ehrlicher Stand (Beta):** Die Anmeldung, das Senden einer Testnachricht und das **Bot-Konto** (angemeldet, schreibt
+im richtigen Kanal) hat der Entwickler am 9. Oktober 2026 auf einer echten Box bestätigt. **EventSub** (Follows,
+Kanalpunkte) und das **Senden über die Twitch-Schnittstelle** sind bisher nur gegen nachgebaute Testserver geprüft,
+nicht gegen echtes Twitch; eine Warnung bei wirklich leerem Kamera-Akku wurde noch nicht ausgelöst. Wenn etwas nicht
+klappt, sag es bitte.
 
 ## 1. Mit Twitch anmelden
 
