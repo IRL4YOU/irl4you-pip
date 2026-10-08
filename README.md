@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.151 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
+**Version 0.9.152 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
 
 > **Beta heißt:** Es läuft im Alltag, aber noch nicht alles ist über lange Zeit und unterwegs geprüft (siehe "Was noch fehlt oder ungetestet ist"). Neue Versionen gibt es oft; zurück auf eine frühere Version geht in der Oberfläche.
 
@@ -211,6 +211,18 @@ zurück. Wie bei jedem Update wird dabei Code aus dem Repository als root ausgef
 Zugangsdaten (BELABOX-Passwort, SRTLA-Stream-ID, WLAN-Daten der Kamera) liegen nur auf der Box in `/var/lib/pipbox` mit
 eingeschränkten Rechten und gehören nicht in dieses Repository. Root-Helfer nehmen nur feste Stichworte an und prüfen
 alles erneut.
+
+## Danksagung
+
+Ein besonderer Dank gilt **Bittersweet1987** (GitHub). Ohne seine Mithilfe gäbe es dieses Paket nicht in dieser Form. Er hat
+
+- von Anfang an mit Ideen, Wünschen und Fehlerberichten mitgeholfen (über zwanzig Issues, unter anderem Import und Export der Einstellungen, Protokolle, Hotspot, Entwickler-Menü, Fußleiste am Handy, Hell/Dunkel und Sprachen, Verbindungen benennen),
+- die Engine für **"Alle Kameras immer bereit"** mit Compositor und den Kamera-Zweigen im belacoder beigetragen (Pull Request #27, aus seinem Projekt streamingbox), dazu den belacoder-Regler und die Bildkopie (#29, #41),
+- weitere Pull Requests geschrieben: hochkantes Kamerabild als kleines Bild (#30), Reihenfolge der Kamera-Knöpfe (#33), umfangreiche Protokolle für die Fehlersuche (#36, #39, #40, #45), Verbindungen benennen (#37), neu geordnete Menüs, "Optionen", die Designs "Klar" und "Kompakt" und die Pulsanzeige in der Kopfleiste (#38, #42, #46, #48, #49) sowie Übersetzungen (#47),
+- mit seinem **DJI-Dienst** die Vorlage für den Bluetooth-Dienst geliefert (siehe [NOTICE.md](NOTICE.md)),
+- Fehlerprotokolle anderer Nutzer ausgewertet und alles auf seiner eigenen Box mit mehreren Kameras ausprobiert.
+
+Danke auch an die Nutzer, die Protokolle und Rückmeldungen geschickt haben (zum Beispiel Swissi), an das Projekt **Moblin** (Erik Moqvist, DJI-Protokoll, MIT), an **BELABOX** und an alle in der Discord-Community.
 
 ## Lizenz
 

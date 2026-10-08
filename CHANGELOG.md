@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.152 (Beta)
+- **Danksagung im README:** Ein eigener Abschnitt nennt **Bittersweet1987** und seine Beiträge (Ideen und Fehlerberichte, die Engine für „Alle Kameras immer bereit“, weitere Pull Requests, die Vorlage für den DJI-Dienst, Tests) sowie die Nutzer mit Protokollen, Moblin, BELABOX und die Discord-Community. Keine Änderung am Programm.
+
 ## 0.9.151 (Beta)
 - **Langzeittest ausgewertet:** Das Zustandsprotokoll der Box (`pipbox-health.log`) zeigt vom 6. Oktober 16:34 bis 8. Oktober 16:06 Uhr UTC **47,5 Stunden** ohne Absturz, mit vier DJI-Kameras und einer GoPro; die einzigen Unterbrechungen sind zwei gewollte Neustarts der Box am 7. Oktober um 17:54 Uhr UTC (von der Oberfläche ausgelöst, zusammen unter zwei Minuten). Höchste Temperatur 52 °C, freier Arbeitsspeicher stets über 6,4 GB. Der Entwickler berichtet von etwa drei Tagen; das ältere Protokoll ist nicht mehr vorhanden. README, `KONZEPT.md` und die Senden-Anleitung nennen diesen Stand; offen bleibt der Dauerbetrieb unterwegs im Freien. Keine Änderung am Programm.
 
