@@ -3285,7 +3285,7 @@ async function powerDo(action){
   let st={}; try{ st=await srtlaCall("GET","/api/power"); }catch(e){}
   if(!st.helper_installed){ $("pwmsg").textContent="Der Helfer ist auf dieser Box noch nicht installiert (install.sh erneut ausführen)."; return; }
   const live=st.sending?"\n\nAchtung: Es wird gerade gesendet. Die Übertragung bricht dabei ab.":"";
-  if(!confirm((action==="poweroff"?"Die Box jetzt herunterfahren?":"Die Box jetzt neu starten?")+live)) return;
+  if(!confirm((action==="poweroff"?"Die Box jetzt herunterfahren?\n\nDanach ist die Box AUS und startet nicht von selbst wieder. Zum Einschalten den Strom kurz trennen oder die Ein-Taste drücken.":"Die Box jetzt neu starten?")+live)) return;
   try{ await srtlaCall("POST","/api/power",{action,confirm:true}); }
   catch(x){ $("pwmsg").textContent=x.message; return; }
   $("pwmsg").textContent=action==="poweroff"
