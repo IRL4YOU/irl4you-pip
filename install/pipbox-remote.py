@@ -37,6 +37,7 @@ KEY_URL = "https://pkgs.tailscale.com/stable/ubuntu/{}.noarmor.gpg"
 LIST_URL = "https://pkgs.tailscale.com/stable/ubuntu/{}.tailscale-keyring.list"
 KEYRING = "/usr/share/keyrings/tailscale-archive-keyring.gpg"
 SOURCE = "/etc/apt/sources.list.d/tailscale.list"
+SERVE_TIMEOUT = 40          # Sekunden, die "tailscale serve" und "tailscale funnel" höchstens laufen dürfen
 URL_RE = re.compile(r"https://(?:login\.tailscale\.com|console\.tailscale\.com)/[A-Za-z0-9_./?=&%-]{4,200}")
 
 
@@ -74,6 +75,19 @@ def status(**kw):
 
 def ts(*args, timeout=60):
     return subprocess.run(["tailscale", *args], capture_output=True, text=True, timeout=timeout)
+
+
+def run_capture(cmd, timeout):
+    """Befehl ausführen und seine Ausgabe auch dann behalten, wenn er nach der Frist abgebrochen wird. Bei einem Tailscale-Konto, in dem "Serve" (HTTPS) noch nicht
+    erlaubt ist, druckt "tailscale serve" den Freischaltlink und WARTET dann, bis man ihn bestätigt hat. Die bisherige Ausgabe steckt bei Ablauf der Frist in der
+    Ausnahme (subprocess.run bricht den Befehl ab); sie wurde nur nie gelesen, es blieb "timed out after 40 seconds".
+    Ergebnis: (Rückgabewert oder None, Ausgabe, Frist abgelaufen)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, (r.stdout or "") + (r.stderr or ""), False
+    except subprocess.TimeoutExpired as e:
+        parts = [x.decode("utf-8", "replace") if isinstance(x, bytes) else (x or "") for x in (e.stdout, e.stderr)]
+        return None, "".join(parts), True
 
 
 def installed():
@@ -157,16 +171,18 @@ def do_login():
 
 def do_serve_on():
     status(state="working", step="Gebe die Oberfläche im privaten Netz frei", message="", hint_url="")
-    r = subprocess.run(["tailscale", "serve", "--bg", f"--https=443", f"http://127.0.0.1:{PORT}"], capture_output=True,
-                       text=True, timeout=40)
-    out = r.stdout + r.stderr
-    if "not enabled on your tailnet" in out or "enable" in out.lower() and "visit" in out.lower():
+    rc, out, timed_out = run_capture(["tailscale", "serve", "--bg", "--https=443", f"http://127.0.0.1:{PORT}"], SERVE_TIMEOUT)
+    low = out.lower()
+    if "not enabled on your tailnet" in low or ("enable" in low and "visit" in low):
         m = URL_RE.search(out)
         status(state="needs_serve", step="", hint_url=m.group(0) if m else "",
                message="Tailscale muss die Funktion „Serve“ (HTTPS) für dein Netz einmal freischalten. Öffne den Link, lasse "
                        "„Funnel“ AUS und klicke „Enable HTTPS“. Danach erneut freigeben.")
         return
-    if r.returncode != 0:
+    if timed_out:
+        raise RuntimeError(f"Tailscale hat nicht innerhalb von {SERVE_TIMEOUT} Sekunden geantwortet. Ist die Box mit Tailscale verbunden (Status „Verbunden“)? "
+                           "Sonst zuerst „Verbinden“ drücken und dann erneut freigeben." + (" Ausgabe: " + out[-100:].replace("\n", " ") if out.strip() else ""))
+    if rc != 0:
         raise RuntimeError("Freigabe fehlgeschlagen: " + out[-150:].replace("\n", " "))
     status(state="idle", step="", hint_url="", message="Die Oberfläche ist im privaten Tailscale-Netz erreichbar.")
 
@@ -199,9 +215,8 @@ def funnel_active(cfg=None):
 
 def do_funnel_on():
     status(state="working", step="Gebe die Oberfläche öffentlich im Internet frei (Funnel)", message="", hint_url="")
-    r = subprocess.run(["tailscale", "funnel", "--bg", "--yes", str(PORT)], capture_output=True, text=True, timeout=40)
-    out = r.stdout + r.stderr
-    if r.returncode != 0 or not funnel_active():
+    rc, out, timed_out = run_capture(["tailscale", "funnel", "--bg", "--yes", str(PORT)], SERVE_TIMEOUT)     # gleiche Falle wie bei "serve": Link drucken, dann warten
+    if rc != 0 or timed_out or not funnel_active():
         low = out.lower()
         if "funnel" in low and ("not enabled" in low or "not available" in low or "enable" in low or "policy" in low or "visit" in low):
             m = URL_RE.search(out)
