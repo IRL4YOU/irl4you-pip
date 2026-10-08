@@ -2781,7 +2781,7 @@ $("chat_form").addEventListener("submit",async e=>{
     if(m.ev){                                                                                              // besonderes Ereignis: Kopfzeile mit Art und Menge
       const k=m.ev.k, n=m.ev.n||0;
       const head={sub:n>0?`Sub · ${n} Monate`:"Sub",gift:n>1?`Geschenk-Abos · ${n}`:"Geschenk-Abo",raid:n>0?`Raid · ${n} Zuschauer`:"Raid",cheer:`Cheer · ${n} Bits`,announce:"Ankündigung",follow:"Follow",points:n>0?`Kanalpunkte · ${n}`:"Kanalpunkte"}[k];
-      if(head){ d.classList.add("ev","ev-"+k); const h=document.createElement("span"); h.className="evh"; h.textContent={sub:"⭐ ",gift:"🎁 ",raid:"🚀 ",cheer:"💎 ",announce:"📢 ",follow:"💜 ",points:"🎯 "}[k]+head; body.insertBefore(h,body.firstChild); }
+      if(head){ d.classList.add("ev","ev-"+k); const h=document.createElement("span"); h.className="evh"; h.appendChild(document.createTextNode({sub:"⭐ ",gift:"🎁 ",raid:"🚀 ",cheer:"💎 ",announce:"📢 ",follow:"💜 ",points:"🎯 "}[k])); h.appendChild(document.createTextNode(head)); body.insertBefore(h,body.firstChild); }       // Zeichen und Text getrennt: nur der Text wird übersetzt
     }
     if(modOn) addMm(d);
     return d;
