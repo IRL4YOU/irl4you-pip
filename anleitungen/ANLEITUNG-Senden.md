@@ -56,7 +56,7 @@ Das Passwort gibt die Oberfläche nur an das Netzwerkprogramm der Box weiter. Di
 
 **Hotspot-Modus der Box:** Unter jeder WLAN-Karte schaltest du **Hotspot-Modus** auf An. Mit **Einstellen** legst du Name, Passwort (8 bis 63 Zeichen), 2,4 oder 5 GHz und Kanal fest. Die Box macht dann aus dem Stick ein eigenes WLAN, zum Beispiel für DJI-Kameras oder ein Handy. Der Stick ist dann nicht mehr mit einem anderen WLAN verbunden. Hast du die Oberfläche über dieses WLAN geöffnet, bricht sie beim Einschalten ab. Du erreichst sie danach über den Hotspot (Adresse meist `10.42.0.1`) oder ein anderes Netz.
 
-*Hotspot mit echtem Stick und Kamera: noch nicht geprüft.*
+*Geprüft mit einem echten WLAN-Stick und einer GoPro Hero 8: Die GoPro sendet über den Hotspot der Box (Adresse im Netz `10.42.0.x`) dauerhaft zur Box.*
 
 **Über fremde WLANs sperren** (Karte Verbindungen, Bereich **Zugriff auf diese Oberfläche**): Die Oberfläche ist unverschlüsselt (HTTP). In einem fremden WLAN (Hotel, Handy-Hotspot) kann dort jeder mitlesen. Ist der Schalter an, antwortet die Box in solchen WLANs nicht. Erreichbar bleiben Ethernet, der eigene Hotspot der Box, USB und Tailscale (HTTPS). Sperrst du dich aus, schaltest du den Schalter über Ethernet oder Tailscale wieder aus. Der Schalter ist standardmäßig aus.
 
@@ -128,7 +128,6 @@ Drei kleine Verbesserungen sind eingebaut:
 
 ## Was noch nicht geprüft ist
 
-- Hotspot-Modus mit echtem Stick und Kamera.
 - Fußleiste mit echten Kameras.
 - "Hauptbild tauschen ohne Unterbrechung": nur kurz im Heimnetz.
 - "Alle Kameras immer bereit": noch kein langer Lauf, keine Fahrt.
