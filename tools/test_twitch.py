@@ -56,7 +56,7 @@ def new_store(**cfg):
 class Store(unittest.TestCase):
     def test_defaults_and_public_view(self):
         s = new_store()
-        self.assertEqual(s.public(), {"enabled": False, "channel": "", "login": "", "token_set": False, "threshold": 10, "only_live": True, "account": "",
+        self.assertEqual(s.public(), {"enabled": False, "channel": "", "login": "", "token_set": False, "threshold": 10, "only_live": True, "account": "", "bot": "",
                                       "message": "Akkustand niedrig, bitte Akku wechseln: {Kamera} ({Prozent} %)"})
         s.set(CFG)
         pub = s.public()
@@ -947,7 +947,7 @@ class Notifier(unittest.TestCase):
         st = r.n.status()
         self.assertTrue(st["token_set"])
         self.assertNotIn(TOKEN, json.dumps(st))
-        self.assertEqual(set(st), {"enabled", "channel", "login", "token_set", "threshold", "message", "only_live", "account", "status"})
+        self.assertEqual(set(st), {"enabled", "channel", "login", "token_set", "threshold", "message", "only_live", "account", "bot", "status"})
         self.assertEqual(set(st["status"]), {"ok", "time", "text", "retry_at", "gave_up"})
         self.assertEqual(st["status"]["time"], int(r.clock.w))
 
@@ -1162,11 +1162,7 @@ class NotInTheBackup(unittest.TestCase):
         server.TwitchStore(os.path.join(d, "twitch.json")).set(CFG)
         for secrets_on in (True, False):
             text = json.dumps(t.make_document(secrets_on), ensure_ascii=False)
-            self.assertNotIn(TOKEN, text)
-            self.assertNotIn("twitch", text.lower())
-            self.assertNotIn("meinkanal", text.lower())
-        self.assertNotIn("twitch", [sid for sid, _ in server.SETTINGS_SECTIONS])
-        self.assertNotIn("Twitch", "".join(label for _, label in server.SETTINGS_SECTIONS))
+            self.assertNotIn(TOKEN, text)                      # der Token nie; die übrigen Angaben der Akku-Warnung sind seit 0.9.12x ein eigener Abschnitt der Sicherung
 
 
 class DemoServer(unittest.TestCase):

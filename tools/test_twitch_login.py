@@ -67,7 +67,7 @@ class FakeTwitch(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/oauth2/validate" and self.headers.get("Authorization", "").startswith("OAuth AT"):
-            return self._send(200, {"client_id": "x", "login": "Streamer", "scopes": FakeTwitch.state.get("scopes", ["chat:read", "chat:edit"]), "user_id": "42", "expires_in": 14000})
+            return self._send(200, {"client_id": "x", "login": FakeTwitch.state.get("login", "Streamer"), "scopes": FakeTwitch.state.get("scopes", ["chat:read", "chat:edit"]), "user_id": "42", "expires_in": 14000})
         self._send(401, {"status": 401, "message": "invalid access token"})
 
 
@@ -458,6 +458,87 @@ class Sending(Base):
         self.now[0] += 2
         snd.say("jetzt wieder")
         self.assertEqual(len(chat.sent), 2)
+
+
+class BotAccount(Base):
+    """Zweites Konto (Bot), das nur die Akku-Meldung schreibt."""
+    def rig(self):
+        st = server.TwitchStore(os.path.join(self.dir, "twitch.json"))
+        main = self.make()
+        bot = server.TwitchBotLogin(os.path.join(self.dir, "twitch-bot-login.json"), client_id="testclient", id_base=self.base, clock=lambda: self.now[0],
+                                    sleep=lambda s: time.sleep(0.01))
+        st.account, st.bot = main, bot
+        return st, main, bot
+
+    def sign_in(self, tl):
+        tl.start()
+        self.wait(tl, "angemeldet")
+
+    def test_bot_asks_for_the_smallest_rights_and_has_its_own_file(self):
+        st, main, bot = self.rig()
+        FakeTwitch.state["polls"] = 0
+        bot.start()
+        self.wait(bot, "angemeldet")
+        sent = [f for path, f in FakeTwitch.state["seen"] if path == "/oauth2/device"][0]
+        self.assertEqual(sent["scopes"], "chat:read chat:edit")                         # kein Senden über Helix, keine Moderation, keine Ereignisse
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "twitch-bot-login.json")))
+        self.assertFalse(os.path.exists(self.path))                                     # die Datei des Hauptkontos bleibt unberührt
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.dir, "twitch-bot-login.json")).st_mode), 0o600)
+        self.assertNotIn("AT1", json.dumps(bot.status()))
+        self.assertEqual(bot.scopes_for(mod=True, events=True), "chat:read chat:edit")
+
+    def test_only_the_battery_message_uses_the_bot_the_chat_stays_with_the_main_account(self):
+        st, main, bot = self.rig()
+        self.sign_in(main)
+        FakeTwitch.state["polls"] = 0
+        FakeTwitch.state["login"] = "botkonto"
+        FakeTwitch.state["n"] = 1
+        bot.start()
+        self.wait(bot, "angemeldet")
+        self.assertEqual(bot.login(), "botkonto")
+        chat = st.settings()
+        self.assertEqual((chat["login"], chat["channel"]), ("streamer", "streamer"))        # Chat: Hauptkonto
+        msg = st.notify_settings()
+        self.assertEqual((msg["login"], msg["channel"]), ("botkonto", "streamer"))          # Meldung: Bot, aber im Kanal des Hauptkontos
+        self.assertTrue(msg["token"])
+        pub = st.public()
+        self.assertEqual((pub["account"], pub["bot"]), ("streamer", "botkonto"))
+        self.assertNotIn("AT", json.dumps(pub))
+
+    def test_without_main_account_the_bot_needs_a_channel(self):
+        st, main, bot = self.rig()
+        self.sign_in(bot)
+        with self.assertRaises(ValueError):
+            st.set({"enabled": True})                                                   # Bot allein: der Kanal fehlt
+        st.set({"enabled": True, "channel": "Kanal_X"})
+        msg = st.notify_settings()
+        self.assertEqual((msg["login"], msg["channel"]), ("streamer", "kanal_x"))
+
+    def test_test_message_is_written_by_the_bot(self):
+        st, main, bot = self.rig()
+        self.sign_in(bot)
+        st.set({"enabled": True, "channel": "kanal"})
+        chat = FakeChat()
+        n = server.TwitchNotifier(st, None, None, None, chat=chat, mono=lambda: self.now[0], wall=lambda: self.now[0], sleep=lambda s: None)
+        self.assertTrue(n.test()["ok"])
+        self.assertEqual(chat.sent, [("streamer", "AT1", "kanal", "Test: IRL4YOU BOX")])
+
+    def test_expired_bot_login_stays_silent_instead_of_writing_as_the_main_account(self):
+        st, main, bot = self.rig()
+        self.sign_in(main)
+        FakeTwitch.state["polls"] = 0
+        bot.start()
+        self.wait(bot, "angemeldet")
+        FakeTwitch.state["reject_refresh"] = True
+        bot.tokens["expires_at"] = self.now[0] - 5                                      # nur der Zugang des Bots ist abgelaufen
+        self.assertEqual(bot.token(), "")                                               # Erneuerung abgelehnt: Anmeldung abgelaufen
+        self.assertEqual(bot.state, "abgelaufen")
+        msg = st.notify_settings()
+        self.assertEqual(msg["token"], "")                                              # nie still mit dem Hauptkonto schreiben
+        self.assertEqual(st.settings()["login"], "streamer")                            # der Chat läuft weiter
+        bot.logout()                                                                    # abgemeldet: wieder das Hauptkonto
+        self.assertEqual(st.notify_settings()["login"], "streamer")
+        self.assertTrue(st.notify_settings()["token"])
 
 
 if __name__ == "__main__":
