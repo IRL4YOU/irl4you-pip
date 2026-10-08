@@ -12,7 +12,7 @@ B=/var/tmp/pbbuild
 R=$B/root
 mkdir -p "$B/debs" "$R" "$OUT"
 if [ ! -f "$R/usr/include/gstreamer-1.0/gst/gst.h" ] || [ ! -f "$R/usr/include/gstreamer-1.0/gst/app/gstappsink.h" ]; then
-  (cd "$B/debs" && apt-get download libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libglib2.0-dev \
+  (cd "$B/debs" && apt-get -o APT::Sandbox::User=root download libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libglib2.0-dev \
     && for d in *.deb; do dpkg -x "$d" "$R"; done)
 fi
 [ -f /usr/include/srt/srt.h ] || { echo "FEHLER: /usr/include/srt/srt.h fehlt (Paket belabox-libsrt1)"; exit 1; }
