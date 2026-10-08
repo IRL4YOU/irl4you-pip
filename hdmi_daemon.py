@@ -226,10 +226,14 @@ def usb_caps(cand):
     return "%s %dx%d@%d" % (label, w, h, f), "%s,width=%d,height=%d,framerate=%d/1" % (media, w, h, f)
 
 
-def usb_h264_padded(cand):
-    """True, wenn der H.264-Strom der Kamera Füllzeilen enthält: Bei 1080 Zeilen sendet sie 1088 (Vielfaches von 16, ohne Beschneidung im Strom, unten 8 schwarze Zeilen).
-    Dann wird mit dem Hardware-Dekoder auf das echte Bild zugeschnitten und neu kodiert."""
-    return cand[0] == "h264" and cand[2] % 16 != 0
+PADDED_H264 = ("action6",)                               # Kameras, deren H.264-Strom unten Füllzeilen hat (Namensteil, klein): Osmo Action 6
+
+
+def usb_h264_padded(cand, name=""):
+    """True, wenn der H.264-Strom dieser Kamera Füllzeilen enthält: Die Action 6 sendet bei 1080 Zeilen einen Strom mit 1088 (ohne Beschneidung im Strom, unten 8 schwarze Zeilen).
+    Dann wird mit dem Hardware-Dekoder auf das echte Bild zugeschnitten und neu kodiert. Andere Kameras (zum Beispiel die Action 4) gehen unverändert durch."""
+    n = (name or "").lower().replace(" ", "").replace("_", "")
+    return cand[0] == "h264" and cand[2] % 16 != 0 and any(k in n for k in PADDED_H264)
 
 
 def _usb_decode(kind):
@@ -248,8 +252,8 @@ def usb_probe_argv(device, cand):
     return ["gst-launch-1.0", "-q", "v4l2src", "device=" + device, "num-buffers=3", "!", usb_caps(cand)[1], "!"] + _usb_decode(cand[0]) + ["!", "fakesink"]
 
 
-def usb_feeder_argv(cfg, device, cand, audio_device=None, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP):
-    """Befehl der Einspeisung einer USB-Webcam als Liste (keine Shell). MJPEG, Rohbild und H.264 mit Füllzeilen (1080p) werden mit dem Hardware-Kodierer neu kodiert, übriges H.264 geht unverändert durch.
+def usb_feeder_argv(cfg, device, cand, audio_device=None, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP, name=""):
+    """Befehl der Einspeisung einer USB-Webcam als Liste (keine Shell). MJPEG, Rohbild und H.264 mit Füllzeilen (Action 6, 1080p) werden mit dem Hardware-Kodierer neu kodiert, übriges H.264 geht unverändert durch.
     audio_device: "plughw:CARD=<id>" oder None (dann Stille, auch bei cfg["audio"] == "none")."""
     cfg = clean_settings(cfg)
     if not re.match(r"^/dev/video\d{1,3}$", device or ""):
@@ -261,7 +265,7 @@ def usb_feeder_argv(cfg, device, cand, audio_device=None, rtmp_port=RTMP_PORT, r
     kind = cand[0]
     fps = cand[3]
     v = ["v4l2src", "device=" + device, "!", usb_caps(cand)[1], "!"] + _usb_decode(kind) + ["!"]
-    if kind == "h264" and usb_h264_padded(cand):
+    if kind == "h264" and usb_h264_padded(cand, name):
         v += ["queue", "!", "mppvideodec", "crop-rectangle=<0,0,%d,%d>" % (cand[1], cand[2]), "height=%d" % cand[2], "!", "queue", "!",
               "mpph264enc", "bitrate=%d" % (cfg["bitrate"] * 1000), "gop=%d" % fps, "!", "h264parse", "config-interval=-1", "!", "queue", "!", "mux."]
     elif kind == "h264":
@@ -481,7 +485,7 @@ class Daemon:
             return None, None
         audio = find_usb_audio(cam, self.asound) if self.cfg["audio"] == "hdmi" else None
         self.usb = dict(self.usb, present=True, name=cam["name"], node=cam["node"], format=usb_caps(cand)[0], audio=(audio or ""))
-        return usb_feeder_argv(self.cfg, cam["node"], cand, audio, self.rtmp_port, self.rtmp_app), cand
+        return usb_feeder_argv(self.cfg, cam["node"], cand, audio, self.rtmp_port, self.rtmp_app, cam.get("name", "")), cand
 
     async def _start(self, sig):
         if self.cfg.get("source") == "usb":
