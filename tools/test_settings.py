@@ -374,7 +374,7 @@ class UiParts(unittest.TestCase):
     def test_export_has_the_parts_and_never_the_twitch_token(self):
         d = self.out
         self.assertEqual(d["layout"], {"order": ["c_chat", "netcard", "c_status"], "hidden": ["rcard", "sm_btn", "hlp_btn", "opt_design"]})
-        self.assertEqual(d["hdmi"], {"enabled": True, "bitrate": 6000, "fps": 25, "audio": "none"})
+        self.assertEqual(d["hdmi"], {"enabled": True, "bitrate": 6000, "fps": 25, "audio": "none", "source": "hdmi"})
         self.assertEqual(d["camnet"], {"iface": "usb0"})
         self.assertEqual(d["twitch"], {"enabled": True, "channel": "meinkanal", "login": "meinbot", "threshold": 15, "message": "Akku leer: {Kamera}", "only_live": False})
         self.assertNotIn(self.TOKEN, json.dumps(d))

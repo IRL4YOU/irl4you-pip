@@ -66,5 +66,8 @@
  "(optional)",
  "App",
  "(Version {1})",
- "(eingestellt {1})"
+ "(eingestellt {1})",
+ "Die Kamera liefert kein Bild. Sie muss eingeschaltet und im Webcam-Modus sein (an der Kamera: USB-Modus „Webcam“)",
+ "Die USB-Kamera ist nicht erreichbar oder wird schon benutzt",
+ "Quelle: HDMI-Eingang oder USB-Webcam"
 ]

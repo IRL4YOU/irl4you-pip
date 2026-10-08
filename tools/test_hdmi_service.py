@@ -73,7 +73,7 @@ class Talking(Case):
         s = self.svc.status()
         self.assertTrue(s["service"])
         self.assertEqual((s["state"], s["available"]), ("off", True))
-        self.assertEqual(s["settings"], {"enabled": False, "bitrate": 8000, "fps": 30, "audio": "hdmi"})        # ohne den festen Schlüssel
+        self.assertEqual(s["settings"], {"enabled": False, "bitrate": 8000, "fps": 30, "audio": "hdmi", "source": "hdmi"})        # ohne den festen Schlüssel
         self.assertEqual((s["signal"]["width"], s["signal"]["height"], s["signal"]["locked"]), (1920, 1080, True))
         self.assertFalse(s["listed"])
 
@@ -282,18 +282,19 @@ def func(name):
 class Markup(unittest.TestCase):
     def test_the_section_sits_at_the_bottom_of_the_cameras_card_and_is_not_a_new_card(self):
         card = PAGE[PAGE.index('id="c_cams"'):PAGE.index("</details>\n\n\n  <details class=\"card wide\" id=\"pipecard\"")]
-        self.assertIn('<div class="sech">HDMI- und USB-Kameras</div>', card)
+        self.assertIn('<details class="subsec" id="hdmi_sec"><summary>HDMI- und USB-Kameras</summary>', card)
         self.assertGreater(card.index('id="hdmicard"'), card.index('id="djicard"'))                  # unter den DJI-Kameras (und deren Akku-Warnung)
-        self.assertGreater(card.index('id="hdmicard"'), card.index('id="tw_sec"'))
+        self.assertLess(card.index('id="hdmicard"'), card.index('id="tw_sec"'))                       # die Akku-Warnung steht seit dem Umbau der Karte darunter
         titles = re.findall(r'<details class="card[^>]*><summary><span class="sumh">([^<]*)</span>', PAGE)
         self.assertEqual([t for t in titles if "HDMI" in t or "USB" in t], [])                       # keine zusätzliche Karte, kein eigener Hauptpunkt
         self.assertIn('<span class="sumh">Kameras</span>', PAGE)                                     # die Karte heißt weiter "Kameras"
-        self.assertIn('<div class="sech" style="margin-top:0">RTMP-Kameras</div>', PAGE)
+        self.assertIn('<details class="subsec" id="rtmp_sec"><summary>Aktive Kameras</summary>', PAGE)
 
     def test_the_fields_and_their_order(self):
         sec = PAGE[PAGE.index('id="hdmicard"'):PAGE.index('id="hdmi_err"')]
         ids = re.findall(r'id="(hdmi_\w+)"', sec)
-        self.assertEqual(ids, ["hdmi_cam", "hdmi_state", "hdmi_signal", "hdmi_on", "hdmi_vsec", "hdmi_vsum", "hdmi_fps", "hdmi_br", "hdmi_audio", "hdmi_save"])
+        self.assertEqual(ids, ["hdmi_cam", "hdmi_name", "hdmi_state", "hdmi_source", "hdmi_signal", "hdmi_on", "hdmi_vsec", "hdmi_vsum", "hdmi_fps", "hdmi_br", "hdmi_audio", "hdmi_save"])
+        self.assertIn('<select id="hdmi_source"><option value="hdmi">HDMI-Eingang</option><option value="usb">USB-Webcam</option></select>', sec)
         self.assertIn('<option value="hdmi">HDMI-Ton</option><option value="none">ohne Ton</option>', sec)
         self.assertIn('<option value="30">30 fps</option><option value="25">25 fps</option>', sec)
 
@@ -311,7 +312,8 @@ class Script(unittest.TestCase):
         self.assertNotIn("fetch(", self.BLOCK)
         self.assertNotIn("innerHTML", self.BLOCK)                                                    # Texte vom Server stehen nur als textContent
         for expr in re.findall(r"\$\{([^}]*)\}", self.BLOCK):
-            self.assertRegex(expr, r"^(s\.\w+|Math\.round\(s\.fps\)|s\.fps|\(s\.bitrate/1000\)\.toFixed\(1\)\.replace\(.*\)|s\.audio===.*)$", expr)
+            ok = re.match(r"^(s\.\w+|Math\.round\(s\.fps\)|s\.fps|\(s\.bitrate/1000\)\.toFixed\(1\)\.replace\(.*\)|s\.audio===.*)$", expr) or expr == 'usb?"":s.fps+" fps · "'
+            self.assertTrue(ok, expr)
 
     def test_the_switch_applies_at_once_and_the_button_saves_the_picture_and_sound_values(self):
         self.assertIn('$("hdmi_on").addEventListener("change",()=>hdmiPost({enabled:$("hdmi_on").checked}));', self.BLOCK)
@@ -339,8 +341,21 @@ class Script(unittest.TestCase):
     def texts(self, d):
         if not JSC:
             self.skipTest("keine JavaScript-Maschine (jsc)")
-        code = func("hdmiSignalText") + "\n" + func("hdmiStateText") + "\nvar d = %s; print(JSON.stringify([hdmiSignalText(d), hdmiStateText(d)]));" % json.dumps(d)
+        code = func("hdmiIsUsb") + "\n" + func("hdmiSignalText") + "\n" + func("hdmiStateText") + "\nvar d = %s; print(JSON.stringify([hdmiSignalText(d), hdmiStateText(d)]));" % json.dumps(d)
         return json.loads(self.run_js(code))
+
+    def test_usb_webcam_texts(self):
+        usb = {"service": True, "available": True, "signal_known": True, "signal": {}, "settings": {"source": "usb", "audio": "hdmi"}}
+        none = dict(usb, state="waiting", usb={"present": False})
+        self.assertEqual(self.texts(none), ["Keine USB-Kamera angeschlossen", "wartet auf Kamera"])
+        on = dict(usb, state="streaming", usb={"present": True, "name": "Osmo Action 6", "format": "MJPEG 1280x720@30", "audio": "plughw:CARD=Action6"})
+        self.assertEqual(self.texts(on), ["Osmo Action 6 · MJPEG 1280x720@30", "sendet"])
+        mute = dict(on, usb=dict(on["usb"], audio=""))
+        self.assertIn("kein Ton der Kamera gefunden", self.texts(mute)[0])
+        off = dict(mute, settings={"source": "usb", "audio": "none"})
+        self.assertNotIn("kein Ton", self.texts(off)[0])                                              # Ton ist ausgeschaltet: kein Hinweis
+        hd = {"service": True, "available": True, "signal_known": True, "signal": {"locked": False}, "state": "waiting", "settings": {"source": "hdmi"}}
+        self.assertEqual(self.texts(hd), ["Kein HDMI-Signal", "wartet auf Signal"])                    # HDMI bleibt, wie es war
 
     def test_signal_and_state_texts(self):
         sig = {"locked": True, "width": 1920, "height": 1080, "fps": 59.94}

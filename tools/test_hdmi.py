@@ -112,10 +112,10 @@ class Settings(unittest.TestCase):
     def test_defaults_and_valid_changes(self):
         self.assertEqual(H.clean_settings({}), H.DEFAULTS)
         got = H.clean_settings({"enabled": True, "key": "hdmi2", "bitrate": 6000, "fps": 25, "audio": "none"})
-        self.assertEqual(got, {"enabled": True, "key": "hdmi2", "bitrate": 6000, "fps": 25, "audio": "none"})
+        self.assertEqual(got, {"enabled": True, "key": "hdmi2", "bitrate": 6000, "fps": 25, "audio": "none", "source": "hdmi"})
 
     def test_unknown_keys_are_ignored_and_the_old_values_stay(self):
-        cur = {"enabled": True, "key": "a", "bitrate": 5000, "fps": 25, "audio": "none"}
+        cur = {"enabled": True, "key": "a", "bitrate": 5000, "fps": 25, "audio": "none", "source": "hdmi"}
         self.assertEqual(H.clean_settings({"bitrate": 7000, "unsinn": 1}, cur), dict(cur, bitrate=7000))
 
     def test_bad_values_are_refused_with_a_short_text(self):
