@@ -58,6 +58,8 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 #alerts:empty{display:none}
 .alert{padding:9px 12px;border-radius:8px;font-size:14px;border-left:4px solid var(--warn);background:var(--bg)}
 .alert.crit{border-color:var(--crit)}
+.alert .abtn{float:right;margin:-2px -4px 0 8px;padding:0 6px;border:0;background:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;border-radius:6px}
+.alert .abtn:hover,.alert .abtn:focus-visible{color:var(--text);background:color-mix(in srgb,var(--muted) 18%,transparent)}
 .alert.ok{border-color:var(--ok);color:var(--muted)}
 .muted{color:var(--muted)}
 .ph{font-size:12px;color:var(--muted);margin-top:8px}
@@ -1622,6 +1624,7 @@ $("ua_block").addEventListener("change",async e=>{
 let lastNet=null;
 // Zeile "Alles im grünen Bereich" und Hinweise: ungespeicherte Änderungen am Bildaufbau (Vorschau, Kameras, Ecken ...) stehen rot davor und führen zum Speichern-Knopf
 let lastAlerts=[], healthSig="";
+const dismissedAlerts=new Set();                                                                    // geschlossene Meldungen (Art + Zeit), bis die Box sie nicht mehr liefert
 // Kurze Meldungen mit "i": USB-Gerät getrennt, Kamera ausgefallen, HDMI ohne Signal. Eine Zeile (Art, Zeit), dahinter ein "i" mit ein bis zwei Sätzen.
 // Die Uhrzeit steht in der Ortszeit des Geräts (heute: "um 23:04", sonst "gestern um 23:04"). Namen von Kameras werden nie übersetzt.
 const USB_LABEL={wlan:"USB-WLAN-Adapter getrennt",bt:"USB-Bluetooth-Adapter getrennt",net:"USB-Router getrennt",cam:"USB-Kamera getrennt",other:"USB-Gerät getrennt"};
@@ -1632,7 +1635,7 @@ function alertWhen(t){
 function alertParts(a){                                                                              // {main: Zeile als HTML, info: Text hinter dem "i" oder ""}
   if(a.kind==="usb"){
     const power=a.why==="emi"||a.why==="over";
-    return {main:`<span>${USB_LABEL[a.cat]||USB_LABEL.other}</span> · <span>${alertWhen(a.t)}</span>`+(power?` · <span>Bitte Stromversorgung prüfen</span>`:""),
+    return {main:`<span>${USB_LABEL[a.cat]||USB_LABEL.other}</span> · <span>${alertWhen(a.t)}</span>`+(a.back?` · <span>wieder da</span>`:"")+(power?` · <span>Bitte Stromversorgung prüfen</span>`:""),
             info:power?"Der USB-Anschluss wurde abgeschaltet (Störung oder Spannungseinbruch). Netzteil und USB-Hub prüfen, den Adapter möglichst direkt am Board anstecken."
                       :"Das USB-Gerät wurde getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen."};
   }
@@ -1648,20 +1651,27 @@ function alertParts(a){                                                         
 const alertText=a=>alertParts(a).main;
 function alertBox(x){                                                                                // Meldung im Block "Status": Zeile, "i" und der Text dazu (zugeklappt)
   const p=alertParts(x);
-  return `<div class="alert ${x.level}"><span class="atx">${p.main}</span>${p.info?` <button type="button" class="ibtn" aria-expanded="false" aria-label="Hilfe anzeigen" title="Hilfe">i</button><div class="hlp">${p.info}</div>`:""}</div>`;
+  const close=x.kind==="usb"?`<button type="button" class="abtn" data-akind="usb" data-at="${x.t}" aria-label="Schließen" title="Schließen">×</button>`:"";     // USB-Meldungen lassen sich wegklicken
+  return `<div class="alert ${x.level}">${close}<span class="atx">${p.main}</span>${p.info?` <button type="button" class="ibtn" aria-expanded="false" aria-label="Hilfe anzeigen" title="Hilfe">i</button><div class="hlp">${p.info}</div>`:""}</div>`;
 }
 function paintHealth(){
   const un=!!(typeof pipeDirty!=="undefined"&&(pipeDirty||pipDelayDirty));
   const note='<a href="#p_save" class="unsavedlnk">Noch nicht gespeicherte Änderungen in „Bild-in-Bild“ Anpassungen</a>';
-  const items=lastAlerts.map(a=>`<span class="${a.level}">${alertText(a)}</span>`);
+  const shown=lastAlerts.filter(x=>!dismissedAlerts.has(x.kind+":"+x.t));
+  const items=shown.map(a=>`<span class="${a.level}">${alertText(a)}</span>`);
   const hl=$("livehealth"), phone=getComputedStyle(hl).display==="none";                      // am Handy ist die Zeile ausgeblendet: dort steht der Hinweis bei den Meldungen
   const h=(un?[`<span class="crit">${note}</span>`].concat(items):(items.length?items:['<span class="ok">● Alles im grünen Bereich</span>'])).join(" · ");
-  const a=lastAlerts.map(alertBox).join("")+(un&&phone?`<div class="alert crit">${note}</div>`:"");
+  const a=shown.map(alertBox).join("")+(un&&phone?`<div class="alert crit">${note}</div>`:"");
   const sig=h+"|"+a; if(sig===healthSig) return; healthSig=sig;
   hl.innerHTML=h; $("alerts").innerHTML=a;
   $("alerts").querySelectorAll(".ibtn").forEach(b=>{ b._hlp=[b.nextElementSibling]; });            // das vorhandene Aufklappen der "i"-Knöpfe nutzen
 }
 setInterval(paintHealth,500);
+document.addEventListener("click",async e=>{
+  const b=e.target.closest&&e.target.closest("button.abtn"); if(!b) return;
+  const key=b.dataset.akind+":"+b.dataset.at; dismissedAlerts.add(key); paintHealth();
+  try{ await srtlaCall("POST","/api/alerts/dismiss",{t:parseInt(b.dataset.at,10)}); }catch(x){ dismissedAlerts.delete(key); paintHealth(); }          // klappt es nicht, kommt die Meldung zurück
+});
 document.addEventListener("click",e=>{
   const l=e.target.closest&&e.target.closest("a.unsavedlnk"); if(!l) return; e.preventDefault();
   const c=$("pipecard"); c.open=true; const b=$("p_save"); b.scrollIntoView({behavior:"smooth",block:"center"}); setTimeout(()=>b.focus({preventScroll:true}),400);
