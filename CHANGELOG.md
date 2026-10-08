@@ -1,5 +1,12 @@
 # Änderungen
 
+## 0.9.144 (Beta)
+- **Neu: Bot-Konto für die Akku-Meldung.** In der Akku-Warnung (Karte „Kameras“, DJI-Kameras) gibt es „Bot-Konto anmelden“: ein zweites Twitch-Konto meldet sich wie das Hauptkonto per Geräte-Code an und schreibt danach die Meldung („Akkustand niedrig …“) in den Chat. **Ohne Bot schreibt wie bisher das angemeldete Hauptkonto** (und ohne beides der von Hand eingetragene Token). Der Kanal ist der des Hauptkontos; ist nur der Bot angemeldet, trägt man den Kanal ein.
+  - **Sicherheit:** Der Bot bekommt nur die Rechte `chat:read chat:edit` (keine Moderation, keine Ereignisse), eigene Datei `twitch-bot-login.json` (Rechte 0600), eigener Erneuerungsdienst. Der Chat der Oberfläche (Lesen, Schreiben, Moderation) nutzt den Bot nie. Läuft die Anmeldung des Bots ab, schweigt die Meldung, bis neu angemeldet oder abgemeldet wird: nie still mit dem Hauptkonto statt des Bots.
+  - Ist der Chat nur für Follower oder Abonnenten, muss der Bot Moderator oder VIP sein (steht im Hilfetext).
+- Tests: neue Fälle in `tools/test_twitch_login.py` (Rechte, getrennte Dateien, Chat bleibt beim Hauptkonto, Kanal, abgelaufene Anmeldung); `tools/test_twitch.py` an den heutigen Stand angepasst (Sicherung enthält den Abschnitt der Akku-Warnung ohne Token).
+- Neue Texte in allen 14 Sprachen.
+
 ## 0.9.143 (Beta)
 - **Übersetzungen geprüft (alle 14 Sprachen, in der laufenden Oberfläche gemessen):** Alle rund 1800 Texte sind in jeder Sprache vorhanden. Gefunden und behoben:
   - **Kopfzeilen der Chat-Ereignisse** („🚀 Raid · 42 Zuschauer“, „💎 Cheer“, „🎁 Geschenk-Abos“, „💜 Follow“, „🎯 Kanalpunkte“) blieben in allen Sprachen deutsch, weil das Symbol und der Text als ein Textstück übersetzt wurden. Jetzt wird nur der Text übersetzt.
