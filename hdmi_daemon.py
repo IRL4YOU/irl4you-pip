@@ -45,9 +45,14 @@ DEFAULTS = {"enabled": False, "key": "hdmi", "bitrate": 8000, "fps": 30, "audio"
 SOURCE_CHOICES = ("hdmi", "usb")
 SYS_V4L = "/sys/class/video4linux"
 PROC_ASOUND = "/proc/asound"
+SYS_USB = "/sys/bus/usb/devices"
+DJI_VENDOR = "2ca3"                                      # USB-Hersteller-ID von DJI
+POWER_WINDOW = 180.0                                     # Sekunden, in denen wiederholtes Auftauchen ohne Webcam-Bild als Stromproblem zählt
+POWER_STAY = 10.0                                        # Sekunden, die eine DJI-Kamera ohne Webcam-Bild am USB hängen darf
+USB_POWER_TEXT = "Die Kamera meldet sich nur kurz am USB und trennt sich wieder, meist fehlt ihr Strom. Bitte einen USB-Hub mit eigenem Netzteil verwenden."
 PROBE_TIMEOUT = 8.0                                      # Sekunden je Probelauf eines Bildformats
 # Bildformate einer USB-Webcam in der Reihenfolge, in der sie probiert werden: (Art, Breite, Höhe, Bildrate)
-USB_CANDIDATES = (("mjpeg", 1920, 1080, 30), ("mjpeg", 1280, 720, 30), ("h264", 1920, 1080, 30), ("raw", 1280, 720, 30), ("raw", 640, 480, 30))
+USB_CANDIDATES = (("h264", 1920, 1080, 30), ("h264", 1280, 720, 30), ("mjpeg", 1920, 1080, 30), ("mjpeg", 1280, 720, 30), ("raw", 1280, 720, 30), ("raw", 640, 480, 30))
 BITRATE_RANGE = (1000, 20000)                            # kbit/s
 FPS_CHOICES = (25, 30)
 AUDIO_CHOICES = ("hdmi", "none")
@@ -179,6 +184,21 @@ def find_uvc_cameras(sysfs=SYS_V4L):
     return out
 
 
+def find_dji_devices(sysusb=SYS_USB):
+    """DJI-Geräte am USB, auch solche ohne Webcam-Bild (Zustand 2ca3:0025, DJI-eigener Modus). Ergebnis: [{"dev": "5-1.3.2", "num": "19", "id": "2ca3:0025"}]."""
+    out = []
+    try:
+        names = sorted(os.listdir(sysusb))
+    except OSError:
+        return out
+    for n in names:
+        base = os.path.join(sysusb, n)
+        if _read(os.path.join(base, "idVendor"), 8).lower() != DJI_VENDOR:
+            continue
+        out.append({"dev": n, "num": _read(os.path.join(base, "devnum"), 8), "id": (DJI_VENDOR + ":" + _read(os.path.join(base, "idProduct"), 8)).lower()})
+    return out
+
+
 def find_usb_audio(cam, asound=PROC_ASOUND):
     """ALSA-Karte desselben USB-Geräts wie die Kamera (gleiche Bus- und Gerätenummer, "usbbus" der Karte). Ergebnis: "plughw:CARD=<id>" oder None."""
     if not (cam and cam.get("bus") and cam.get("dev")):
@@ -206,12 +226,18 @@ def usb_caps(cand):
     return "%s %dx%d@%d" % (label, w, h, f), "%s,width=%d,height=%d,framerate=%d/1" % (media, w, h, f)
 
 
+def usb_h264_padded(cand):
+    """True, wenn der H.264-Strom der Kamera Füllzeilen enthält: Bei 1080 Zeilen sendet sie 1088 (Vielfaches von 16, ohne Beschneidung im Strom, unten 8 schwarze Zeilen).
+    Dann wird mit dem Hardware-Dekoder auf das echte Bild zugeschnitten und neu kodiert."""
+    return cand[0] == "h264" and cand[2] % 16 != 0
+
+
 def _usb_decode(kind):
     """Teil der Pipeline hinter der Quelle bis zum rohen Bild (für den Probelauf und die Einspeisung)."""
     if kind == "mjpeg":
         return ["jpegparse", "!", "mppjpegdec"]
     if kind == "h264":
-        return ["h264parse"]
+        return ["h264parse", "config-interval=-1"]
     return ["videoconvert"]
 
 
@@ -223,7 +249,7 @@ def usb_probe_argv(device, cand):
 
 
 def usb_feeder_argv(cfg, device, cand, audio_device=None, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP):
-    """Befehl der Einspeisung einer USB-Webcam als Liste (keine Shell). MJPEG und Rohbild werden mit dem Hardware-Kodierer neu kodiert, H.264 geht unverändert durch.
+    """Befehl der Einspeisung einer USB-Webcam als Liste (keine Shell). MJPEG, Rohbild und H.264 mit Füllzeilen (1080p) werden mit dem Hardware-Kodierer neu kodiert, übriges H.264 geht unverändert durch.
     audio_device: "plughw:CARD=<id>" oder None (dann Stille, auch bei cfg["audio"] == "none")."""
     cfg = clean_settings(cfg)
     if not re.match(r"^/dev/video\d{1,3}$", device or ""):
@@ -235,7 +261,10 @@ def usb_feeder_argv(cfg, device, cand, audio_device=None, rtmp_port=RTMP_PORT, r
     kind = cand[0]
     fps = cand[3]
     v = ["v4l2src", "device=" + device, "!", usb_caps(cand)[1], "!"] + _usb_decode(kind) + ["!"]
-    if kind == "h264":
+    if kind == "h264" and usb_h264_padded(cand):
+        v += ["queue", "!", "mppvideodec", "crop-rectangle=<0,0,%d,%d>" % (cand[1], cand[2]), "height=%d" % cand[2], "!", "queue", "!",
+              "mpph264enc", "bitrate=%d" % (cfg["bitrate"] * 1000), "gop=%d" % fps, "!", "h264parse", "config-interval=-1", "!", "queue", "!", "mux."]
+    elif kind == "h264":
         v += ["queue", "!", "mux."]
     else:
         v += ["queue", "!", "mpph264enc", "bitrate=%d" % (cfg["bitrate"] * 1000), "gop=%d" % fps, "!", "h264parse", "config-interval=-1", "!", "queue", "!", "mux."]
@@ -283,7 +312,7 @@ def friendly_error(lines, usb=False):
 class Daemon:
     def __init__(self, state_dir, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP, stat_url=STAT_URL, device=HDMI_DEVICE,
                  status_file=HDMI_STATUS, audio_device=HDMI_AUDIO, read_status=None, spawn=None, publishing=None, clock=time.monotonic,
-                 sysfs=SYS_V4L, asound=PROC_ASOUND, probe=None):
+                 sysfs=SYS_V4L, asound=PROC_ASOUND, probe=None, sysusb=SYS_USB):
         self.state_dir = state_dir
         self.config_file = os.path.join(state_dir, "hdmi.json")
         self.token_path = os.path.join(state_dir, "hdmi-token")
@@ -293,9 +322,10 @@ class Daemon:
         self._spawn = spawn or self._spawn_process
         self._publishing = publishing or (lambda key: rtmp_publishing(key, self.stat_url))
         self.clock = clock
-        self.sysfs, self.asound = sysfs, asound
+        self.sysfs, self.asound, self.sysusb = sysfs, asound, sysusb
+        self.dji_seen = {}                                                                      # Gerätenummer -> (erstmals, zuletzt gesehen) einer DJI-Kamera ohne Webcam-Bild
         self._probe_run = probe or self._probe_process
-        self.usb = {"present": False, "name": "", "node": "", "format": "", "audio": ""}      # Zustand der USB-Webcam (Quelle "usb")
+        self.usb = {"present": False, "name": "", "node": "", "format": "", "audio": "", "power": False}      # Zustand der USB-Webcam (Quelle "usb")
         self.usb_choice = None                                                                  # (Knoten, Bildformat) des letzten gelungenen Probelaufs
         self.token = self._load_token()
         self.cfg = self.load()
@@ -369,6 +399,25 @@ class Daemon:
         cams = find_uvc_cameras(self.sysfs)
         return cams[0] if cams else None
 
+    def _usb_power_problem(self, cam):
+        """True, wenn eine DJI-Kamera am USB hängt, sich aber nicht als Webcam meldet: entweder immer wieder kurz auftaucht oder lange so stehen bleibt (meist Strommangel)."""
+        now = self.clock()
+        if cam:
+            self.dji_seen.clear()
+            return False
+        here = set()
+        for d in find_dji_devices(self.sysusb):
+            here.add(d["num"])
+            first, _ = self.dji_seen.get(d["num"], (now, now))
+            self.dji_seen[d["num"]] = (first, now)
+        for num in [n for n, (_, last) in self.dji_seen.items() if now - last > POWER_WINDOW]:
+            del self.dji_seen[num]
+        stays = any(now - first >= POWER_STAY for num, (first, _) in self.dji_seen.items() if num in here)
+        return len(self.dji_seen) >= 2 or stays
+
+    def _usb_waiting_message(self):
+        return USB_POWER_TEXT if self.usb.get("power") else "Keine USB-Kamera angeschlossen"
+
     def _usb_choose_format(self, cam):
         """Erstes Bildformat, das die Kamera liefert (Probelauf, blockiert bis zu einigen Sekunden). Ein früheres Ergebnis für denselben Knoten gilt weiter."""
         if self.usb_choice and self.usb_choice[0] == cam["node"]:
@@ -392,7 +441,7 @@ class Daemon:
             if cam:
                 f = self.usb_choice[1] if self.usb_choice and self.usb_choice[0] == cam["node"] else None
                 sig.update(plugged=True, locked=True, width=f[1] if f else 0, height=f[2] if f else 0, fps=float(f[3]) if f else 0.0, device=cam["node"])
-            self.usb = dict(self.usb, present=bool(cam), name=cam["name"] if cam else "", node=cam["node"] if cam else "",
+            self.usb = dict(self.usb, power=self._usb_power_problem(cam), present=bool(cam), name=cam["name"] if cam else "", node=cam["node"] if cam else "",
                             format=usb_caps(self.usb_choice[1])[0] if cam and self.usb_choice and self.usb_choice[0] == cam["node"] else "")
             return sig
         loop = asyncio.get_event_loop()
@@ -518,7 +567,7 @@ class Daemon:
         if self.signal_known and not sig["locked"]:
             if running:
                 await self._stop()
-            self.state, self.message, self.fails = "waiting", ("Keine USB-Kamera angeschlossen" if self.cfg.get("source") == "usb" else "Kein HDMI-Signal"), 0
+            self.state, self.message, self.fails = "waiting", (self._usb_waiting_message() if self.cfg.get("source") == "usb" else "Kein HDMI-Signal"), 0
             return
         if running:
             if self.signal_known and signal_id(sig) != self.sig_at_start:
