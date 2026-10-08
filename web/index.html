@@ -710,8 +710,9 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </details>
   <details class="subsec" id="hdmi_sec"><summary>HDMI- und USB-Kameras</summary><div id="hdmicard">
     <details class="dcam" id="hdmi_cam" open>
-      <summary><span class="dname">HDMI-Eingang</span><span class="dright"><span class="dstate" id="hdmi_state"></span></span></summary>
+      <summary><span class="dname" id="hdmi_name">HDMI-Eingang</span><span class="dright"><span class="dstate" id="hdmi_state"></span></span></summary>
       <div class="dbody">
+        <label class="f">Quelle<select id="hdmi_source"><option value="hdmi">HDMI-Eingang</option><option value="usb">USB-Webcam</option></select></label>
         <div class="dsub muted" id="hdmi_signal"></div>
         <label class="chk"><input type="checkbox" id="hdmi_on"> Als Kamera senden</label>
         <details class="dsec" id="hdmi_vsec"><summary>Bild und Ton <span class="muted" id="hdmi_vsum"></span></summary>
@@ -725,7 +726,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
         <div id="hdmi_err" class="err"></div>
       </div>
     </details>
-    <div class="ph" data-hlp>Das Bild wird in der Box zu einer normalen Kamera „HDMI“ und steht dann in „Bildaufbau“ wie alle anderen.</div>
+    <div class="ph" data-hlp>Das Bild wird in der Box zu einer normalen Kamera („HDMI“ oder „USB-Kamera“) und steht dann in „Bildaufbau“ wie alle anderen. USB-Webcam: eine Kamera, die sich als Webcam (UVC) meldet, zum Beispiel eine Action-Kamera im Webcam-Modus; die Box probiert die Bildformate selbst durch. Ungeprüft mit echter Hardware.</div>
   </div>
   </details>
   <details class="subsec" id="tw_sec"><summary>Akku-Warnung im Twitch-Chat (nur bei DJI) <span class="muted" id="tw_sum"></span></summary>
@@ -1549,8 +1550,14 @@ twLoad(); setInterval(()=>{ if(due("tw","c_cams",60000)) twLoad(); },10000);
 
 // ---- HDMI-Kamera (Karte "Kameras", Abschnitt "HDMI- und USB-Kameras"): der HDMI-Dienst der Box speist den HDMI-Eingang als Kamera "HDMI" ein
 let hdmiData=null, hdmiDirty=false, hdmiBusy=false;
+function hdmiIsUsb(d){ return !!(d&&d.settings&&d.settings.source==="usb"); }
 function hdmiSignalText(d){
   if(!d.service) return d.message||"";
+  if(hdmiIsUsb(d)){
+    const u=d.usb||{};
+    if(!u.present) return "Keine USB-Kamera angeschlossen";
+    return [u.name,u.format].filter(Boolean).join(" · ")+(u.format&&!u.audio&&(d.settings||{}).audio!=="none"?" · kein Ton der Kamera gefunden":"");
+  }
   if(d.available===false) return "Diese Box hat keinen HDMI-Eingang";
   if(d.signal_known===false) return "";
   const s=d.signal||{};
@@ -1559,19 +1566,22 @@ function hdmiSignalText(d){
 function hdmiStateText(d){
   if(!d.service) return "Dienst fehlt";
   if(d.available===false) return "kein HDMI-Eingang";
-  return ({off:"aus",waiting:"wartet auf Signal",starting:"startet …",streaming:"sendet",error:"Fehler"})[d.state]||"";
+  return ({off:"aus",waiting:hdmiIsUsb(d)?"wartet auf Kamera":"wartet auf Signal",starting:"startet …",streaming:"sendet",error:"Fehler"})[d.state]||"";
 }
 function hdmiButtons(){
   const usable=!!(hdmiData&&hdmiData.service&&hdmiData.available!==false)&&!hdmiBusy;
-  ["hdmi_on","hdmi_fps","hdmi_br","hdmi_audio","hdmi_save"].forEach(id=>{ $(id).disabled=!usable; });
+  ["hdmi_on","hdmi_source","hdmi_fps","hdmi_br","hdmi_audio","hdmi_save"].forEach(id=>{ $(id).disabled=!usable; });
+  if(hdmiIsUsb(hdmiData)) $("hdmi_fps").disabled=true;                                          // bei der USB-Webcam bestimmt die Kamera die Bildrate (30 fps, wenn sie es kann)
 }
 function hdmiFill(d){
   hdmiData=d; const st=hdmiStateText(d), e=$("hdmi_state");
   e.textContent=st; e.style.color=d.state==="streaming"?"var(--ok)":(d.state==="error"||!d.service?"var(--crit)":"");
   $("hdmi_signal").textContent=hdmiSignalText(d);
-  const s=d.settings||{};
-  $("hdmi_vsum").textContent=`${s.fps} fps · ${(s.bitrate/1000).toFixed(1).replace(/\.0$/,"")} Mbit/s · ${s.audio==="none"?"ohne Ton":"HDMI-Ton"}`;
-  if(!hdmiDirty){ $("hdmi_on").checked=!!s.enabled; $("hdmi_fps").value=String(s.fps); $("hdmi_br").value=String(s.bitrate/1000); $("hdmi_audio").value=s.audio; }
+  const s=d.settings||{}, usb=hdmiIsUsb(d);
+  $("hdmi_name").textContent=usb?"USB-Webcam":"HDMI-Eingang";
+  $("hdmi_audio").options[0].textContent=usb?"Ton der Kamera":"HDMI-Ton";
+  $("hdmi_vsum").textContent=`${usb?"":s.fps+" fps · "}${(s.bitrate/1000).toFixed(1).replace(/\.0$/,"")} Mbit/s · ${s.audio==="none"?"ohne Ton":(usb?"Ton der Kamera":"HDMI-Ton")}`;
+  if(!hdmiDirty){ $("hdmi_source").value=s.source||"hdmi"; $("hdmi_on").checked=!!s.enabled; $("hdmi_fps").value=String(s.fps); $("hdmi_br").value=String(s.bitrate/1000); $("hdmi_audio").value=s.audio; }
   const err=$("hdmi_err"); if(d.state==="error"&&d.message){ err.textContent=d.message; err.style.color=""; } else if(err.dataset.keep!=="1") err.textContent="";
   hdmiButtons();
 }
@@ -1586,6 +1596,7 @@ async function hdmiPost(body,done){
   hdmiBusy=false; hdmiButtons();
 }
 $("hdmi_on").addEventListener("change",()=>hdmiPost({enabled:$("hdmi_on").checked}));
+$("hdmi_source").addEventListener("change",()=>hdmiPost({source:$("hdmi_source").value}));
 $("hdmi_save").addEventListener("click",()=>hdmiPost({bitrate:Math.round(parseFloat($("hdmi_br").value)*1000),fps:parseInt($("hdmi_fps").value,10),audio:$("hdmi_audio").value},"Gespeichert."));
 ["input","change"].forEach(ev=>$("hdmi_vsec").addEventListener(ev,()=>{ hdmiDirty=true; }));
 $("hdmi_cam").addEventListener("toggle",()=>{ if($("hdmi_cam").open) hdmiLoad(); });
@@ -1645,6 +1656,7 @@ function alertParts(a){                                                         
             info:dji?"Bluetooth getrennt, Akku leer oder Kamera ausgeschaltet. Kamera aufwecken und die Verbindung prüfen."
                     :"Die Kamera sendet nicht mehr. Akku, WLAN-Verbindung und Kabel prüfen."};
   }
+  if(a.kind==="hdmi"&&a.src==="usb") return {main:`<span>USB-Kamera: nicht gefunden</span> · <span>${alertWhen(a.t)}</span>`, info:"Kamera anstecken und einschalten: Sie muss sich als USB-Webcam (UVC) melden, bei Action-Kameras im Webcam-Modus."};
   if(a.kind==="hdmi") return {main:`<span>HDMI: kein Signal</span> · <span>${alertWhen(a.t)}</span>`, info:"Kabel prüfen und die Kamera einschalten: Sie muss ein Bild ausgeben."};
   return {main:a.text||"", info:""};
 }
