@@ -249,7 +249,8 @@ class Events(T.Base):
         return cond()
 
     def subs(self):
-        return [json.loads(b) for m, p, a, c, b in T.FakeHelix.log if p == "/helix/eventsub/subscriptions"]
+        # die Abonnements werden parallel angelegt: Reihenfolge im Protokoll ist zufällig, daher nach Typ sortiert
+        return sorted((json.loads(b) for m, p, a, c, b in T.FakeHelix.log if p == "/helix/eventsub/subscriptions"), key=lambda s: s["type"])
 
     def test_follow_and_points_arrive_once_and_are_subscribed_with_the_session(self):
         def script(sock, n, srv):
@@ -273,11 +274,11 @@ class Events(T.Base):
         self.assertEqual(rd.items[1]["ev"], {"k": "points", "n": 500})
         self.assertEqual(rd.items[1]["text"], "Lena: Wasser trinken – jetzt")
         subs = self.subs()
-        self.assertEqual([s["type"] for s in subs], ["channel.follow", "channel.channel_points_custom_reward_redemption.add"])
-        self.assertEqual(subs[0]["condition"], {"broadcaster_user_id": "42", "moderator_user_id": "42"})
-        self.assertEqual(subs[1]["condition"], {"broadcaster_user_id": "42"})
-        self.assertEqual(subs[0]["transport"], {"method": "websocket", "session_id": "SESS_1"})
-        self.assertEqual(subs[0]["version"], "2")
+        self.assertEqual([s["type"] for s in subs], ["channel.channel_points_custom_reward_redemption.add", "channel.follow"])
+        self.assertEqual(subs[1]["condition"], {"broadcaster_user_id": "42", "moderator_user_id": "42"})
+        self.assertEqual(subs[0]["condition"], {"broadcaster_user_id": "42"})
+        self.assertEqual(subs[1]["transport"], {"method": "websocket", "session_id": "SESS_1"})
+        self.assertEqual(subs[1]["version"], "2")
         auth = [a for m, p, a, c, b in T.FakeHelix.log if p == "/helix/eventsub/subscriptions"]
         self.assertTrue(all(a == "Bearer AT1" for a in auth))
         self.assertTrue(self.until(lambda: ev.status()["state"] == "ok"))

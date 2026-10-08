@@ -61,5 +61,10 @@
  "Bitrate: {1} bis {2} kbit/s",
  "Bildrate: 25 oder 30",
  "Ton: HDMI-Ton oder ohne Ton",
- "startet …"
+ "startet …",
+ "Ton",
+ "(optional)",
+ "App",
+ "(Version {1})",
+ "(eingestellt {1})"
 ]
