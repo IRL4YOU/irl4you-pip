@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.9.143 (Beta)
+- **Übersetzungen geprüft (alle 14 Sprachen, in der laufenden Oberfläche gemessen):** Alle rund 1800 Texte sind in jeder Sprache vorhanden. Gefunden und behoben:
+  - **Kopfzeilen der Chat-Ereignisse** („🚀 Raid · 42 Zuschauer“, „💎 Cheer“, „🎁 Geschenk-Abos“, „💜 Follow“, „🎯 Kanalpunkte“) blieben in allen Sprachen deutsch, weil das Symbol und der Text als ein Textstück übersetzt wurden. Jetzt wird nur der Text übersetzt.
+  - Es fehlten die Texte „Ton“ (HDMI-Karte), „(optional)“, „App“ (QR-Code erzeugen), „(Version …)“ (Sicherung) und „(eingestellt …)“ (Bitrate), dazu „(Demo)“ in sechs Sprachen. Die Prüfung `tools/i18n_extract.py` übersah einzelne kleingeschriebene Wörter mit eingefügtem Wert; diese stehen jetzt in `tools/i18n_extra_keys.json`.
+- Test: `tools/test_eventsub.py` war gelegentlich rot, weil die beiden Abonnements parallel angelegt werden und die Reihenfolge im Protokoll zufällig ist; der Test sortiert jetzt nach Typ.
+
 ## 0.9.142 (Beta)
 - **Neu: Live-Ereignisse des Kanals über EventSub (nach der Twitch-Anleitung):** **Follows** (💜 „Follow“) und **Kanalpunkte-Einlösungen** (🎯 „Kanalpunkte · 500“, mit Belohnung und Text des Zuschauers) erscheinen als farbige Karten im Chat. Das war bisher nicht möglich (Follows gibt es im Chat nicht). Subs, Geschenk-Abos, Raids und Cheers kommen weiter aus dem Chat, der sie vollständiger liefert (EventSub meldet zum Beispiel Resubs ohne Text nicht); doppelt wären sie nur Lärm.
   - **Einschalten:** hinter dem ⚙ „Ereignisse einschalten“ (einmal bei Twitch bestätigen, neue Rechte `moderator:read:followers` und `channel:read:redemptions`); danach steht dort „Ereignisse an“. Wer die Moderation schon hat, behält sie. Nur für den **eigenen** Kanal.
