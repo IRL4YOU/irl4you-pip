@@ -32,14 +32,19 @@ mehrere Netze gleichzeitig) → SRTLA-Server.
 
 | Baustein | Aufgabe |
 |---|---|
-| `server.py` + `web/` | Oberfläche, Auslastung, Kameras, Bildaufbau, SRTLA und WLAN, Updates, Fernzugriff, Ausschalten |
+| `server.py` + `web/` | Oberfläche (eine Seite, 14 Sprachen zur Laufzeit), Auslastung, Kameras, Bildaufbau, SRTLA und WLAN, Updates, Fernzugriff, Ausschalten, Twitch (Anmeldung per Geräte-Code, Chat lesen und schreiben, Moderation, Ereignisse über EventSub, Akku-Warnung mit Bot-Konto), Hinweise bei Ausfällen |
 | `pipbox_send.py` | Sendekette: startet Encoder und Sender, wählt bei Kameraausfall automatisch eine andere Anordnung, liest Netzänderungen live |
 | `dji_daemon.py` | DJI-Kameras per Bluetooth koppeln und Stream starten, Verbindung je Kamera wählbar (Protokoll nach Moblin, MIT; Bibliothek bleak) |
+| `hdmi_daemon.py` | HDMI-Eingang als Kamera "HDMI" einspeisen (Bild und Ton von der Aufnahmekarte) |
+| `pipbox_live.py`, `pipbox_always.py` | Live-Steuerung der Sendekette und die Engine für "Alle Kameras immer bereit" (Compositor mit festen Bildfeldern) |
 | `dji.py` | Bluetooth-Sticks und -Adapter: was steckt, was BlueZ kennt, Hinweise |
 | `gst/gstpbpip.c` | GStreamer-Plugin: Bild-in-Bild-Mischer (je kleinem Bild Beschnitt, Deckkraft, Rahmen), Zwischenspeicher für die kleinen Bilder, Live-Verzögerung |
 | `srtla/` | Patch auf BELABOX/srtla (AGPL-3.0): Laufzeit und Jitter je Leitung |
+| `belacoder/` | Patches auf BELABOX/belacoder (GPL-3.0): Kamera-Zweige, toleranterer Regler, Statistik, Stall-Wächter |
+| `bluetooth-src/` | Kernel-Quellen (GPL-2.0) für den Bluetooth-Treiber, damit weitere USB-Sticks erkannt werden |
 | `install/` | Installation, Root-Helfer, systemd-Dateien, Zustandsprotokoll |
-| `tools/` | Tests (ohne Box lauffähig) und die Stoppuhr zum Einstellen der Kameraversätze |
+| `tools/` | Tests (ohne Box lauffähig), die Stoppuhr zum Einstellen der Kameraversätze und die Prüfung der Übersetzungen |
+| `anleitungen/` | Anleitungen für Anwender (Kameras, GoPro, Senden, Twitch, Betrieb); dazu `ANLEITUNG-Fernzugriff.md` |
 
 ## Offene Punkte
 
