@@ -4247,6 +4247,7 @@ class TwitchStore:
         self.data = dict(self.DEFAULTS)
         self.warned = {}
         self.account = None                      # TwitchLogin (Anmeldung per Geräte-Code), wenn vorhanden
+        self.bot = None                          # TwitchBotLogin: zweites Konto, das nur die Akku-Meldung schreibt (Anmeldung per Geräte-Code), wenn vorhanden
         try:
             with open(path) as f:
                 saved = json.load(f)
@@ -4359,8 +4360,9 @@ class TwitchStore:
             if "message" in req:
                 new["message"] = self._message(req["message"])
             acc = self.account.login() if self.account else ""
+            bot = self.bot.login() if self.bot else ""
             manual = bool(new["channel"] and new["login"] and new["token"])
-            if new["enabled"] and not (manual or acc):
+            if new["enabled"] and not (manual or acc or (bot and new["channel"])):
                 raise ValueError(self.ERR_MISSING)
             new["via_account"] = bool(new["enabled"] and not manual)
             try:
@@ -4374,8 +4376,9 @@ class TwitchStore:
         with self.lock:
             d = self.data
             acc = self.account.login() if self.account else ""
+            bot = self.bot.login() if self.bot else ""
             return {"enabled": d["enabled"], "channel": d["channel"] or acc, "login": d["login"], "token_set": bool(d["token"]), "threshold": d["threshold"],
-                    "message": d["message"], "only_live": d["only_live"], "account": acc}
+                    "message": d["message"], "only_live": d["only_live"], "account": acc, "bot": bot}
 
     def settings(self):
         """Alle Einstellungen samt Token, nur für den Chat-Client und den Hintergrunddienst. Nie nach außen geben."""
@@ -4386,6 +4389,18 @@ class TwitchStore:
             tok = self.account.token()
             d["login"], d["token"] = acc, tok                      # ist der Zugang gerade nicht verfügbar (wird erneuert), bleibt er leer: nie still als Bot-Konto schreiben
             d["channel"] = d["channel"] or acc
+        return d
+
+    def notify_settings(self):
+        """Die Angaben für die Akku-Meldung: wie settings(), aber ein angemeldetes Bot-Konto schreibt statt des Hauptkontos. Nur der Hintergrunddienst nimmt diese;
+        der Chat (Lesen, Senden, Moderation) bleibt beim Hauptkonto. Ist das Bot-Konto angemeldet, sein Zugang aber gerade nicht verfügbar (wird erneuert),
+        bleibt der Token leer: nie still mit dem Hauptkonto schreiben."""
+        d = self.settings()
+        bot = self.bot.login() if self.bot else ""
+        if bot:
+            d["login"], d["token"] = bot, self.bot.token()
+        elif self.bot and self.bot.state == "abgelaufen":
+            d["token"] = ""                                         # Anmeldung des Bots abgelaufen: schweigen, bis neu angemeldet oder abgemeldet wird
         return d
 
     # ---- für welche Kamera schon gewarnt wurde
@@ -5020,6 +5035,14 @@ class TwitchLogin:
             self.tokens = {"access": "demo", "refresh": "demo", "expires_at": self.clock() + 14400, "login": "demo_streamer", "user_id": "1",
                            "scopes": (self.pending.get("scopes") or self.SCOPES).split()}
             self.pending, self.state = None, "angemeldet"
+
+
+class TwitchBotLogin(TwitchLogin):
+    """Zweites Twitch-Konto ("Bot"), das nur die Akku-Meldung in den Chat schreibt: dieselbe Anmeldung per Geräte-Code wie beim Hauptkonto, aber mit den kleinsten
+    Rechten (Lesen und Schreiben im Chat über IRC, keine Moderation, keine Ereignisse) und eigener Datei <state>/twitch-bot-login.json. Der Chat der Oberfläche
+    nutzt dieses Konto nie."""
+    SCOPES = "chat:read chat:edit"
+    MOD_SCOPES = EVENT_SCOPES = ""
 
 
 class ThirdPartyEmotes:
@@ -6187,7 +6210,7 @@ class TwitchNotifier:
     # ---- Dienst
     def tick(self):
         """Ein Durchlauf: Kameras wieder scharf stellen, deren Akku gewechselt wurde oder die laden, und fällige Warnungen senden."""
-        cfg = self.store.settings()
+        cfg = self.store.notify_settings()
         if not (cfg["enabled"] and cfg["login"] and cfg["channel"] and cfg["token"]):
             with self.lock:
                 self.tries.clear()
@@ -6268,7 +6291,7 @@ class TwitchNotifier:
 
     def test(self):
         """Eine Testnachricht mit den gespeicherten Angaben senden: {"ok": bool, "message": Meldung auf Deutsch}."""
-        cfg = self.store.settings()
+        cfg = self.store.notify_settings()
         if not (cfg["channel"] and cfg["login"] and cfg["token"]):
             raise ValueError(TwitchStore.ERR_MISSING)
         with self.lock:
@@ -7441,6 +7464,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.twitch.status())
         if path == "/api/twitch/login":
             return self.reply(200, self.twitchlogin.status())
+        if path == "/api/twitch/bot":
+            return self.reply(200, self.twitchbot.status())
         if path == "/api/chat":
             qs = urllib.parse.parse_qs((self.path.split("?", 1) + [""])[1])
             try:
@@ -7634,6 +7659,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400, {"error": "Ungültige Anfrage"})
             if path == "/api/twitch/logout":
                 return self.reply(200, self.twitchlogin.logout())
+            if path == "/api/twitch/bot":
+                act = d.get("action")
+                if act == "start":
+                    return self.reply(200, self.twitchbot.start())
+                if act == "cancel":
+                    return self.reply(200, self.twitchbot.cancel())
+                if act == "logout":
+                    r = self.twitchbot.logout()
+                    with self.twitch.lock:
+                        self.twitch.tries.clear()                              # Versuche neu starten; ohne Bot gilt wieder das Hauptkonto oder der Token von Hand
+                    return self.reply(200, r)
+                return self.reply(400, {"error": "Ungültige Anfrage"})
             if path == "/api/chat/mod":
                 return self.reply(200, self.chatmod.do(d))
             if path == "/api/chat/send":
@@ -7748,8 +7785,11 @@ def main():
     Handler.twitch = TwitchNotifier(TwitchStore(os.path.join(args.state, "twitch.json")), Handler.djisvc, Handler.cams, Handler.send, chat=TwitchChat(paths=Handler.chatpaths), demo=args.demo)
     Handler.twitchlogin = TwitchLogin(os.path.join(args.state, "twitch-login.json"), demo=args.demo, paths=Handler.chatpaths)
     Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
+    Handler.twitchbot = TwitchBotLogin(os.path.join(args.state, "twitch-bot-login.json"), demo=args.demo, paths=Handler.chatpaths)
+    Handler.twitch.store.bot = Handler.twitchbot                                      # angemeldetes Bot-Konto schreibt die Akku-Meldung (nur sie)
     if not args.demo:
         threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
+        threading.Thread(target=Handler.twitchbot.keep, daemon=True).start()
     Handler.chatreader = TwitchReader(Handler.twitch.store, demo=args.demo, paths=Handler.chatpaths)
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
     Handler.chathelix = HelixChat(Handler.twitchlogin, Handler.chatmod)
