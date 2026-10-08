@@ -112,7 +112,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 .chatbox .cm .bt{color:var(--muted);font-size:12px;margin-left:6px}
 /* besondere Ereignisse (Sub, Geschenk-Abos, Raid, Cheer, Ankündigung): farbige Karte, beim Eintreffen kurz pulsierend */
 .chatbox .cm.ev{--evc:var(--accent);border-left:4px solid var(--evc);padding:8px 8px 8px 10px;margin:4px 0;border-radius:8px;background:color-mix(in srgb,var(--evc) 13%,transparent);border-bottom-color:transparent}
-.chatbox .cm.ev-sub{--evc:#9147ff}.chatbox .cm.ev-gift{--evc:#e91e8c}.chatbox .cm.ev-raid{--evc:var(--warn)}.chatbox .cm.ev-cheer{--evc:#f5b301}.chatbox .cm.ev-announce{--evc:var(--blue)}
+.chatbox .cm.ev-sub{--evc:#9147ff}.chatbox .cm.ev-gift{--evc:#e91e8c}.chatbox .cm.ev-raid{--evc:var(--warn)}.chatbox .cm.ev-cheer{--evc:#f5b301}.chatbox .cm.ev-announce{--evc:var(--blue)}.chatbox .cm.ev-follow{--evc:#e83e8c}.chatbox .cm.ev-points{--evc:#2dbd6e}
 .chatbox .cm.ev .cb{color:var(--text)}
 .chatbox .cm.ev .evh{display:block;font-weight:700;font-size:13px;letter-spacing:.02em;margin-bottom:2px;color:color-mix(in srgb,var(--evc) 62%,var(--text))}
 @keyframes evpulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--evc) 75%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
@@ -561,7 +561,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   <details class="card wide" id="c_chat" open><summary><span class="sumh">Chat</span><span id="net_sig" class="sig" role="img" aria-label="Verbindung: keine Messung" title="Verbindung: keine Messung"><i class="sigdot"></i><span class="sgs" aria-hidden="true"><span id="sg_max">10</span><span id="sg_mid">5,5</span><span id="sg_min">1</span></span><svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H80M0 10H80M0 19H80"></path><polyline id="net_line" points=""></polyline></svg><span id="sg_val" class="sgv"></span></span><span id="cam_dots" class="camdots" role="img"></span><button type="button" id="chat_opt" class="sec small chatoptbtn" aria-expanded="false" title="Konto und Ansicht des Chats" aria-label="Konto und Ansicht des Chats">⚙</button></summary>
     <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button></div>
     <div id="chat_optbox" class="chatopts" hidden>
-      <div class="accrow" id="tw_accpanel" hidden><span id="tw_acc_t2" class="muted" translate="no"></span><button type="button" id="tw_acc_mod" class="sec small" hidden>Moderation einschalten</button><button type="button" id="tw_acc_modoff" class="sec small" hidden>Moderation ausschalten</button><button type="button" id="tw_acc_out" class="sec small">Abmelden</button></div>
+      <div class="accrow" id="tw_accpanel" hidden><span id="tw_acc_t2" class="muted" translate="no"></span><span id="tw_acc_ev_on" class="muted" hidden>Ereignisse an</span><button type="button" id="tw_acc_mod" class="sec small" hidden>Moderation einschalten</button><button type="button" id="tw_acc_modoff" class="sec small" hidden>Moderation ausschalten</button><button type="button" id="tw_acc_ev" class="sec small" hidden>Ereignisse einschalten</button><button type="button" id="tw_acc_out" class="sec small">Abmelden</button></div>
       <label><input type="checkbox" data-opt="ts" checked> Uhrzeit</label>
       <label><input type="checkbox" data-opt="badge" checked> Abzeichen</label>
       <label><input type="checkbox" data-opt="emote" checked> Emotes als Bild</label>
@@ -2703,10 +2703,10 @@ let twAccPoll=null, twAcc=null;
 function twAccRender(a){
   if(!a) return;
   const t=$("tw_acc_t"), go=$("tw_acc_go"), code=$("tw_acc_code"), on=a.state==="angemeldet";
-  twAcc=a; const wait=a.state==="wartet"; $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod);
+  twAcc=a; const wait=a.state==="wartet"; $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod); $("tw_acc_ev").hidden=!(on&&!a.events);
   code.hidden=!wait; go.hidden=wait||on;
   $("tw_accrow").hidden=on;                                              // angemeldet: die Zeile verschwindet, Konto und Abmelden liegen hinter dem ⚙ in der Kopfzeile
-  $("tw_accpanel").hidden=!on; $("tw_acc_t2").textContent=on?(a.mod?`Angemeldet als ${a.login} · Moderation an`:`Angemeldet als ${a.login}`):"";
+  $("tw_accpanel").hidden=!on; $("tw_acc_t2").textContent=on?(a.mod?`Angemeldet als ${a.login} · Moderation an`:`Angemeldet als ${a.login}`):""; $("tw_acc_ev_on").hidden=!(on&&a.events);
   if(on) t.textContent="Angemeldet als "+a.login;
   else if(wait) t.textContent="Warte auf die Bestätigung bei Twitch …";
   else if(a.state==="abgelaufen") t.textContent="Anmeldung abgelaufen";
@@ -2725,6 +2725,7 @@ $("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaC
 $("tw_acc_mod").addEventListener("click",async()=>{
   try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:{action:"start",mod:true})); }      // Rechte schon da: sofort an; sonst einmal bei Twitch bestätigen
   catch(x){ $("chat_err").textContent=x.message; } });
+$("tw_acc_ev").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",events:true})); }catch(x){ $("chat_err").textContent=x.message; } });         // einmal bei Twitch bestätigen (Follows und Kanalpunkte)
 $("tw_acc_modoff").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"mod",on:false})); }catch(x){ $("chat_err").textContent=x.message; } });
 $("tw_acc_cancel").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"cancel"})); }catch(x){} });
 $("tw_acc_out").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/logout",{})); }catch(x){} });
@@ -2779,8 +2780,8 @@ $("chat_form").addEventListener("submit",async e=>{
     if(m.bits&&!m.ev){ const b=document.createElement("span"); b.className="bt"; b.textContent=m.bits+" Bits"; body.appendChild(b); }
     if(m.ev){                                                                                              // besonderes Ereignis: Kopfzeile mit Art und Menge
       const k=m.ev.k, n=m.ev.n||0;
-      const head={sub:n>0?`Sub · ${n} Monate`:"Sub",gift:n>1?`Geschenk-Abos · ${n}`:"Geschenk-Abo",raid:n>0?`Raid · ${n} Zuschauer`:"Raid",cheer:`Cheer · ${n} Bits`,announce:"Ankündigung"}[k];
-      if(head){ d.classList.add("ev","ev-"+k); const h=document.createElement("span"); h.className="evh"; h.textContent={sub:"⭐ ",gift:"🎁 ",raid:"🚀 ",cheer:"💎 ",announce:"📢 "}[k]+head; body.insertBefore(h,body.firstChild); }
+      const head={sub:n>0?`Sub · ${n} Monate`:"Sub",gift:n>1?`Geschenk-Abos · ${n}`:"Geschenk-Abo",raid:n>0?`Raid · ${n} Zuschauer`:"Raid",cheer:`Cheer · ${n} Bits`,announce:"Ankündigung",follow:"Follow",points:n>0?`Kanalpunkte · ${n}`:"Kanalpunkte"}[k];
+      if(head){ d.classList.add("ev","ev-"+k); const h=document.createElement("span"); h.className="evh"; h.textContent={sub:"⭐ ",gift:"🎁 ",raid:"🚀 ",cheer:"💎 ",announce:"📢 ",follow:"💜 ",points:"🎯 "}[k]+head; body.insertBefore(h,body.firstChild); }
     }
     if(modOn) addMm(d);
     return d;
