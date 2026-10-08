@@ -91,7 +91,19 @@ Der HDMI-Eingang der Box (zum Beispiel eine DJI Action 5 per USB-C-HDMI-Kabel) w
 
 Der Dienst startet bei Signal und nach einem Ausfall von selbst.
 **Noch nicht mit echter Kamera geprüft** sind der eingerichtete Dienst und die Bedienung über die Oberfläche; mit einer echten Action 5
-lief bisher nur ein Probelauf. Verzögerung ist nicht gemessen. USB-Kameras als Quelle gibt es noch nicht.
+lief bisher nur ein Probelauf. Verzögerung ist nicht gemessen. USB-Kameras als Quelle: siehe den nächsten Abschnitt.
+
+### USB-Webcam als Quelle (neu, noch nicht mit echter Kamera im Bild gesehen)
+
+Eine Kamera, die sich per USB als **Webcam (UVC)** meldet, kann die Box genauso als Kamera einspeisen, zum Beispiel eine **Action-Kamera im Webcam-Modus**.
+
+1. Kamera per USB-C an die Box anschließen und **einschalten**. Bei DJI-Action-Kameras im USB-Modus **„Webcam“** wählen (an der Kamera).
+2. Im Abschnitt **HDMI- und USB-Kameras** bei **Quelle** die **USB-Webcam** wählen. Darunter steht, welche Kamera die Box gefunden hat und welches Bildformat sie nimmt.
+3. Das Häkchen **Als Kamera senden** setzen. Die Kamera erscheint als **„USB-Kamera“** in der Kameraliste und im Bildaufbau.
+
+Die Box probiert die Bildformate selbst durch (MJPEG 1080p, MJPEG 720p, H.264 1080p, dann Rohbild) und nimmt das erste, das ein Bild liefert. Den Ton nimmt sie vom USB-Mikrofon derselben Kamera, sonst sendet sie Stille. Es gibt **eine** Quelle für die Kamera „HDMI/USB“: Wer die USB-Webcam wählt, nutzt den HDMI-Eingang nicht gleichzeitig.
+
+**Stand:** Die Erkennung (auch bei der Osmo Action 6: Kamera und Mikrofon werden gefunden, MJPEG und H.264 werden gemeldet) ist mit einer echten Kamera gesehen. **Ein Bild kam bei diesem Test noch nicht an** (die Kamera schickte am USB-Anschluss keine Bilder); wenn es bei dir klemmt: Kamera ausschalten, USB abziehen, Webcam-Modus wählen, neu anstecken und „Als Kamera senden“ aus- und wieder einschalten. Meldung „Die Kamera liefert kein Bild“: Kamera nicht im Webcam-Modus oder schläft.
 
 ### Nur Akkustand lesen
 
