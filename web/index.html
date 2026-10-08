@@ -1132,7 +1132,7 @@ function renderCams(list){
 }
 $("cams").addEventListener("click",async e=>{
   if(!e.target.classList.contains("del")) return; const id=e.target.dataset.id;
-  if(!confirm("Kamera entfernen?")) return;
+  if(!confirm("Kamera entfernen? Eine DJI-Kamera wird dabei auch aus der DJI-Karte entfernt.")) return;
   await fetch("/api/cameras/"+id,{method:"DELETE"}); tick();
 });
 // Code ohne Namenseingabe: legt bei Bedarf selbst eine neue RTMP-Kamera mit automatischem Schlüssel an und zeigt ihren Code
@@ -1481,7 +1481,7 @@ $("djicams").addEventListener("input",e=>{
 });
 $("djicams").addEventListener("click",async e=>{
   const addr=djiAddr(e); if(!addr) return; const cl=e.target.classList;
-  if(cl.contains("d-remove")){ if(confirm("Diese Kamera entfernen? Der Eintrag in der Kameraliste bleibt und lässt sich dort löschen.")&&await djiCmd({cmd:"remove",addr})) { djiStruct=""; tick(); } }
+  if(cl.contains("d-remove")){ if(confirm("Diese Kamera entfernen? Sie verschwindet auch aus der Kameraliste.")&&await djiCmd({cmd:"remove",addr})) { djiStruct=""; tick(); } }
   else if(cl.contains("d-saveddel")){ const sel=e.target.closest(".d-savedrow").querySelector(".d-saved");
     if(sel.value&&confirm("Dieses gespeicherte Netz löschen?")) await djiCmd({cmd:"delete_saved",addr,ssid:sel.value}); }
   else if(cl.contains("d-nearscan")){ nearAuto=Date.now(); wifiDo({action:"scan",iface:$("w_if").value},"Suche läuft …"); e.target.closest(".d-nearrow").querySelector(".d-nearby").dataset.sig=""; return; }
