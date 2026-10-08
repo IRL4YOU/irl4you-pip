@@ -23,6 +23,7 @@ Jede Kamera, die RTMP senden kann (zum Beispiel ein Handy), schickt ihr Bild an 
 Gut zu wissen:
 
 - Neue Streams erkennt die Box automatisch. Du kannst Kameras jederzeit umbenennen und entfernen.
+- **Entfernen heißt entfernen:** Eine entfernte Kamera verschwindet überall (Kameraliste und, bei DJI, die DJI-Karte) und wird von einem noch sendenden Stream nicht von selbst wieder aufgenommen. Willst du sie zurück, füge sie von Hand hinzu oder richte die DJI-Kamera neu ein.
 - Eine Handy-Kamera kann über eine eigene Verbindung der Box senden, zum Beispiel über einen zweiten Router. Die angezeigte
   Adresse gilt dann für diese Verbindung. Ohne eigene Wahl gilt die **Hauptverbindung**.
 - Manche Scan-Apps erkennen den Link von IRL Pro nicht. Dann nimm die Kamera-App des Handys oder importiere den Link in IRL Pro.
@@ -93,7 +94,7 @@ Der Dienst startet bei Signal und nach einem Ausfall von selbst.
 **Noch nicht mit echter Kamera geprüft** sind der eingerichtete Dienst und die Bedienung über die Oberfläche; mit einer echten Action 5
 lief bisher nur ein Probelauf. Verzögerung ist nicht gemessen. USB-Kameras als Quelle: siehe den nächsten Abschnitt.
 
-### USB-Webcam als Quelle (neu, noch nicht mit echter Kamera im Bild gesehen)
+### USB-Webcam als Quelle (neu)
 
 Eine Kamera, die sich per USB als **Webcam (UVC)** meldet, kann die Box genauso als Kamera einspeisen, zum Beispiel eine **Action-Kamera im Webcam-Modus**.
 
@@ -101,9 +102,13 @@ Eine Kamera, die sich per USB als **Webcam (UVC)** meldet, kann die Box genauso 
 2. Im Abschnitt **HDMI- und USB-Kameras** bei **Quelle** die **USB-Webcam** wählen. Darunter steht, welche Kamera die Box gefunden hat und welches Bildformat sie nimmt.
 3. Das Häkchen **Als Kamera senden** setzen. Die Kamera erscheint als **„USB-Kamera“** in der Kameraliste und im Bildaufbau.
 
-Die Box probiert die Bildformate selbst durch (MJPEG 1080p, MJPEG 720p, H.264 1080p, dann Rohbild) und nimmt das erste, das ein Bild liefert. Den Ton nimmt sie vom USB-Mikrofon derselben Kamera, sonst sendet sie Stille. Es gibt **eine** Quelle für die Kamera „HDMI/USB“: Wer die USB-Webcam wählt, nutzt den HDMI-Eingang nicht gleichzeitig.
+Die Box probiert die Bildformate selbst durch (H.264 1080p, H.264 720p, MJPEG 1080p, MJPEG 720p, dann Rohbild) und nimmt das erste, das ein Bild liefert. Bei 1080p schneidet sie die 8 schwarzen Füllzeilen unten weg, die die Action 6 anhängt. Den Ton nimmt sie vom USB-Mikrofon derselben Kamera, sonst sendet sie Stille. Es gibt **eine** Quelle für die Kamera „HDMI/USB“: Wer die USB-Webcam wählt, nutzt den HDMI-Eingang nicht gleichzeitig.
 
-**Stand:** Die Erkennung (auch bei der Osmo Action 6: Kamera und Mikrofon werden gefunden, MJPEG und H.264 werden gemeldet) ist mit einer echten Kamera gesehen. **Ein Bild kam bei diesem Test noch nicht an** (die Kamera schickte am USB-Anschluss keine Bilder); wenn es bei dir klemmt: Kamera ausschalten, USB abziehen, Webcam-Modus wählen, neu anstecken und „Als Kamera senden“ aus- und wieder einschalten. Meldung „Die Kamera liefert kein Bild“: Kamera nicht im Webcam-Modus oder schläft.
+**Stand:** Mit der **Osmo Action 6** (Webcam-Modus, Hub mit eigenem Netzteil) kommt das Bild an: H.264 in 1080p30 direkt aus der Kamera.
+
+**Wichtig – Strom:** Die Action 6 braucht im Webcam-Modus mehr Strom, als ein USB-Anschluss der Box oder ein Hub ohne Netzteil liefert. Dann meldet sie sich nur kurz als „DJI-Gerät“ (USB `2ca3:0025`), trennt sich nach ein paar Sekunden wieder und wird nie zur Webcam (`2ca3:8004`). An der Kamera steht dann dauernd „Webcam wird vorbereitet/verbunden“. Die Box erkennt das und meldet **„Die Kamera meldet sich nur kurz am USB und trennt sich wieder, meist fehlt ihr Strom. Bitte einen USB-Hub mit eigenem Netzteil verwenden.“** Abhilfe: Kamera über einen **USB-Hub mit eigenem Netzteil** anschließen, dann Kamera aus- und wieder einschalten und neu anstecken.
+
+Wenn es sonst klemmt: Kamera ausschalten, USB abziehen, Webcam-Modus wählen, neu anstecken und „Als Kamera senden“ aus- und wieder einschalten. Meldung „Die Kamera liefert kein Bild“: Kamera nicht im Webcam-Modus oder schläft.
 
 ### Nur Akkustand lesen
 
