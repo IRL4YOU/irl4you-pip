@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.158 (Beta)
+- **USB-Meldung („USB-WLAN-Adapter getrennt · um 20:10“) verschwindet jetzt von selbst und lässt sich schließen.** Bisher blieb sie 24 Stunden stehen, auch wenn der Stick nach anderthalb Sekunden wieder da war (so bei einem Nutzer am 8. Oktober). Jetzt erkennt die Box, wenn am selben USB-Anschluss danach ein Gerät neu erkannt wird: Die Meldung bekommt „wieder da“ und verschwindet 10 Minuten später. Kommt das Gerät nicht wieder, bleibt sie, bis sie 24 Stunden alt ist oder du sie mit dem **×** rechts in der Meldung schließt (das Schließen merkt sich die Box, auch nach einem Neustart; es gilt nur für USB-Meldungen). Neuer Text „wieder da“ in allen 14 Sprachen.
+- Tests: 3 neue Fälle in `tools/test_usb.py` (wieder da und nach 10 Minuten weg, schließen, schließen übersteht den Neustart). Die Anleitung `ANLEITUNG-Kameras.md` beschreibt es.
+
 ## 0.9.157 (Beta)
 - **Herunterfahren: deutlichere Rückfrage.** Ein Nutzer hat am 8. Oktober 2026 vermutlich „Herunterfahren“ statt „Neu starten“ gedrückt (die beiden Knöpfe stehen in der Karte „Box ausschalten“ nebeneinander; im Protokoll der Box steht eindeutig `systemctl poweroff`, „Reached target System Power Off“, der Programmcode und alle Übersetzungen der Knöpfe sind richtig). Die Rückfrage beim Herunterfahren sagt jetzt zusätzlich: „Danach ist die Box AUS und startet nicht von selbst wieder. Zum Einschalten den Strom kurz trennen oder die Ein-Taste drücken.“ Die Rückfrage beim Neustart bleibt kurz. Neuer Text in allen 14 Sprachen.
 - **Übersetzungen nachgetragen (aus 0.9.155):** die Meldung „Tailscale hat nicht innerhalb von … Sekunden geantwortet …“ und „Ausgabe:“ in allen 14 Sprachen (sie fehlten noch).
