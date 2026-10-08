@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.148 (Beta)
+- **Akku-Warnung bestätigt:** Die Warnung bei einem wirklich niedrigen Kamera-Akku hat auf der echten Box funktioniert (Test des Entwicklers kurz nach dem Einbau, vor dem Bot-Konto). Über das Bot-Konto ist bisher nur die Testnachricht bestätigt. README und `ANLEITUNG-Twitch-Chat.md` nennen den Stand. Keine Änderung am Programm.
+
 ## 0.9.147 (Beta)
 - **Bot-Konto bestätigt:** Der Entwickler hat am 9. Oktober 2026 auf einer echten Box ein Bot-Konto angemeldet; es schreibt im richtigen Kanal. Auf der Box nachgesehen (nur lesend): Das Bot-Konto hat genau die Rechte `chat:read chat:edit`, liegt in einer eigenen Datei mit Rechten 0600, und das Hauptkonto behält Moderation und Ereignisse. README und `ANLEITUNG-Twitch-Chat.md` nennen jetzt diesen Teststand. Noch nicht mit echtem Twitch geprüft: Follow-/Kanalpunkte-Karten (EventSub), Senden über die Twitch-Schnittstelle und eine Warnung bei wirklich leerem Kamera-Akku. Keine Änderung am Programm.
 
