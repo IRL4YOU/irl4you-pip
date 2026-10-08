@@ -4391,6 +4391,12 @@ class TwitchStore:
             d["channel"] = d["channel"] or acc
         return d
 
+    def channel_name(self):
+        """Der Kanal des Chats: der eingetragene, sonst der des angemeldeten Hauptkontos (wer sich per Geräte-Code anmeldet, trägt nichts ein). Ohne Netzzugriff."""
+        with self.lock:
+            ch = self.data["channel"]
+        return ch or (self.account.login() if self.account else "")
+
     def notify_settings(self):
         """Die Angaben für die Akku-Meldung: wie settings(), aber ein angemeldetes Bot-Konto schreibt statt des Hauptkontos. Nur der Hintergrunddienst nimmt diese;
         der Chat (Lesen, Senden, Moderation) bleibt beim Hauptkonto. Ist das Bot-Konto angemeldet, sein Zugang aber gerade nicht verfügbar (wird erneuert),
@@ -5345,7 +5351,9 @@ class TwitchReader:
 
     # ---- Abfrage durch die Oberfläche
     def poll(self, since=0):
-        ch = self.store.data.get("channel", "") if self.store else ""
+        ch = ""
+        if self.store:
+            ch = self.store.channel_name() if hasattr(self.store, "channel_name") else self.store.data.get("channel", "")
         now = self.clock()
         with self.lock:
             self.last_poll = now
