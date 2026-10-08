@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.157 (Beta)
+- **Herunterfahren: deutlichere Rückfrage.** Ein Nutzer hat am 8. Oktober 2026 vermutlich „Herunterfahren“ statt „Neu starten“ gedrückt (die beiden Knöpfe stehen in der Karte „Box ausschalten“ nebeneinander; im Protokoll der Box steht eindeutig `systemctl poweroff`, „Reached target System Power Off“, der Programmcode und alle Übersetzungen der Knöpfe sind richtig). Die Rückfrage beim Herunterfahren sagt jetzt zusätzlich: „Danach ist die Box AUS und startet nicht von selbst wieder. Zum Einschalten den Strom kurz trennen oder die Ein-Taste drücken.“ Die Rückfrage beim Neustart bleibt kurz. Neuer Text in allen 14 Sprachen.
+- **Übersetzungen nachgetragen (aus 0.9.155):** die Meldung „Tailscale hat nicht innerhalb von … Sekunden geantwortet …“ und „Ausgabe:“ in allen 14 Sprachen (sie fehlten noch).
+
 ## 0.9.156 (Beta)
 - **Behoben: Der Chat zeigte „Kein Kanal in der Twitch-Karte eingetragen“, obwohl man mit Twitch angemeldet war.** Der Chat nahm den Kanal nur aus dem Feld „Kanal“ der Akku-Warnung. Wer sich per Geräte-Code anmeldet, trägt dort nichts ein (das Feld ist bei angemeldetem Konto sogar ausgeblendet), also blieb der Chat leer. Jetzt gilt: der eingetragene Kanal, sonst der Kanal des angemeldeten Hauptkontos (`TwitchStore.channel_name()`); ohne Konto und ohne Eintrag weiter „Kein Kanal …“. Aufgefallen bei einem Nutzer mit frisch installierter Box; bei der Box des Entwicklers fiel es nicht auf, weil dort der Kanal schon von Hand eingetragen war. Das Lesen der Follows und Kanalpunkte (EventSub) war nicht betroffen.
 - Test: neuer Fall in `tools/test_chat.py` (angemeldetes Konto ohne eingetragenen Kanal, Konto weg, eingetragener Kanal geht vor).
