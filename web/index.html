@@ -1555,7 +1555,7 @@ function hdmiSignalText(d){
   if(!d.service) return d.message||"";
   if(hdmiIsUsb(d)){
     const u=d.usb||{};
-    if(!u.present) return "Keine USB-Kamera angeschlossen";
+    if(!u.present) return u.power&&d.message?d.message:"Keine USB-Kamera angeschlossen";                    // bei Strommangel steht der Hinweis des Dienstes da
     return [u.name,u.format].filter(Boolean).join(" · ")+(u.format&&!u.audio&&(d.settings||{}).audio!=="none"?" · kein Ton der Kamera gefunden":"");
   }
   if(d.available===false) return "Diese Box hat keinen HDMI-Eingang";
