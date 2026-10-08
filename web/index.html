@@ -384,6 +384,7 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
 #tw_sec .chk{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px}
 #tw_sec .twgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:0 10px}
 #tw_sec .twrow{display:flex;flex-wrap:wrap;gap:0 10px}
+#tw_sec .twbot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
 #tw_sec .twrow label.f{flex:0 0 120px}
 #tw_sec .twrow label.f.grow{flex:1 1 240px}
 #tw_status:empty{display:none}
@@ -727,13 +728,16 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </details>
   <details class="subsec" id="tw_sec"><summary>Akku-Warnung im Twitch-Chat (nur bei DJI) <span class="muted" id="tw_sum"></span></summary>
     <label class="chk"><input type="checkbox" id="tw_on"> Einschalten</label> <span class="muted" id="tw_acc2"></span>
+    <div class="twbot" id="twb_row"><span class="muted" id="twb_t"></span><button type="button" id="twb_go" class="sec small">Bot-Konto anmelden</button><button type="button" id="twb_cancel" class="sec small" hidden>Abbrechen</button><button type="button" id="twb_out" class="sec small" hidden>Bot abmelden</button></div>
+    <div id="twb_code" class="twcode" hidden><div class="twcode_txt"><div class="twcode_big" id="twb_big" translate="no"></div><a id="twb_link" href="#" target="_blank" rel="noopener">twitch.tv/activate</a></div></div>
+    <div class="ph" data-hlp>Ein zweites Twitch-Konto (Bot) schreibt die Meldung, wenn du es anmeldest. Ohne Bot schreibt dein Hauptkonto. Beim Anmelden bei Twitch das Bot-Konto wählen, am besten in einem privaten Browserfenster. Ist der Chat nur für Follower oder Abonnenten, muss der Bot Moderator oder VIP sein.</div>
     <div id="tw_adv_box">
     <div class="twgrid">
       <label class="f sens">Kanal (Konto, auf dem gestreamt wird)<input id="tw_channel" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label class="f sens">Bot-Konto (Name)<input id="tw_login" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label class="f">Token des Bot-Kontos<input id="tw_token" type="password" maxlength="120" autocomplete="new-password"></label>
+      <label class="f sens" id="tw_login_l">Bot-Konto (Name)<input id="tw_login" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label class="f" id="tw_token_l">Token des Bot-Kontos<input id="tw_token" type="password" maxlength="120" autocomplete="new-password"></label>
     </div>
-    <div class="ph" data-hlp>Token mit dem Recht „chat:edit“, wie bei NOALBS. Er muss zum Bot-Konto gehören. Einfacher: im Bereich „Chat“ mit Twitch anmelden.</div>
+    <div class="ph" data-hlp id="tw_manual_hint">Token mit dem Recht „chat:edit“, wie bei NOALBS. Er muss zum Bot-Konto gehören. Einfacher: im Bereich „Chat“ mit Twitch anmelden.</div>
     </div>
     <div class="twrow">
       <label class="f">Warnen bei (%)<input id="tw_thr" type="number" min="1" max="50" step="1"></label>
@@ -1500,7 +1504,7 @@ function twStatusHtml(d){                                       // letzte Meldun
   return `<span>Fehler um ${t} Uhr:</span> <span>${esc(s.text)}</span>`+(s.retry_at?` <span>Neuer Versuch um ${twTime(s.retry_at)} Uhr.</span>`:"");
 }
 function twButtons(){
-  const ok=!!(twData&&((twData.token_set&&twData.channel&&twData.login)||(twData.account&&twData.channel)));
+  const ok=!!(twData&&((twData.token_set&&twData.channel&&twData.login)||(twData.account&&twData.channel)||(twData.bot&&twData.channel)));
   $("tw_save").disabled=twBusy; $("tw_test").disabled=twBusy||twDirty||!ok;
   $("tw_test").title=twDirty?"Zuerst speichern":"";
 }
@@ -1517,7 +1521,7 @@ function twFill(d){
 }
 async function twLoad(){
   let d; try{ d=await srtlaCall("GET","/api/twitch"); }catch(e){ return; }
-  twFill(d);
+  twFill(d); twbLoad();
 }
 function twForm(){
   return {enabled:$("tw_on").checked, channel:$("tw_channel").value, login:$("tw_login").value, token:$("tw_token").value,
@@ -2715,8 +2719,7 @@ function twAccRender(a){
   if(wait){ $("tw_code").textContent=a.code||""; const l=$("tw_link"); l.href=a.uri||"#"; l.textContent=(a.uri||"").replace(/^https?:\/\//,"").replace(/\?.*$/,"")||"twitch.tv/activate";
             const q=a.uri?QR.svg(a.uri):""; if($("tw_qr").dataset.u!==a.uri){ $("tw_qr").innerHTML=q; $("tw_qr").dataset.u=a.uri||""; } }
   $("chat_form").hidden=a.state!=="angemeldet";
-  const acc=$("tw_acc2"); if(acc){ acc.textContent=a.state==="angemeldet"?"Konto: "+a.login:""; }
-  $("tw_adv_box")&&($("tw_adv_box").hidden=a.state==="angemeldet");
+  twWho(); twAdvVis();
   if(wait&&!twAccPoll) twAccPoll=setInterval(()=>{ if(!document.hidden) twAccLoad(); },2000);
   if(!wait&&twAccPoll){ clearInterval(twAccPoll); twAccPoll=null; if(typeof twLoad==="function") twLoad(); }
 }
@@ -2729,6 +2732,31 @@ $("tw_acc_ev").addEventListener("click",async()=>{ try{ twAccRender(await srtlaC
 $("tw_acc_modoff").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"mod",on:false})); }catch(x){ $("chat_err").textContent=x.message; } });
 $("tw_acc_cancel").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"cancel"})); }catch(x){} });
 $("tw_acc_out").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/logout",{})); }catch(x){} });
+// ---- Bot-Konto für die Akku-Meldung: zweite Anmeldung per Geräte-Code; schreibt nur diese Meldung, der Chat bleibt beim Hauptkonto ----
+let twbPoll=null, twbData=null;
+function twWho(){                                                          // "Konto: …" neben dem Schalter (der Bot steht in seiner eigenen Zeile)
+  const e=$("tw_acc2"); if(e) e.textContent=twAcc&&twAcc.state==="angemeldet"?"Konto: "+twAcc.login:"";
+}
+function twAdvVis(){                                                       // Hauptkonto angemeldet: keine Felder nötig; Bot angemeldet: nur der Kanal fehlt noch
+  const main=!!(twAcc&&twAcc.state==="angemeldet"), bot=!!(twbData&&twbData.state==="angemeldet");
+  $("tw_adv_box").hidden=main; $("tw_login_l").hidden=bot; $("tw_token_l").hidden=bot; $("tw_manual_hint").hidden=bot;
+}
+function twbRender(a){
+  if(!a) return;
+  twbData=a; const on=a.state==="angemeldet", wait=a.state==="wartet";
+  $("twb_go").hidden=on||wait; $("twb_cancel").hidden=!wait; $("twb_out").hidden=!on; $("twb_code").hidden=!wait;
+  $("twb_t").textContent=on?"Bot: "+a.login:wait?"Warte auf die Bestätigung bei Twitch …":a.state==="abgelaufen"?"Anmeldung des Bots abgelaufen":a.state==="fehler"?(a.error||"Anmeldung fehlgeschlagen"):"Kein Bot (das Hauptkonto schreibt)";
+  if(wait){ $("twb_big").textContent=a.code||""; const l=$("twb_link"); l.href=a.uri||"#"; l.textContent=(a.uri||"").replace(/^https?:\/\//,"").replace(/\?.*$/,"")||"twitch.tv/activate"; }
+  twWho(); twAdvVis(); if(typeof twButtons==="function") twButtons();
+  if(wait&&!twbPoll) twbPoll=setInterval(()=>{ if(!document.hidden) twbLoad(); },2000);
+  if(!wait&&twbPoll){ clearInterval(twbPoll); twbPoll=null; if(typeof twLoad==="function") twLoad(); }
+}
+async function twbLoad(){ try{ twbRender(await srtlaCall("GET","/api/twitch/bot")); }catch(e){} }
+async function twbDo(action){ try{ twbRender(await srtlaCall("POST","/api/twitch/bot",{action})); }catch(x){ $("tw_err").textContent=x.message; } }
+$("twb_go").addEventListener("click",()=>twbDo("start"));
+$("twb_cancel").addEventListener("click",()=>twbDo("cancel"));
+$("twb_out").addEventListener("click",()=>twbDo("logout"));
+twbLoad();
 twAccLoad();
 $("chat_form").addEventListener("submit",async e=>{
   e.preventDefault(); const i=$("chat_in"), err=$("chat_err"), t=i.value.trim(); if(!t) return;
