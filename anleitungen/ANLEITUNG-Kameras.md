@@ -1,0 +1,157 @@
+# Kameras an der IRL4YOU BOX anschließen
+
+Diese Anleitung zeigt, wie du Kameras an die Box bringst: Handy-Apps und RTMP-Kameras, DJI-Kameras per Bluetooth und
+einen HDMI-Eingang. Alles findest du in der Weboberfläche der Box (Port 8780) in der Karte **Kameras**.
+
+Für **GoPro** gibt es eine eigene Anleitung: [ANLEITUNG-GoPro.md](ANLEITUNG-GoPro.md).
+
+Was wir noch nicht mit einer echten Kamera geprüft haben, steht jeweils ehrlich dabei.
+
+## 1. RTMP-Kameras und Handy-Apps (IRL Pro, Moblin)
+
+Jede Kamera, die RTMP senden kann (zum Beispiel ein Handy), schickt ihr Bild an eine Adresse, die die Box dir anzeigt.
+
+1. Öffne die Karte **Kameras** und dort **Neue RTMP-Kamera anlegen**.
+2. Gib einen **Namen** ein (zum Beispiel "Hauptkamera"). Der Schlüssel darf leer bleiben, dann wird er automatisch vergeben.
+3. Klicke **Kamera hinzufügen**. Die Kamera erscheint unter **Aktive Kameras** mit ihrer RTMP-Adresse.
+4. Trage die Adresse in der Kamera-App ein. Oder, einfacher, nimm den **QR-Code**:
+   - Wähle in der Zeile mit dem QR-Code die App (**IRL Pro** oder **Moblin**) und klicke **QR-Code erzeugen**.
+   - Scanne den Code mit der Kamera-App des Handys und öffne den Link. Die App übernimmt die Verbindungsdaten.
+   - Das Handy muss die Box erreichen können. Der Code enthält den Kamera-Schlüssel, zeig ihn also nicht herum.
+5. Starte die Übertragung in der App. Die Kamera sollte nach kurzer Zeit mit grünem Punkt in der Liste stehen (siehe Abschnitt 4).
+
+Gut zu wissen:
+
+- Neue Streams erkennt die Box automatisch. Du kannst Kameras jederzeit umbenennen und entfernen.
+- Eine Handy-Kamera kann über eine eigene Verbindung der Box senden, zum Beispiel über einen zweiten Router. Die angezeigte
+  Adresse gilt dann für diese Verbindung. Ohne eigene Wahl gilt die **Hauptverbindung**.
+- Manche Scan-Apps erkennen den Link von IRL Pro nicht. Dann nimm die Kamera-App des Handys oder importiere den Link in IRL Pro.
+- Mit Moblin und IRL Pro haben wir den QR-Code geprüft.
+
+## 2. DJI-Kameras per Bluetooth
+
+Die Box koppelt DJI-Kameras selbst, übergibt ihnen ein WLAN und das RTMP-Ziel und startet den Stream.
+Die Oberfläche nennt diese Modelle: Osmo Action 3, 4, 5 Pro, 6, Osmo 360, Osmo Pocket 3 und 4.
+Mit Action 4, Action 5 Pro und Action 6 haben wir gearbeitet. **Pocket 3 und weitere Modelle: noch nicht mit echter Kamera geprüft.**
+
+### Suchen und koppeln
+
+1. Stecke einen **Bluetooth-Stick** an die Box (siehe unten).
+2. Schalte die Kamera ein, aktiviere Bluetooth und lege sie nahe an die Box. Eine neue oder zurückgesetzte Kamera muss im
+   Kopplungsmodus sein.
+3. Öffne **DJI-Kameras (Bluetooth)** und klicke **Nach DJI-Kameras suchen**.
+4. Klicke bei deiner Kamera auf den Knopf zum Hinzufügen.
+5. Bestätige die **Kopplungsabfrage an der Kamera** und halte die Kamera wach.
+6. Die Karte der Kamera zeigt jeden Schritt (Sucht, Verbindet, Koppelt, Bereitet vor, WLAN wird übergeben, Stellt ein, Stream startet, Streamt).
+
+Mit **Verbinden**, **Neu verbinden** und **Trennen** steuerst du die Kamera von Hand. Mit **Automatisch verbinden und streamen**
+verbindet die Box von selbst, auch nach Ausfällen. Mehrere Kameras verbindet sie nacheinander, nicht gleichzeitig.
+
+### Verbindung je Kamera wählen
+
+Im Bereich **Verbindung** der Kamerakarte wählst du bei **Verbindung der Kamera**, worüber die Kamera zur Box funkt:
+
+- **WLAN-Hotspot oder WLAN-Netz der Box:** Die Kamera bekommt Name und Passwort selbst.
+- **Jede andere Verbindung** (Ethernet, USB-Router, Modem): Trage den WLAN-Namen und das Passwort ein, dem die Kamera beitreten
+  soll. Unter **Netze in der Nähe** kannst du ein Netz auswählen, **Netze suchen** startet die Suche.
+- **Manuell:** WLAN-Name, Passwort und Adresse der Box selbst eintragen.
+
+Ist die Kamera schon verbunden, gelten Änderungen erst ab der nächsten Verbindung.
+
+### Bild und Stream
+
+Im Bereich **Bild und Stream** stellst du je Kamera ein: **Auflösung** (480p, 720p, 1080p), **Bildrate** (25 oder 30 fps; 60 gibt es
+beim DJI-Livestream nicht), **Bitrate** (0,5 bis 16 Mbit/s) und **Stabilisierung** (Aus, RockSteady, RockSteady+,
+HorizonBalancing, HorizonSteady). Welche Kamera Hauptbild oder kleines Bild ist, legst du in der Karte **Bildaufbau** fest.
+
+### Bluetooth-Stick
+
+Die eingebauten Bluetooth-Module der Boxen empfangen schlecht, ein USB-Stick ist besser. Unter **Verbindungen** im Abschnitt
+**Bluetooth (für DJI-Kameras)** siehst du, welche Sticks laufen, und eine Meldung, wenn ein Stick keinen Adapter ergibt.
+
+| Stick | Stand |
+|---|---|
+| ASUS USB-BT500 | getestet, läuft an der Orange Pi 5 Plus |
+| TP-Link UB500 | Box richtet den Treiber beim Einstecken selbst ein (dauert wenige Minuten); mit diesem Stick noch nicht an der Box geprüft |
+| weitere Realtek-Sticks (zum Beispiel Mercusys MA530) | wie der UB500, nicht geprüft |
+| UGREEN Bluetooth 5.4 und 6.0 | geht auf dem Kernel der BELABOX nicht; die Oberfläche erkennt ihn und sagt es |
+
+Der Treiber wird nie während einer Übertragung eingerichtet. Nach einem Wechsel des Sticks fragt die Kamera eventuell einmal
+erneut nach der Kopplung.
+
+## 3. HDMI-Eingang als Kamera "HDMI"
+
+Der HDMI-Eingang der Box (zum Beispiel eine DJI Action 5 per USB-C-HDMI-Kabel) wird zu einer normalen Kamera namens "HDMI".
+
+1. Verbinde die Kamera mit dem HDMI-Eingang der Box und schalte sie ein. Sie muss ein Bild ausgeben.
+2. Öffne in der Karte **Kameras** den Abschnitt **HDMI- und USB-Kameras**. Unter **HDMI-Eingang** steht, ob ein Signal da ist.
+3. Setze das Häkchen bei **Als Kamera senden**.
+4. Unter **Bild und Ton** wählst du Bildrate (25 oder 30 fps), Bitrate und Ton (HDMI-Ton oder ohne Ton) und klickst **Speichern**.
+5. In der Karte **Bildaufbau** wählst du die Kamera "HDMI" wie jede andere (Hauptbild, kleines Bild).
+
+Der Dienst startet bei Signal und nach einem Ausfall von selbst.
+**Noch nicht mit echter Kamera geprüft** sind der eingerichtete Dienst und die Bedienung über die Oberfläche; mit einer echten Action 5
+lief bisher nur ein Probelauf. Verzögerung ist nicht gemessen. USB-Kameras als Quelle gibt es noch nicht.
+
+### Nur Akkustand lesen
+
+Sendet eine DJI-Kamera per HDMI, kannst du sie zusätzlich per Bluetooth koppeln und in ihrer Karte **Nur Akkustand lesen
+(Kamera sendet per HDMI)** einschalten. Dann liest die Box nur den Akkustand (für den Status und die Twitch-Warnung).
+Mit einer echten Action 5 geprüft; **mit der Action 6 noch nicht geprüft**.
+
+## 4. Kamera-Ampel und Hinweise bei Ausfall
+
+Der Punkt vor jeder Kamera (in der Kameraliste und in der Karte **Status**) zeigt den Zustand. Fahr mit der Maus darüber für eine Erklärung.
+
+| Farbe | Bedeutung |
+|---|---|
+| Grün | Die Kamera sendet und ist im Bild. |
+| Gelb | Sie sendet, ist aber noch nicht oder nicht mehr im Bild, etwa beim Wiederverbinden. Eine zurückgekehrte Kamera wird erst nach 60 Sekunden stabilem Signal wieder aufgenommen. |
+| Rot | Kein Signal. |
+| Grau | Status unbekannt. |
+
+Fällt etwas aus, erscheint im Status eine Meldung mit der Uhrzeit. Ein Klick auf das **i** dahinter zeigt, was du tun kannst:
+
+| Meldung | Was sie heißt, was du tust |
+|---|---|
+| DJI-Kamera ausgefallen (mit Name) | Bluetooth getrennt, Akku leer oder Kamera ausgeschaltet. Kamera aufwecken und die Verbindung prüfen. |
+| Kamera ausgefallen (mit Name) | Die Kamera sendet nicht mehr. Akku, WLAN-Verbindung und Kabel prüfen. |
+| HDMI: kein Signal | Kabel prüfen und die Kamera einschalten. |
+| USB-Gerät getrennt (zum Beispiel USB-WLAN-Adapter, USB-Bluetooth-Adapter) | Gerät getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen. |
+| ... mit "Bitte Stromversorgung prüfen" | Der USB-Anschluss wurde abgeschaltet (Störung oder Spannungseinbruch). Netzteil und USB-Hub prüfen, den Adapter möglichst direkt am Board anstecken. |
+
+Fällt eine Kamera aus, schaltet die Box auf die übrigen um. Das dauert etwa 5 Sekunden ohne Bild.
+
+## 5. Hinweise zum Kamera-WLAN
+
+DJI-Kameras setzen im WLAN gelegentlich für einige Sekunden aus. In unserem Aufbau (GL.iNet-Router mit Mobilfunk, vier Kameras,
+Orange Pi 5 Plus) hat geholfen:
+
+- **Nur 5 GHz, WPA2, 20 MHz Kanalbreite.** Nach der Umstellung von WPA3 auf WPA2 gab es über Stunden keinen Aussetzer mehr.
+  WPA2 mit AES und einem langen Passwort ist für ein reines Kameranetz sicher genug. Ein Kanalwechsel allein brachte nichts.
+- **Kanal 36 bis 48 (kein DFS).** Die Osmo Action 5 Pro unterstützt laut Datenblatt nur 5150 bis 5250 und 5725 bis 5850 MHz.
+  Welche Kanäle bei dir erlaubt sind, prüfe bitte selbst.
+- **Sendewege nicht im Kamerafunk.** Eine Beobachtung (nicht bewiesen): Lag der Hotspot eines Handys als Sendeweg auf demselben
+  5-GHz-Kanal wie das Kamera-WLAN, stiegen Laufzeitspitzen. Besser sind Sendewege per Kabel oder auf einem anderen Band.
+- Die Action 5 Pro und die Action 6 fallen öfter aus als die beiden Action 4 (Ursache offen).
+- Die Box wartet bei RTMP-Kameras 15 statt 4 Sekunden, bevor sie eine stumme Kamera aus dem Bild nimmt. Das beseitigt die
+  Aussetzer nicht, verhindert aber, dass dabei der Encoder neu startet.
+
+## 6. Wenn etwas nicht geht
+
+| Problem | Das hilft |
+|---|---|
+| Handy-App verbindet nicht | Erreicht das Handy die Box? Adresse oder QR-Code neu erzeugen und in der App prüfen. Findet die Scan-App den Link nicht, nimm die Kamera-App des Handys. |
+| Punkt bleibt rot | Die Kamera sendet nicht. Läuft die Übertragung in der App oder an der Kamera? Akku und Verbindung prüfen. |
+| Punkt bleibt gelb | Normal beim Wiederverbinden: bis zu 60 Sekunden warten. |
+| "Kein Bluetooth-Adapter gefunden" | Einen USB-Bluetooth-Stick einstecken (Tabelle in Abschnitt 2). |
+| Stick wird als nicht nutzbar gemeldet | Treiber fehlt oder Stick wird nicht unterstützt. Der Hinweis in der Karte nennt den Grund. |
+| DJI-Kamera wird nicht gefunden | Kamera einschalten, Bluetooth aktivieren, nahe an die Box legen, im Kopplungsmodus, dann erneut suchen. |
+| DJI-Kamera koppelt nicht | Kopplungsabfrage an der Kamera bestätigen und die Kamera wach halten. |
+| Kamera hängt beim Verbinden | In ihrer Karte **Trennen**, kurz warten, dann **Verbinden** oder **Neu verbinden**. |
+| Kamera tritt dem WLAN nicht bei | Verbindung der Kamera prüfen: Name und Passwort stimmen? Bei fremdem Netz 5 GHz und WPA2 nutzen (Abschnitt 5). |
+| Wiederholte Aussetzer im Kamera-WLAN | WPA2, 5 GHz, Kanal 36 bis 48, 20 MHz (Abschnitt 5). |
+| "HDMI: kein Signal" | Kabel prüfen, Kamera einschalten, sie muss ein Bild ausgeben. |
+| HDMI-Kamera fehlt im Bildaufbau | Ist **Als Kamera senden** eingeschaltet? Steht unter **HDMI-Eingang** ein Signal? |
+| "Bitte Stromversorgung prüfen" | Netzteil und USB-Hub prüfen, Adapter direkt am Board anstecken. |
+| Nichts davon hilft | In der Karte **Protokolle** die Protokolle herunterladen (Passwörter und Adressen werden ersetzt, trotzdem kurz durchsehen) und für ein GitHub-Issue verwenden. |
