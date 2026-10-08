@@ -108,7 +108,7 @@ class Login(Base):
         self.assertTrue(tl.ready())
         self.assertEqual(tl.token(), "AT1")
         sent = [f for path, f in FakeTwitch.state["seen"] if path == "/oauth2/device"][0]
-        self.assertEqual(sent["scopes"], "chat:read chat:edit")                     # nur Lesen und Schreiben im Chat
+        self.assertEqual(sent["scopes"], "chat:read chat:edit user:write:chat")   # nur Lesen und Schreiben im Chat (Senden über die Twitch-Schnittstelle)
         self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
         pub = json.dumps(tl.status())
         self.assertNotIn("AT1", pub)
@@ -283,6 +283,9 @@ class StoreIntegration(Base):
 class FakeHelix(http.server.BaseHTTPRequestHandler):
     log = []
     status = 204
+    sub_status = 202
+    sub_script = []
+    chat_reply = {"data": [{"message_id": "m1", "is_sent": True}]}
 
     def log_message(self, *a):
         pass
@@ -296,6 +299,11 @@ class FakeHelix(http.server.BaseHTTPRequestHandler):
             code = 200
         elif method == "GET" and self.path.startswith("/helix/users"):
             out, code = json.dumps({"data": []}).encode(), 200
+        elif method == "POST" and self.path == "/helix/eventsub/subscriptions":
+            code = FakeHelix.sub_script.pop(0) if FakeHelix.sub_script else FakeHelix.sub_status
+            out = json.dumps({"data": [{"id": "s1"}]} if code < 300 else {"message": "kaputt"}).encode()
+        elif method == "POST" and self.path == "/helix/chat/messages":
+            out, code = json.dumps(FakeHelix.chat_reply).encode(), 200
         else:
             out, code = (json.dumps({"message": "kaputt"}).encode() if FakeHelix.status == 400 else b""), FakeHelix.status
         self.send_response(code)
