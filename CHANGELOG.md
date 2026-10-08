@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.150 (Beta)
+- **Hotspot der Box bestätigt:** Der Hotspot-Modus ist mit einem echten WLAN-Stick und einer GoPro Hero 8 geprüft (auf der Box nachgesehen: Hotspot `wlan1` läuft mit `10.42.0.1`, die GoPro liefert von `10.42.0.169` seit über einer Stunde ohne Unterbrechung). Der Satz „mit echtem Stick und Kamera noch nicht geprüft“ in README und `ANLEITUNG-Senden.md` ist gestrichen. Keine Änderung am Programm.
+
 ## 0.9.149 (Beta)
 - **Datumsangaben berichtigt:** In den Einträgen zu 0.9.146 und 0.9.147, im README und in den Anleitungen für GoPro und Twitch-Chat stand fälschlich „9. Oktober 2026“. Die Rückmeldungen des Entwicklers kamen am **8. Oktober 2026**; der Test der Akku-Warnung war am 6. oder 7. Oktober. Sonst keine Änderung.
 - **Die heutige Sendung geprüft (auf der Box nur gelesen):** Das Zustandsprotokoll zeigt am 8. Oktober keine Lücken, keinen Absturz und keinen Stall-Neustart; alle Neustarts der Sendekette gingen von der Oberfläche oder von Updates aus (siehe Journal). Temperatur höchstens 44 °C.
