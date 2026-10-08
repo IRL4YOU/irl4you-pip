@@ -115,12 +115,16 @@ class UsbWatch:
     """Merkt sich, wenn ein USB-Gerät ausfällt oder abgezogen wird (zum Beispiel der USB-WLAN-Adapter als Sendeweg, ein Router, ein Bluetooth-Stick).
     Quelle ist das Kernel-Protokoll (dmesg, ohne Rechte lesbar): "usb 2-1: USB disconnect", "usb usb2-port1: disabled by hub (EMI?)" und "over-current".
     Die Ereignisse stehen mit Zeit in <state>/usb-events.json (überstehen einen Neustart des Dienstes; ein Ausfall, bei dem die ganze Box stehen bleibt, ist
-    für den Kernel nicht zu sehen). Die Oberfläche zeigt sie 24 Stunden lang als Meldung: Art des Geräts (aus dem Produktnamen) und Uhrzeit."""
+    für den Kernel nicht zu sehen). Die Oberfläche zeigt sie als Meldung: Art des Geräts (aus dem Produktnamen) und Uhrzeit. Kommt das Gerät wieder (der Kernel
+    erkennt am selben Anschluss ein neues Gerät), steht „wieder da“ dabei und die Meldung verschwindet nach BACK_SHOW (10 Minuten); kommt es nicht wieder, bleibt
+    sie bis WINDOW (24 Stunden) oder bis der Nutzer sie mit dem × schließt (dismiss)."""
     WINDOW = 24 * 3600.0
+    BACK_SHOW = 600.0
     EVERY = 20.0
     KEEP = 20
     RE_LINE = re.compile(r"^(\d{4}-\d\d-\d\dT[\d:.,]+[+-]\d\d:\d\d) (.*)$")
     RE_PROD = re.compile(r"^usb (\d+-[\d.]+): Product: (.{1,80})$")
+    RE_NEW = re.compile(r"^usb (\d+-[\d.]+): new .*USB device number \d+")
     RE_GONE = re.compile(r"^usb (\d+-[\d.]+): USB disconnect, device number \d+$")
     RE_HUB = re.compile(r"^usb usb(\d+)-port(\d+): (disabled by hub|over-current condition)")
     CATS = (("wlan", re.compile(r"(?i)802\.11|wlan|wireless|wi-?fi|\bnic\b|rtl88|rtl81|ralink|mediatek.*wlan")),
@@ -132,6 +136,7 @@ class UsbWatch:
         self.path, self.runner, self.clock, self.demo = path, runner or self._dmesg, clock, demo
         self.lock = threading.Lock()
         self.events, self.last = [], 0.0
+        self.demo_t, self.demo_closed = clock() - 2100, False              # Vorschau: eine feste Beispielmeldung, die sich schließen lässt
         try:
             with open(path) as f:
                 saved = json.load(f)
@@ -156,7 +161,7 @@ class UsbWatch:
 
     def _parse(self, text):
         import datetime
-        prod, out = {}, []
+        prod, out, backs = {}, [], []
         for raw in text.splitlines()[-6000:]:
             m = self.RE_LINE.match(raw)
             if not m:
@@ -169,6 +174,10 @@ class UsbWatch:
             a = self.RE_PROD.match(msg)
             if a:
                 prod[a.group(1)] = a.group(2).strip()
+                continue
+            n = self.RE_NEW.match(msg)
+            if n:
+                backs.append((t, n.group(1)))
                 continue
             g = self.RE_GONE.match(msg)
             if g:
@@ -185,6 +194,11 @@ class UsbWatch:
                     merged[-1]["why"] = e["why"]
                 continue
             merged.append(e)
+        for e in merged:                                                    # am selben Anschluss wurde danach ein Gerät neu erkannt: wieder da
+            for bt, bport in backs:
+                if bport == e["port"] and 0 < bt - e["t"] < 3600:
+                    e["back"] = round(bt, 1)
+                    break
         return merged
 
     def scan(self):
@@ -199,9 +213,15 @@ class UsbWatch:
         except Exception:
             return
         with self.lock:
-            have = {(round(e["t"]), e.get("port")) for e in self.events}
+            have = {(round(e["t"]), e.get("port")): e for e in self.events}
             new = [e for e in found if (round(e["t"]), e["port"]) not in have]
-            if not new:
+            changed = False
+            for f in found:                                                 # ein schon gemerktes Ereignis bekommt nachträglich "wieder da"
+                old = have.get((round(f["t"]), f["port"]))
+                if old is not None and f.get("back") and not old.get("back"):
+                    old["back"] = f["back"]
+                    changed = True
+            if not new and not changed:
                 return
             self.events = (self.events + new)[-self.KEEP:]
             data = list(self.events)
@@ -215,13 +235,40 @@ class UsbWatch:
             pass
 
     def alerts(self):
-        """Meldungen für die Oberfläche: die jüngsten Ereignisse der letzten 24 Stunden (höchstens zwei), je ein Eintrag mit Art und Zeit."""
+        """Meldungen für die Oberfläche: die jüngsten Ereignisse der letzten 24 Stunden (höchstens zwei), je ein Eintrag mit Art und Zeit. Weg sind Meldungen,
+        die der Nutzer geschlossen hat, und solche, deren Gerät seit mehr als BACK_SHOW Sekunden wieder da ist."""
         if self.demo:
-            return [{"level": "warn", "kind": "usb", "cat": "wlan", "why": "emi", "t": int(self.clock() - 2100)}]
+            return [] if self.demo_closed else [{"level": "warn", "kind": "usb", "cat": "wlan", "why": "emi", "t": int(self.demo_t), "back": False}]
         self.scan()
+        now = self.clock()
         with self.lock:
-            fresh = [e for e in self.events if self.clock() - e["t"] <= self.WINDOW]
-        return [{"level": "warn", "kind": "usb", "cat": e["cat"], "why": e.get("why", "gone"), "t": int(e["t"])} for e in sorted(fresh, key=lambda x: -x["t"])[:2]]
+            fresh = [e for e in self.events if now - e["t"] <= self.WINDOW and not e.get("ack") and not (e.get("back") and now - e["back"] > self.BACK_SHOW)]
+        return [{"level": "warn", "kind": "usb", "cat": e["cat"], "why": e.get("why", "gone"), "t": int(e["t"]), "back": bool(e.get("back"))}
+                for e in sorted(fresh, key=lambda x: -x["t"])[:2]]
+
+    def dismiss(self, t):
+        """Die Meldung mit dieser Zeit (ganze Sekunden, wie in alerts()) schließen. Gibt zurück, ob eine gefunden wurde."""
+        if isinstance(t, bool) or not isinstance(t, (int, float)):
+            raise ValueError("Ungültige Anfrage")
+        if self.demo:
+            self.demo_closed = True
+            return True
+        found = False
+        with self.lock:
+            for e in self.events:
+                if int(e["t"]) == int(t) and not e.get("ack"):
+                    e["ack"] = True
+                    found = True
+            data = list(self.events)
+        if found and not self.demo:
+            try:
+                tmp = self.path + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(data, f)
+                os.replace(tmp, self.path)
+            except OSError:
+                pass
+        return found
 
 
 class OutageWatch:
@@ -7654,6 +7701,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(404, {"error": "nicht gefunden"})
             if path == "/api/dji/cmd":
                 return self.reply(200, self.djisvc.command(d))
+            if path == "/api/alerts/dismiss":
+                return self.reply(200, {"ok": bool(self.usbwatch.dismiss(d.get("t")))})
             if path == "/api/uiaccess":
                 return self.reply(200, self.uiaccess.set(d.get("block_client_wifi"), self.local_ip()))
             if path == "/api/twitch/login":
