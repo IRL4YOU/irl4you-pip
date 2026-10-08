@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.153 (Beta)
+- **Installation: Warnung „Download is performed unsandboxed as root … Permission denied (_apt)“ entfällt.** Beim Bauen des Bild-in-Bild-Bausteins und des Encoders lädt die Box drei Entwicklerpakete mit `apt-get download` in den root-eigenen Ordner `/var/tmp/pbbuild/debs`; der eingeschränkte Apt-Benutzer `_apt` durfte dort nicht schreiben, apt lud dann als root und meldete es als Warnung (Meldung eines Nutzers bei der Installation). Die Warnung war harmlos (das Ergebnis war dasselbe), erschreckte aber. Jetzt wird der Download von vornherein als root angefordert (`-o APT::Sandbox::User=root`, in `gst/build.sh` und `belacoder/build.sh`); die Pakete kommen wie bisher von den Ubuntu-Quellen der Box und werden von apt geprüft. Auf der Box nur die Annahme der Option nachgesehen (`apt-config`), den Bau selbst hier nicht neu gelaufen; ein frischer Lauf bei der nächsten Installation zeigt, dass die Meldung weg ist.
+
 ## 0.9.152 (Beta)
 - **Danksagung im README:** Ein eigener Abschnitt nennt **Bittersweet1987** und seine Beiträge (Ideen und Fehlerberichte, die Engine für „Alle Kameras immer bereit“, weitere Pull Requests, die Vorlage für den DJI-Dienst, Tests) sowie die Nutzer mit Protokollen, Moblin, BELABOX und die Discord-Community. Keine Änderung am Programm.
 
