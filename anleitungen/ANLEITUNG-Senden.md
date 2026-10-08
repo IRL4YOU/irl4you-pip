@@ -132,6 +132,6 @@ Drei kleine Verbesserungen sind eingebaut:
 - "Hauptbild tauschen ohne Unterbrechung": nur kurz im Heimnetz.
 - "Alle Kameras immer bereit": noch kein langer Lauf, keine Fahrt.
 - Mehrere Mobilfunkwege: nur ein kurzer Test, Starlink nicht.
-- Langzeitbetrieb über mehr als acht Stunden im Freien.
+- Langzeitbetrieb unterwegs im Freien (zu Hause: 47,5 Stunden am Stück ohne Absturz belegt).
 
 Mehr dazu in `README.md` und `CHANGELOG.md`.
