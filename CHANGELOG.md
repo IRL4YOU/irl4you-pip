@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.161 (Beta)
+- **USB-Webcam: Zuschnitt der Füllzeilen nur noch bei der Action 6.** In 0.9.160 schnitt die Box bei **jeder** H.264-Kamera in 1080p zu und kodierte neu, weil 1080 kein Vielfaches von 16 ist. Das passt nur zur Action 6 (Strom mit 1088 Zeilen, unten 8 schwarze Zeilen, am echten Bild gemessen). Eine Kamera ohne Füllzeilen (laut Nutzer zum Beispiel die Action 4) geht jetzt unverändert durch, ohne Neukodieren. Welche Kameras zuschneiden, steht in `PADDED_H264` (Namensteil `action6`); weitere lassen sich dort eintragen.
+- Tests: `tools/test_usbcam.py` jetzt 33 Tests (Action 6 wird zugeschnitten, Action 4, Logitech und unbekannte Namen gehen durch).
+
 ## 0.9.160 (Beta)
 - **USB-Webcam: Bild von der Osmo Action 6 kommt an.** Mit Strom läuft die Kamera (siehe unten), die Box nimmt nun **H.264 direkt aus der Kamera** (1080p30, sonst 720p30) und nur als Rückfall MJPEG und Rohbild. MJPEG über den Hardware-Dekoder `mppjpegdec` brach bei der Action 6 nach etwa 10 Sekunden ab („mpp_buffer … NULL pointer“). BELABOX selbst liest die Action 6 ebenfalls als H.264 über UVC (`libuvch264src`).
 - **Füllzeilen entfernt:** Die Action 6 sendet bei 1080p einen Strom mit 1088 Zeilen und ohne Beschneidung im Strom; die **unteren 8 Zeilen sind schwarz** (am echten Bild gemessen, oben fehlt nichts). Die 1080p-Einspeisung schneidet deshalb mit dem Hardware-Dekoder (`mppvideodec crop-rectangle=<0,0,1920,1080> height=1080`) zu und kodiert mit der eingestellten Bitrate neu. 720p hat keine Füllzeilen und geht unverändert durch.
