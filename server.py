@@ -320,7 +320,7 @@ class OutageWatch:
                 if self.hdmi_since is None:
                     self.hdmi_since = now
                 if self.DOWN <= now - self.hdmi_since <= self.MAX:
-                    out.append({"level": "warn", "kind": "hdmi", "t": int(self.hdmi_since)})
+                    out.append({"level": "warn", "kind": "hdmi", "src": (hdmi.get("settings") or {}).get("source", "hdmi"), "t": int(self.hdmi_since)})
             else:
                 self.hdmi_since = None
         return out
@@ -4155,7 +4155,8 @@ class HdmiService:
     Im Demo-Modus gibt es keinen Dienst: ein Eingang mit Signal, der sich ein- und ausschalten lässt."""
     HOST, PORT = "127.0.0.1", 9102
     CAMERA_NAMES = ("HDMI", "HDMI-Eingang", "HDMI 2")
-    ALLOWED = ("enabled", "bitrate", "fps", "audio")        # was die Oberfläche ändern darf (der Schlüssel ist fest)
+    USB_NAMES = ("USB-Kamera", "USB-Webcam", "USB 2")        # Name der Kamera, wenn die Quelle die USB-Webcam ist (der Schlüssel bleibt "hdmi")
+    ALLOWED = ("enabled", "bitrate", "fps", "audio", "source")        # was die Oberfläche ändern darf (der Schlüssel ist fest)
     TTL = 1.5
     DOWN = "Der HDMI-Dienst läuft nicht (Software-Update oder install.sh ausführen)"
 
@@ -4206,21 +4207,26 @@ class HdmiService:
 
     def _fake_status(self):
         f = self.fake
+        usb = f.get("source") == "usb"
         return {"ok": True, "available": True, "state": "streaming" if f["enabled"] else "off", "message": "", "settings": dict(f),
-                "signal": {"plugged": True, "locked": True, "width": 1920, "height": 1080, "fps": 60.0, "interlaced": False, "format": "RGB", "depth": 8},
+                "signal": ({"plugged": True, "locked": True, "width": 1280, "height": 720, "fps": 30.0, "interlaced": False, "format": "", "depth": 0} if usb else
+                           {"plugged": True, "locked": True, "width": 1920, "height": 1080, "fps": 60.0, "interlaced": False, "format": "RGB", "depth": 8}),
+                "usb": ({"present": True, "name": "Beispiel-Webcam", "node": "/dev/video2", "format": "MJPEG 1280x720@30", "audio": "plughw:CARD=Beispiel"} if usb else
+                        {"present": False, "name": "", "node": "", "format": "", "audio": ""}),
                 "signal_known": True, "publishing": bool(f["enabled"]), "restarts": 0}
 
     def _listed(self):
         return bool(self.cams) and any(c["key"] == HDMI_KEY for c in self.cams.cams)
 
-    def ensure_listed(self):
-        """Die Kamera "HDMI" steht in der Kameraliste der Box (damit sie als Bildquelle gewählt werden kann)."""
+    def ensure_listed(self, source="hdmi"):
+        """Die Kamera (Schlüssel "hdmi", Name je nach Quelle "HDMI" oder "USB-Kamera") steht in der Kameraliste der Box (damit sie als Bildquelle gewählt werden kann)."""
         if not self.cams or self._listed():
             return
         roles = {c["role"] for c in self.cams.cams}
         role = "main" if "main" not in roles else "pip" if "pip" not in roles else "extra"
         taken = {c["name"].casefold() for c in self.cams.cams}
-        name = next((n for n in self.CAMERA_NAMES if n.casefold() not in taken), "HDMI-Kamera")
+        names = self.USB_NAMES if source == "usb" else self.CAMERA_NAMES
+        name = next((n for n in names if n.casefold() not in taken), "USB-Kamera 2" if source == "usb" else "HDMI-Kamera")
         try:
             self.cams.add(name, HDMI_KEY, role)
         except ValueError:
@@ -4233,17 +4239,17 @@ class HdmiService:
             if self._hit[1] is not None and now - self._hit[0] < self.TTL:
                 return dict(self._hit[1])
         out = {"service": False, "available": None, "state": "down", "message": self.DOWN, "settings": {k: hdmi_daemon.DEFAULTS[k] for k in self.ALLOWED}, "signal": {},
-               "signal_known": False, "publishing": None, "restarts": 0}
+               "usb": {}, "signal_known": False, "publishing": None, "restarts": 0}
         try:
             resp = self._fake_status() if self.demo else self._call({"cmd": "status"})
-            for k in ("available", "state", "message", "signal", "signal_known", "publishing", "restarts"):
+            for k in ("available", "state", "message", "signal", "usb", "signal_known", "publishing", "restarts"):
                 if k in resp:
                     out[k] = resp[k]
             st = resp.get("settings") if isinstance(resp.get("settings"), dict) else {}
             out["settings"] = {k: st.get(k, hdmi_daemon.DEFAULTS[k]) for k in self.ALLOWED}
             out["service"] = True
             if out["settings"]["enabled"]:
-                self.ensure_listed()
+                self.ensure_listed(out["settings"].get("source", "hdmi"))
         except (RuntimeError, ValueError) as e:
             out["message"] = str(e) or self.DOWN
         out["listed"] = self._listed()
@@ -4262,10 +4268,16 @@ class HdmiService:
         elif settings:
             self._call({"cmd": "set", "settings": settings})
         if settings.get("enabled") is True:
-            self.ensure_listed()
+            self.ensure_listed(settings.get("source") or (self.fake or {}).get("source") or self._last_source())
         with self.lock:
             self._hit = (0.0, None)
         return self.status()
+
+    def _last_source(self):
+        """Quelle laut dem zuletzt gelesenen Zustand (für den Namen der Kamera beim Einschalten ohne neue Quelle)."""
+        with self.lock:
+            st = self._hit[1] or {}
+        return (st.get("settings") or {}).get("source", "hdmi")
 
     def on_camera_removed(self):
         """Die Kamera "HDMI" wurde aus der Liste entfernt: die Einspeisung dazu ausschalten (sonst käme die Kamera von selbst wieder)."""
