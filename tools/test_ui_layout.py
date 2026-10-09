@@ -71,5 +71,16 @@ class PhoneChat(unittest.TestCase):
         self.assertIn(".chatbox .cm{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px;padding:7px 2px;", PAGE)
 
 
+class FootHides(unittest.TestCase):
+    def test_footer_slides_away_and_back(self):
+        self.assertIn("html.mfhide #mfoot{transform:translateY(", PAGE)
+        self.assertIn("visibility:hidden", PAGE[PAGE.index("html.mfhide #mfoot"):PAGE.index("html.mfhide #mfoot") + 300])
+        blk = PAGE[PAGE.index("// Fußleiste am Handy: beim Runterscrollen"):PAGE.index("function sizeFoot(){")]
+        self.assertIn('if(ny<24||bottom||run<-8) set(false); else if(run>8) set(true);', blk)  # oben, unten, deutlich hoch: da; deutlich runter: weg
+        self.assertIn('getComputedStyle(f).display==="none"', blk)                              # nur wo die Leiste steht
+        self.assertIn('f.addEventListener("focusin",()=>set(false))', blk)
+        self.assertIn("window.addEventListener(\"scroll\"", blk)                               # Fensterscrollen, nicht das im Chatfeld
+
+
 if __name__ == "__main__":
     unittest.main()
