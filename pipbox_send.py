@@ -25,6 +25,10 @@ sys.path.insert(0, "/opt/pipbox")
 import server  # noqa: E402  (nur Prüf- und Erzeugungsfunktionen, startet nichts)
 import pipbox_always  # noqa: E402  (Zubringer und Auswahl im Modus "alle Kameras immer bereit")
 import pipbox_live  # noqa: E402  (Engine "immer bereit" mit Compositor und dynamischen Zweigen, Technik von streamingbox)
+try:
+    import pipbox_watch  # noqa: E402  (Wächter: erkennt Hänger von belacoder, sichert ein Diagnosepaket, startet neu)
+except ImportError:        # ein Update, das die Datei nicht mitbringt, darf die Sendung nie verhindern: dann gibt es nur keinen Wächter
+    pipbox_watch = None
 
 STATE = "/var/lib/pipbox"
 BELACODER = "/opt/pipbox/bin/belacoder"      # belacoder mit tolerantem Regler (belacoder/), sonst das Original aus dem Suchpfad
@@ -383,6 +387,9 @@ class Sender:
         self.stats = collections.deque(maxlen=STATS_KEEP)    # (Zeit, Zeile)
         self.events = collections.deque(maxlen=120)          # Ereigniszeilen von belacoder (nur feste Meldungen ohne Adressen und Schlüssel)
         self.links = collections.deque(maxlen=300)           # Zustandszeilen der Wegewahl (srtla_send "links: ...")
+        self.watch = pipbox_watch.HangWatch() if pipbox_watch else None
+        self.hang_n = 0
+        self._hang_t = 0.0
         self.stop_ev = threading.Event()
         self.procs = {}
         self.lock = threading.Lock()
@@ -415,6 +422,8 @@ class Sender:
                              errors="replace", env=env, restore_signals=(name != "belacoder"))
         with self.lock:
             self.procs[name] = p
+        if name == "belacoder" and self.watch is not None:
+            self.watch.started_now()
         if name == "belacoder" and self.live and self.always is not None:
             self.always.on_restart()                  # der neue belacoder kennt die Live-Befehle des alten nicht
         threading.Thread(target=self.pump, args=(name, p), daemon=True).start()
@@ -482,7 +491,7 @@ class Sender:
                     "restarts": dict(self.restarts), "last": self.last, "last_age": int(time.time() - self.last_at) if self.last_at else None, "time": int(time.time()),
                     "delay_live": DELAY_LIVE, "delay_live_pips": DELAY_LIVE_PIPS, "swap": SWAP_BASE,
                     "view_live": VIEW_LIVE, "audio_live": AUDIO_LIVE,
-                    "applied": self.plan.get("sig"), "always_note": self.plan.get("always_note")}
+                    "applied": self.plan.get("sig"), "always_note": self.plan.get("always_note"), "hang_restarts": self.hang_n}
         if self.always is not None:
             keys = configured_keys(self.plan["cfg"])
             st = self.always_state or {}
@@ -633,12 +642,63 @@ class Sender:
                     self.sync_swap_base()
                 except Exception as e:                  # die Auswahl darf die Übertragung nie beenden
                     print(f"send: Kameraauswahl: Fehler {type(e).__name__}", flush=True)
+                try:
+                    self.hang_check(env)
+                except Exception as e:                  # der Wächter darf die Übertragung nie beenden
+                    print(f"send: Wächter: Fehler {type(e).__name__}", flush=True)
                 if time.monotonic() - getattr(self, "_slow_t", 0) >= 2:
                     self._slow_t = time.monotonic()
                     self.write_status()
                     self.flush_stats()
                 self.stop_ev.wait(0.5)
         self.shutdown()
+
+    def hang_check(self, env):
+        """Wächter (Issue #51): steht belacoder still oder liefert eine sendende Kamera keine Bilder mehr, wird ein Diagnosepaket gesichert und belacoder neu gestartet.
+        Höchstens einmal je Sekunde geprüft, nur im Modus "alle Kameras immer bereit" mit Compositor (nur dort gibt es die Statistikdatei)."""
+        if self.watch is None or not (self.live and self.always is not None) or time.monotonic() - self._hang_t < 1.0:
+            return
+        self._hang_t = time.monotonic()
+        p = self.procs.get("belacoder")
+        if p is None or p.poll() is not None:
+            return
+        try:
+            mt = os.stat(pipbox_live.LIVE_STATS).st_mtime
+        except OSError:
+            mt = None
+        try:
+            with open(pipbox_live.LIVE_STATS, errors="replace") as f:
+                text = f.read(12000)
+        except OSError:
+            text = ""
+        a = self.always
+        expected = {}
+        for slot, key in enumerate(a.binder.slot_key):
+            info = a.pub.get(key) if key else None
+            if info and info.get("w", 0) > 0 and a.states.get(slot) == 3 and not (key in a.inactive and key != a.desired[0]):
+                expected[slot] = True
+        hit = self.watch.check(mt, text.split("\n", 1)[0], expected, pipbox_watch.d_state_threads(p.pid))
+        if hit is None or not self.watch.allow():
+            return
+        slots = []
+        for slot, key in enumerate(a.binder.slot_key):
+            info = a.pub.get(key) if key else None
+            slots.append((slot, ("Bild %dx%d, Ton %s" % (info.get("w", 0), info.get("h", 0), "ja" if info.get("audio") else "nein")) if info else "sendet nicht", a.states.get(slot, "?")))
+        report = pipbox_watch.build_report(hit, p.pid, time.monotonic() - (self.watch.started or time.monotonic()), text,
+                                           [f"{t} {e}" for t, e in list(self.events)], slots)
+        saved = pipbox_watch.write_report(STATE, report)
+        self.watch.acted_now()
+        self.hang_n += 1
+        print(f"send: Hänger erkannt ({hit['text']}); Diagnosepaket {'gesichert (hang-diagnose.txt)' if saved else 'nicht speicherbar'}, belacoder wird neu gestartet", flush=True)
+        try:
+            if hit["kind"] != "feed":
+                p.kill()                       # steht belacoder, nimmt er SIGTERM nicht mehr an
+            self.stop_proc("belacoder")
+            self.spawn("belacoder", self.args("belacoder"), env=env)
+            with self.lock:
+                self.state = "running"
+        except OSError as e:
+            print(f"send: Neustart nach Hänger nicht möglich ({type(e).__name__})", flush=True)
 
     def sync_swap_base(self):
         """Die Kameras je Platz (für die Verzögerungsdatei der Oberfläche) im Zustand der Sendekette führen: sie können sich im Betrieb ändern."""
