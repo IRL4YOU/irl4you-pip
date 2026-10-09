@@ -127,13 +127,70 @@ class BlockedNames(unittest.TestCase):
         self.assertEqual(len(server.Sampler.blocked_threads(root, limit=4)), 4)
         self.assertEqual(server.Sampler.blocked_threads(tempfile.mkdtemp()), [])
 
-    def test_alert_carries_the_names(self):
+    def d_alerts(self, s, names, now, up=600.0, blocked=None):
+        out = s.finish([10.0], [1800], 40.0, 8000000, 6000000, {}, len(names) if blocked is None else blocked, None, names, now=now, uptime=up)
+        return [x for x in out["alerts"] if x.get("kind") == "dstate"]
+
+    def steps(self, s, names, t0, t1, up=600.0, step=2.0):
+        """Messungen im Takt der Oberfläche (etwa alle 2 s); gibt die Meldungen der letzten Messung zurück."""
+        t, out = t0, []
+        while t <= t1:
+            out = self.d_alerts(s, names, t, up=up if up >= 600.0 else up + (t - t0))
+            t += step
+        return out
+
+    def test_alert_carries_the_names_after_a_sustained_block(self):
         s = server.Sampler(False)
-        out = s.finish([10.0], [1800], 40.0, 8000000, 6000000, {}, 2, None, ["usb-storage@usb_sg_wait"])
-        a = [x for x in out["alerts"] if x.get("kind") == "dstate"][0]
+        names = ["usb-storage@usb_sg_wait", "mpp_h265e@rkvenc2_wait_result"]
+        self.assertEqual(self.steps(s, names, 100.0, 112.0), [])                                # erst 12 s: noch nicht lange genug
+        a = self.steps(s, names, 114.0, 116.0)[0]                                               # 16 s am Stück
         self.assertEqual(a["text"], "2 Prozess(e) blockiert (D-State)")                       # Text unverändert (Übersetzungen)
-        self.assertEqual(a["names"], ["usb-storage@usb_sg_wait"])
-        self.assertFalse([x for x in s.finish([10.0], [1800], 40.0, 8000000, 6000000, {}, 0)["alerts"] if x.get("kind") == "dstate"])
+        self.assertEqual(a["names"], names)
+        self.assertEqual(self.d_alerts(s, [], 118.0, blocked=0), [])                          # danach nichts mehr blockiert: Meldung weg
+
+    def test_disk_waits_and_the_cpu_governor_never_alert(self):
+        """Issue #51 (Bittersweet1987): nach dem Start meldete die Box 1 bis 5 blockierte Prozesse, alle warteten auf die Speicherkarte."""
+        s = server.Sampler(False)
+        boot = ["apt-get@?", "kworker/1:1H+kblockd@?", "kworker/u16:1+ext4-rsv-conversion@?", "jbd2/mmcblk1p1-@?", "kworker/7:0H+kblockd@?",
+                "kworker/u16:0+flush-179:0@?", "sugov:4@kthread_worker_fn", "NetworkManager@__wait_on_buffer", "bluetoothd@jbd2_log_wait_commit",
+                "python3@generic_file_buffered_read", "x@mmc_blk_rw_wait"]
+        self.assertEqual(self.steps(s, boot, 0.0, 400.0), [])                                   # auch nach Minuten kein Alarm
+
+    def test_unknown_threads_between_disk_waits_still_alert(self):
+        s = server.Sampler(False)
+        names = ["apt-get@?", "usb-storage@usb_sg_wait", "kworker/4:2+events@worker_thread"]
+        a = self.steps(s, names, 100.0, 118.0)
+        self.assertEqual(a[0]["text"], "1 Prozess(e) blockiert (D-State)")                    # nur der unbekannte zählt
+        self.assertEqual(a[0]["names"], ["usb-storage@usb_sg_wait"])
+
+    def test_no_alert_during_the_first_two_minutes_after_the_start(self):
+        s = server.Sampler(False)
+        names = ["usb-storage@usb_sg_wait"]
+        self.assertEqual(self.steps(s, names, 1000.0, 1100.0, up=10.0), [])                     # Betriebszeit 10 bis 110 s: Schonzeit, auch bei langem Block
+        a = self.steps(s, names, 1102.0, 1104.0, up=112.0)                                      # Betriebszeit 112 bis 114 s: noch Schonzeit
+        self.assertEqual(a, [])
+        a = self.steps(s, names, 1106.0, 1110.0, up=120.0)                                    # Schonzeit vorbei (Betriebszeit ab 120 s), seit über 100 s blockiert
+        self.assertEqual(len(a), 1)
+
+    def test_a_short_pause_resets_the_wait_and_big_gaps_do_not_count_as_continuous(self):
+        s = server.Sampler(False)
+        names = ["usb-storage@usb_sg_wait"]
+        self.steps(s, names, 100.0, 110.0)
+        self.assertEqual(self.d_alerts(s, [], 112.0, blocked=0), [])                          # zwischendurch nichts blockiert
+        self.assertEqual(self.steps(s, names, 114.0, 124.0), [])                                # beginnt von vorn: erst 10 s
+        self.assertEqual(len(self.steps(s, names, 126.0, 130.0)), 1)                            # jetzt 16 s
+        s2 = server.Sampler(False)
+        self.d_alerts(s2, names, 100.0)
+        self.assertEqual(self.d_alerts(s2, names, 200.0), [])                                 # 100 s Pause bei der Abfrage (Seite war zu): zählt nicht als am Stück
+        self.assertEqual(self.steps(s2, names, 202.0, 214.0), [])
+        self.assertEqual(len(self.steps(s2, names, 216.0, 218.0)), 1)
+
+    def test_filter_rules_are_conservative(self):
+        r = server.Sampler.d_relevant
+        self.assertEqual(r(["belacoder@?", "usb-storage@usb_sg_wait", "mpp_h265e@rkvenc2_wait_result", "kworker/u8:3@worker_thread", "sugov:0@x"]),
+                         ["belacoder@?", "usb-storage@usb_sg_wait", "mpp_h265e@rkvenc2_wait_result"])
+        self.assertEqual(r([]), [])
+        self.assertEqual(r(None), [])
 
     def test_page_shows_the_names_behind_the_info_button(self):
         self.assertIn('a.kind==="dstate"&&(a.names||[]).length', PAGE)
