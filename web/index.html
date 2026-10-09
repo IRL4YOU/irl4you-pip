@@ -389,6 +389,8 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
 #sw_notes li,#sw_hres li{margin:5px 0}
 #sw_notes p,#sw_hres p{margin:4px 0}
 #sw_notes code,#sw_hres code{font-size:12.5px;padding:1px 5px;border-radius:5px;background:var(--card)}
+#rp_title,#rp_desc{width:100%;box-sizing:border-box;margin:6px 0}#rp_out a.rpgo{display:inline-block;margin:6px 0;padding:8px 14px;border-radius:10px;background:var(--accent);color:#000;font-weight:600;text-decoration:none}
+.rpcase{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line)}.rpcase.done .rpt{text-decoration:line-through;opacity:.7}.rpcase code{font-size:12.5px}.rpcase .rpd{color:var(--muted);font-size:13px}
 #sw_hist{margin:8px 0}#sw_hq{width:100%;box-sizing:border-box}#sw_hcount{margin:6px 0 0}#sw_hres mark{background:var(--warn);color:#000;border-radius:3px;padding:0 1px}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:80;max-width:calc(100% - 32px);padding:10px 16px;border:1px solid var(--ok);border-radius:10px;background:var(--card);color:var(--text);box-shadow:0 8px 24px rgba(2,6,23,.6);font-size:14px}
 #sw_notes{white-space:pre-wrap;border-left:3px solid var(--line);padding-left:10px;margin:10px 0}
@@ -976,6 +978,20 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <label class="logopt"><input type="radio" name="logmode" value="sparsam"> <b>Sparsam</b>: Protokolle nur im Arbeitsspeicher. Schont die Speicherkarte. Nach einem Absturz oder Stromausfall bleibt <b>keine Spur</b>.</label>
     <label class="logopt"><input type="radio" name="logmode" value="ausfuehrlich"> <b>Ausführlich</b>: Protokolle dauerhaft auf der Karte (Journal höchstens 30 MB und 7 Tage, Zustandsprotokoll höchstens 4 MB, alle 10 Sekunden). Für die Fehlersuche, zum Beispiel wenn sich die Box von selbst ausschaltet.</label>
     <div id="logmsg" class="ph"></div>
+  </details>
+  <details class="card wide" id="c_report"><summary><span class="sumh">Problem melden / Wunsch äußern</span></summary>
+    <div class="ph" style="margin-top:0">Bereitet auf GitHub ein fertig ausgefülltes Formular vor (Titel und Beschreibung sind schon eingetragen). Du meldest dich dort mit deinem eigenen GitHub-Konto an und klickst auf „Submit new issue“. Die Box sendet selbst nichts.</div>
+    <label class="logopt"><input type="radio" name="rp_kind" value="issue" checked> <b>Problem</b> (ISSUE): Titel ist Pflicht, die Beschreibung ist freiwillig. Du bekommst eine Support-Nummer.</label>
+    <label class="logopt"><input type="radio" name="rp_kind" value="feature"> <b>Wunsch</b> (FEATURE): Titel und Beschreibung sind Pflicht.</label>
+    <input id="rp_title" type="text" maxlength="100" placeholder="Titel" aria-label="Titel" autocomplete="off">
+    <textarea id="rp_desc" rows="5" maxlength="2000" placeholder="Beschreibung" aria-label="Beschreibung"></textarea>
+    <label class="logopt" id="rp_logrow"><input type="checkbox" id="rp_log"> Bereinigtes Protokoll mitnehmen (wird als Datei geladen, die du auf GitHub anhängst; ohne Passwörter, WLAN-Namen, Adressen und Schlüssel)</label>
+    <div class="actions"><button id="rp_go" type="button">Formular vorbereiten</button> <span id="rp_msg" class="muted"></span></div>
+    <div id="rp_out" class="ph" hidden></div>
+    <div class="sech">Meine Fälle</div>
+    <div class="ph" style="margin-top:0">Deine Support-Nummern mit Datum. „Erledigt“ gilt nur hier auf der Box; das Issue auf GitHub schließt du selbst (oder der Entwickler anhand der Nummer).</div>
+    <div id="rp_cases"></div>
+    <div class="ph"><a id="rp_issues" href="https://github.com/IRL4YOU/irl4you-pip/issues" target="_blank" rel="noopener noreferrer">Alle Issues auf GitHub ansehen</a></div>
   </details>
   <details class="card wide" id="c_bk"><summary><span class="sumh">Einstellungen sichern</span></summary>
     <div class="sech">Sichern</div>
@@ -3433,6 +3449,63 @@ $("chat_form").addEventListener("submit",async e=>{
   applyOrder(); applyHidden(); buildList();
 })();
 
+// ---- Problem melden / Wunsch äußern (Issue #13): fertig ausgefülltes GitHub-Formular, Support-Nummer, Liste "Meine Fälle"; die Box sendet nichts selbst
+(function(){
+  const card=$("c_report"), title=$("rp_title"), desc=$("rp_desc"), go=$("rp_go"), msg=$("rp_msg"), out=$("rp_out"), list=$("rp_cases"), logrow=$("rp_logrow"); let version="";
+  const kind=()=>document.querySelector('input[name="rp_kind"]:checked').value;
+  const NEW="https://github.com/IRL4YOU/irl4you-pip/issues/new", MAXURL=7000;
+  function sync(){ const f=kind()==="feature"; logrow.hidden=f; desc.placeholder=f?"Beschreibung (Pflicht)":"Beschreibung (freiwillig)"; }
+  document.querySelectorAll('input[name="rp_kind"]').forEach(r=>r.addEventListener("change",sync)); sync();
+  const when=t=>{ const d=new Date(t*1000); return d.toLocaleDateString()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+  function paint(cases,issues){
+    list.textContent="";
+    if(!cases.length){ const p=document.createElement("div"); p.className="muted"; p.textContent="Noch keine Fälle."; list.appendChild(p); return; }
+    for(const c of cases){
+      const r=document.createElement("div"); r.className="rpcase"+(c.done?" done":"");
+      const d=document.createElement("span"); d.className="rpd"; d.textContent=when(c.t); r.appendChild(d);
+      const id=document.createElement("code"); id.textContent=c.id; id.translate=false; r.appendChild(id);
+      const t=document.createElement("span"); t.className="rpt"; t.textContent=c.title; t.translate=false; r.appendChild(t);
+      const a=document.createElement("a"); a.href=(issues||"https://github.com/IRL4YOU/irl4you-pip/issues")+"?q="+encodeURIComponent("is:issue "+c.id); a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Auf GitHub suchen"; r.appendChild(a);
+      const b=document.createElement("button"); b.type="button"; b.className="sec"; b.classList.add("small"); b.dataset.id=c.id; b.dataset.done=c.done?"0":"1"; b.textContent=c.done?"Wieder offen":"Erledigt"; r.appendChild(b);
+      list.appendChild(r); }
+  }
+  async function load(){
+    try{ const d=await srtlaCall("GET","/api/support"); version=d.version||""; paint(d.cases||[],d.issues); }catch(e){ list.textContent=""; }
+  }
+  list.addEventListener("click",async e=>{
+    const b=e.target.closest("button[data-id]"); if(!b) return;
+    try{ await srtlaCall("POST","/api/support",{action:"done",id:b.dataset.id,done:b.dataset.done==="1"}); }catch(x){ msg.textContent="Fehler: "+x.message; }
+    load();
+  });
+  function link(url,short){
+    out.textContent=""; out.hidden=false;
+    const a=document.createElement("a"); a.className="rpgo"; a.href=url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Formular auf GitHub öffnen"; out.appendChild(a);
+    const p=document.createElement("div"); p.textContent="Das Formular öffnet in einem neuen Tab. Dort bei GitHub anmelden und unten auf „Submit new issue“ klicken."+(short?" Die Beschreibung war für den Link zu lang und ist gekürzt: bitte auf GitHub vervollständigen.":""); out.appendChild(p);
+    return p;
+  }
+  go.addEventListener("click",async()=>{
+    msg.textContent=""; out.hidden=true;
+    const f=kind()==="feature", t=title.value.trim(), body0=desc.value.trim();
+    if(t.length<3){ msg.textContent="Bitte einen Titel eintragen (mindestens 3 Zeichen)."; return; }
+    if(f&&!body0){ msg.textContent="Bei einem Wunsch ist die Beschreibung Pflicht."; return; }
+    go.disabled=true;
+    try{
+      let ttl, body=body0, id="";
+      if(f){ ttl="[FEATURE] "+t; }
+      else { const c=await srtlaCall("POST","/api/support",{action:"create",title:t}); id=c.id; ttl="[ISSUE] "+c.title+" ("+id+")";
+             body=(body0?body0+"\n\n":"")+"---\nBox-Version: "+(version||"?")+"\nSupport-Nummer: "+id+($("rp_log").checked?"\nProtokoll: als Datei angehängt":""); }
+      let url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body), short=false;
+      while(url.length>MAXURL&&body.length>200){ body=body.slice(0,Math.floor(body.length*0.8)); short=true; url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body+"\n[gekürzt]"); }
+      const p=link(url,short);
+      if(id){ const q=document.createElement("div"); q.appendChild(document.createTextNode("Deine Support-Nummer: ")); const c=document.createElement("code"); c.textContent=id; q.appendChild(c); p.parentNode.appendChild(q); }
+      if(!f&&$("rp_log").checked){ const lm=document.createElement("div"); lm.className="muted"; out.appendChild(lm); logsDownloadTo(go,lm).then(()=>{ lm.textContent+=" Datei auf GitHub ins Textfeld ziehen."; }); }
+      load();
+    }catch(x){ msg.textContent="Fehler: "+x.message; }
+    go.disabled=false;
+  });
+  card.addEventListener("toggle",()=>{ if(card.open) load(); });
+})();
+
 // ---- Controller-Tasten: erscheint, sobald ein Controller gekoppelt ist; je Taste eine Funktion wählen ----
 (function(){
   const card=$("c_ctl"), list=$("ctl_list"); let sig="", data=null, busy=false;
@@ -3492,8 +3565,8 @@ async function logLoad(){
 }
 let logModeNow="";
 const pad2=n=>String(n).padStart(2,"0");
-async function logsDownload(){
-  const btn=$("lg_dl"), msg=$("lg_msg"), wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function logsDownloadTo(btn,msg){
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
   btn.disabled=true; msg.textContent="Wird gesammelt …";
   try{
     let st=await srtlaCall("POST","/api/logs",{action:"collect"});
@@ -3515,6 +3588,7 @@ async function logsDownload(){
   }catch(x){ msg.textContent="Fehler: "+x.message; }
   btn.disabled=false;
 }
+const logsDownload=()=>logsDownloadTo($("lg_dl"),$("lg_msg"));
 $("lg_dl").addEventListener("click",logsDownload);
 document.querySelectorAll('input[name="logmode"]').forEach(r=>r.addEventListener("change",async()=>{
   if(!r.checked) return;
