@@ -34,6 +34,13 @@ main{max-width:980px;margin:0 auto;padding:16px;display:grid;gap:14px;grid-templ
 .card{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
 .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin:0 0 10px}
 .wide{grid-column:1/-1}
+#prev_img{display:block;width:100%;max-width:960px;aspect-ratio:16/9;margin-top:10px;background:#000;border-radius:10px;object-fit:contain}
+#prev_box[hidden]{display:none}
+#prev_msg:empty{display:none}
+.prevctl{display:flex;align-items:center;gap:8px;margin-left:auto}
+.prevctl button.small{padding:2px 12px;line-height:1.3}
+#prev_img{margin-top:0}
+details.card#c_prev[open]>summary{margin-bottom:8px}
 .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0}
 .big{font-size:26px;font-weight:600}
 .unit{font-size:13px;color:var(--muted);font-weight:400}
@@ -565,6 +572,12 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
       <div id="liveserver" class="muted livesrv"></div>
     </div>
   </section>
+
+  <details class="card wide" id="c_prev"><summary><span class="sumh">Vorschau</span><span class="prevctl"><button type="button" id="prev_btn" class="sec small">Start</button><button type="button" class="helpbtn" id="prev_help_btn" aria-label="Erklärung zeigen" aria-expanded="false">i</button></span></summary>
+    <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Im Heimnetz sind es 30 Bilder pro Sekunde, von unterwegs weniger (das spart Upload). Die Vorschau endet nach 10 Minuten, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt.</div>
+    <div id="prev_msg" class="ph" role="status"></div>
+    <div id="prev_box" hidden><img id="prev_img" alt="Vorschau des Sendebilds"></div>
+  </details>
 
   <details class="card wide" id="c_chat" open><summary><span class="sumh">Chat</span><span id="net_sig" class="sig" role="img" aria-label="Verbindung: keine Messung" title="Verbindung: keine Messung"><i class="sigdot"></i><span class="sgs" aria-hidden="true"><span id="sg_max">10</span><span id="sg_mid">5,5</span><span id="sg_min">1</span></span><svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H80M0 10H80M0 19H80"></path><polyline id="net_line" points=""></polyline></svg><span id="sg_val" class="sgv"></span></span><span id="cam_dots" class="camdots" role="img"></span><button type="button" id="chat_opt" class="sec small chatoptbtn" aria-expanded="false" title="Konto und Ansicht des Chats" aria-label="Konto und Ansicht des Chats">⚙</button></summary>
     <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button></div>
@@ -3043,6 +3056,45 @@ $("chat_form").addEventListener("submit",async e=>{
   document.addEventListener("visibilitychange",()=>{ if(document.hidden){ lock=null; viaVideo(false); } else acquire(); });
   paint(); acquire();
   document.addEventListener("click",()=>{ if(on&&!lock&&!vid) acquire(); },{once:false});                // ein Fingertipp genügt, falls der Browser den Start ohne Geste verweigert hat
+})();
+
+// ---- Vorschau des Sendebilds (Issue #52): Motion-JPEG vom Server, nur solange die Vorschau läuft, die Seite sichtbar ist und höchstens 10 Minuten ----
+(function(){
+  const card=$("c_prev"), btn=$("prev_btn"), img=$("prev_img"), msg=$("prev_msg"), box=$("prev_box");
+  let on=false, timer=0, gen=0;
+  const LAN=/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|.+\.local$)/i;
+  const lan=()=>LAN.test(location.hostname);                                       // Heimnetz: volle Bildrate; von unterwegs (auch Tailscale): weniger Bilder, kleineres Bild
+  const WHY={off:"Die Vorschau gibt es nur, während die Box sendet.", busy:"Es laufen schon so viele Vorschauen, wie die Box zugleich zeigen kann.",
+             "kein-bild":"Es kommt kein Bild. Läuft die Sendung?", missing:"Die Vorschau ist auf dieser Box nicht verfügbar.", gst:"Die Vorschau ist auf dieser Box nicht verfügbar.",
+             root:"Die Vorschau ist auf dieser Box nicht verfügbar.", capture:"Die Vorschau ist auf dieser Box nicht verfügbar."};
+  function stop(text,more){
+    on=false; gen++; clearTimeout(timer);
+    img.removeAttribute("src"); box.hidden=true;                                   // schließt die Verbindung: der Server beendet die Vorschau sofort
+    btn.textContent=more?"Weiter ansehen":"Start"; btn.disabled=false; msg.textContent=text||"";
+  }
+  async function start(){
+    const my=++gen; clearTimeout(timer); btn.disabled=true; msg.textContent="Vorschau wird geöffnet …"; card.open=true;
+    let st; try{ const r=await fetch("/api/preview"); st=await r.json(); }catch(e){ return stop(WHY.missing); }
+    if(my!==gen) return;
+    if(!st.available) return stop(WHY[st.why]||WHY.missing);
+    on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent="";
+    const home=lan();
+    img.src="/api/preview/stream?fps="+(home?30:10)+"&w="+(home?640:480)+"&t="+Date.now();
+    box.hidden=false;
+    if(!home) msg.textContent="Von unterwegs: 10 Bilder pro Sekunde und kleineres Bild, das spart Upload.";
+    timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),Math.max(5,(st.max_seconds||600)-3)*1000);
+  }
+  img.addEventListener("error",async()=>{
+    if(!on) return; const my=gen; let why="kein-bild";
+    try{ const st=await (await fetch("/api/preview")).json(); if(!st.available) why=st.why; }catch(e){ why="missing"; }
+    if(my===gen&&on) stop(WHY[why]||WHY["kein-bild"]);
+  });
+  btn.addEventListener("click",e=>{ e.preventDefault(); if(on) stop(); else start(); });                  // der Knopf sitzt in der Kopfzeile: er klappt die Karte nicht selbst zu
+  $("prev_help_btn").addEventListener("click",e=>{ e.preventDefault(); const h=$("prev_help"); h.hidden=!h.hidden; $("prev_help_btn").setAttribute("aria-expanded",String(!h.hidden)); if(!h.hidden) card.open=true; });
+  card.addEventListener("toggle",()=>{ if(!card.open&&on) stop(); });                // Karte zugeklappt: Vorschau aus
+  new MutationObserver(()=>{ if(on&&card.hasAttribute("data-pbhide")) stop(); }).observe(card,{attributes:true,attributeFilter:["data-pbhide"]});      // unter Optionen ausgeblendet: Vorschau aus
+  document.addEventListener("visibilitychange",()=>{ if(document.hidden&&on) stop(); });
+  addEventListener("pagehide",()=>{ if(on) stop(); });
 })();
 
 // ---- Hauptmenüs: Reihenfolge (▲ ▼) und Menüpunkte ausblenden, beides unter Optionen; je Browser gemerkt, Standard unverändert ----
