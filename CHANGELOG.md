@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.165 (Beta)
+- **Neu: Einstellung „Bildformat“ bei der USB-Webcam.** Im Bereich Bild und Ton der USB-Quelle: *Automatisch* (wie bisher, MJPEG zuerst), *MJPEG* oder *H.264*. Bei *H.264* probiert die Box zuerst den Strom der Kamera (durchgereicht, wie im Original-BELABOX-Image über `libuvch264src`, hier über `v4l2src`), MJPEG und Rohbild bleiben als Rückfall. Anlass: Der H.264-Strom der Action 5 Pro hatte im dunklen, ruhigen Raum nur 1,3 Mbit/s (deshalb ist Automatisch bei MJPEG geblieben); bei Tageslicht und Bewegung kann er mehr liefern, und das lässt sich jetzt vergleichen. Wird die Einstellung geändert, vergisst der Dienst die bisherige Formatwahl und probiert neu. Das Feld erscheint nur bei der Quelle USB-Webcam. Settings-Sicherung und -Einspielen enthalten es (`usb_format`, alte Sicherungen ohne das Feld gehen weiter).
+- Tests: `test_usbcam.py` 38 (Format H.264 zuerst mit MJPEG als Rückfall, Wechsel der Einstellung), `test_hdmi.py` 40, `test_hdmi_service.py`/`test_settings.py` an die neue Einstellung angepasst. Die Oberfläche in der Demo geprüft (Feld nur bei USB sichtbar, Speichern übernimmt es).
+- Neu in `ANLEITUNG-Kameras.md`: Erklärung des Bildformats.
+
 ## 0.9.164 (Beta)
 - **Verbindungsanzeige neben „Chat“ wird nicht mehr grundlos gelb.** Nutzerfrage am 9. Oktober 2026: Bei 9 Mbit/s stand sie auf gelb. Die Anzeige verglich die gesendete Menge mit dem **Ziel** des Encoders (12 Mbit/s) und zog bei weniger als 80 % einen Punkt ab, auch wenn die Szene einfach weniger Daten braucht (der Encoder liefert dann weniger als das Maximum, hier 8 bis 9 Mbit/s). Jetzt zählt „zu wenig gesendet“ nur noch, wenn der Sendepuffer über 300 ms anwächst (das Netz kommt nicht nach) und weniger als 80 % beziehungsweise 50 % rausgehen, oder wenn fast nichts (unter 10 %) rausgeht. Alle anderen Abzüge (ein Weg fällt aus, Laufzeit, Sendepuffer) bleiben.
 - Geprüft in der Demo-Oberfläche mit acht Fällen (ruhige Szene 8 von 12 Mbit/s bleibt grün; ein Weg fällt aus plus Puffer 400 ms: gelb; fast nichts plus ein Weg aus: rot und so weiter).
