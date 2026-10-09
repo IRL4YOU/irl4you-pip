@@ -35,6 +35,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import controller_keys            # Tasten gekoppelter Bluetooth-Controller und ihre Funktionen
 import dji                         # Namen von USB-Sticks (WLAN, Bluetooth) aus /sys, liegt neben dieser Datei
 import hdmi_daemon                 # Prüfung der HDMI-Einstellungen (dieselbe wie im HDMI-Dienst), liegt neben dieser Datei
 import pipbox_live                 # Engine "alle Kameras immer bereit" mit Compositor und dynamischen Zweigen (Technik von streamingbox), liegt neben dieser Datei
@@ -3908,7 +3909,7 @@ class Updates:
 
 
 DJI_COMMANDS = ("state", "wifi_options", "scan", "add", "update", "use_saved", "delete_saved", "remove",
-                "connect", "disconnect", "reconnect")
+                "connect", "disconnect", "reconnect", "phone_pair", "phone_pair_stop", "phone_read", "phone_remove", "ctrl_scan", "ctrl_pair", "ctrl_remove")
 DJI_FIELDS = ("addr", "name", "model", "kind", "wifi_ifname", "ssid", "password", "ip", "resolution", "fps", "bitrate",
               "stabilization", "autoconnect", "status_only")
 
@@ -4074,7 +4075,8 @@ class DjiService:
 
     def status(self):
         out = {"available": False, "reason": "", "cameras": [], "scan": [], "scanning": False, "scan_error": "",
-               "wifi_options": [], "adapters": [], "adapter_problems": [], "driver": {}, "bleak": True}
+               "wifi_options": [], "adapters": [], "adapter_problems": [], "driver": {}, "bleak": True,
+               "phones": [], "phone_pairing": {}, "controllers": [], "ctrl_found": [], "ctrl_scan": {}, "ctrl_message": ""}
         try:
             out.update(self._call({"cmd": "state"}))
             out["wifi_options"] = self._call({"cmd": "wifi_options"}).get("wifi_options", [])
@@ -4153,8 +4155,46 @@ class DjiService:
                                                      resolution="720p", bitrate=4000, retry_in=0, battery=18, battery_age=95, charging=False,
                                                      detail="Kamera nicht gefunden. Ist sie an, Bluetooth aktiv und nicht mit dem Handy verbunden?")
         if cmd == "state":
+            pair = f.get("pair_until", 0) - time.time()
+            if f.get("pair_until") and pair <= 0 and not f.get("phones_seeded"):
+                f["phones_seeded"] = True                 # Vorschau: nach der Kopplungszeit steht ein Handy in der Liste
+                f.setdefault("phones", []).append({"addr": "7C:A1:77:00:00:09", "name": "Pixel von Marco", "percent": 60, "steps": 5,
+                                                   "age": 0, "error": "", "reading": False})
             return {"cameras": list(f["cameras"].values()), "scan": f["scan"], "scanning": f["scanning"], "scan_error": "",
-                    "bleak": True}
+                    "bleak": True, "phones": f.get("phones", []),
+                    "phone_pairing": {"active": pair > 0, "left": max(0, int(pair)), "message": ""},
+                    "controllers": f.get("controllers", []),
+                    "ctrl_scan": {"active": 0 < f.get("ctrl_scan_until", 0) - time.time(), "left": max(0, int(f.get("ctrl_scan_until", 0) - time.time())), "message": ""},
+                    "ctrl_found": [] if f.get("ctrl_scan_until", 0) - time.time() > 0 or not f.get("ctrl_scan_until") else
+                    [r for r in ({"addr": "E4:11:22:33:44:55", "name": "Mini Controller", "rssi": -48, "input": True, "paired": False},
+                                 {"addr": "AA:BB:CC:00:11:22", "name": "Jabra Evolve2 85", "rssi": -70, "input": False, "paired": False})
+                     if r["addr"] not in {c["addr"] for c in f.get("controllers", [])}],
+                    "ctrl_message": ""}
+        if cmd == "ctrl_scan":
+            f["ctrl_scan_until"] = time.time() + 5          # Vorschau: kurze Suche, dann stehen zwei Geräte in der Liste
+            return {"ok": True}
+        if cmd == "ctrl_pair":
+            f.setdefault("controllers", []).append({"addr": str(req.get("addr", "")).upper(), "name": "Mini Controller", "connected": True, "battery": 87, "pairing": False})
+            return {"ok": True}
+        if cmd == "ctrl_remove":
+            f["controllers"] = [c for c in f.get("controllers", []) if c["addr"] != str(req.get("addr", "")).upper()]
+            return {"ok": True}
+        if cmd == "phone_pair":
+            f["pair_until"] = time.time() + 6              # Vorschau: kurze Kopplungszeit, danach erscheint ein Handy
+            return {"ok": True}
+        if cmd == "phone_pair_stop":
+            f["pair_until"] = 0
+            return {"ok": True}
+        if cmd in ("phone_read", "phone_remove"):
+            ph = f.get("phones", [])
+            hit = next((p for p in ph if p["addr"] == str(req.get("addr", "")).upper()), None)
+            if hit is None:
+                raise ValueError("Unbekanntes Handy")
+            if cmd == "phone_remove":
+                ph.remove(hit)
+            else:
+                hit.update(percent=max(0, hit["percent"] - 20) if hit["percent"] else 80, age=0, error="")
+            return {"ok": True}
         if cmd == "wifi_options":
             return {"wifi_options": [
                 {"ifname": "wlan0", "ssid": "Handy-Hotspot", "ip": "10.1.1.20", "type": "client", "secret_missing": False},
@@ -7311,6 +7351,50 @@ class LimitedHTTPServer(ThreadingHTTPServer):
                     self._conns.pop(ip, None)
 
 
+def scene_swap(pipeline, cams, send, with_key=None):
+    """Hauptbild gegen ein kleines Bild tauschen (Oberfläche und Controller-Tasten). Ohne Angabe das erste kleine Bild.
+    Gibt die Antwort der Schnittstelle zurück oder löst ValueError mit einem lesbaren Text aus."""
+    if with_key is not None and (not isinstance(with_key, str) or not KEY_RE.match(with_key)):
+        raise ValueError("Kamera unbekannt")
+    target = with_key or pipeline.cfg.get("pip")
+    if target and any(x["key"] == target and x.get("state") == "offline" for x in cams.listing("")):
+        raise ValueError("Diese Kamera ist nicht verbunden und lässt sich nicht zum Hauptbild machen.")
+    shown = pipeline.swap_main_pip(with_key)
+    if send.always_live() or send.swap_live():
+        note = "Getauscht, ohne Unterbrechung."
+        if shown:                      # das kleine Bild der bisherigen Hauptkamera war ausgeblendet gespeichert und ist jetzt sichtbar
+            hide, aud = PipelineStore.view_values(pipeline.cfg)
+            cur = send.view_state()
+            if not (send.view_live() and send.apply_view(hide, aud, bool(cur and cur["mute"]))):
+                note += " Das kleine Bild erscheint beim nächsten Start der Sendung."
+        return {"ok": True, "restarted": False, "note": note}
+    restarted, note = send.restart_if_live()
+    return {"ok": True, "restarted": restarted, "note": note or "Getauscht."}
+
+
+def controller_action(fn, pipeline, cams, send):
+    """Funktion einer Controller-Taste ausführen. Bild-Funktionen tauschen immer das Hauptbild: „Kleines Bild N“ holt die Kamera,
+    die gerade dort ist, ins Hauptbild (die bisherige Hauptkamera nimmt ihren Platz ein; nochmal drücken tauscht zurück); „Hauptbild“
+    holt die Kamera mit der Rolle Hauptbild der Kameraliste zurück. Ton: stumm schalten (an/aus) und zur nächsten Tonquelle."""
+    cfg = pipeline.cfg
+    if fn in ("pip1", "pip2", "pip3"):
+        key = cfg.get({"pip1": "pip", "pip2": "pip2", "pip3": "pip3"}[fn])
+        if not key or cfg.get("type") != "pip":
+            return
+        scene_swap(pipeline, cams, send, key)
+    elif fn == "main":
+        want = next((c["key"] for c in cams.cams if c.get("role") == "main"), None)
+        if want and want != cfg.get("main") and cfg.get("type") == "pip":
+            scene_swap(pipeline, cams, send, want)
+    elif fn == "mute":
+        f = send.footer()
+        send.change_view(mute=not bool(f and f["audio"]["mute"]))
+    elif fn == "audio_next":
+        f = send.footer()
+        if f:
+            send.change_view(audio=f["audio"]["next"])
+
+
 class Handler(BaseHTTPRequestHandler):
     timeout = 15              # eine Verbindung, die so lange nichts sendet, wird beendet (Issue #25: halb offene Anfragen blieben ewig offen)
     BODY_SECONDS = 15.0       # so lange darf der Inhalt einer Anfrage insgesamt brauchen (nicht nur je Teilstück)
@@ -7363,6 +7447,7 @@ class Handler(BaseHTTPRequestHandler):
     djisvc = None
     netchoice = None
     names = None
+    ckeys = None
     layout = None
     srtla = None
     pipeline = None
@@ -7534,6 +7619,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, m)
         if path == "/api/layout":
             return self.reply(200, self.layout.get() if self.layout else {"set": False, "order": [], "hidden": []})
+        if path == "/api/controller-keys":
+            return self.reply(200, self.ckeys.snapshot())
         if path == "/api/logmode":
             return self.reply(200, self.logmode.status())
         if path == "/api/logs":
@@ -7657,6 +7744,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/wifi":
                 self.wifi.request(d)
                 return self.reply(200, {"ok": True})
+            if path == "/api/controller-keys":
+                self.ckeys.set_map(d.get("addr"), d.get("code"), d.get("fn"))
+                return self.reply(200, {"ok": True})
             if path == "/api/layout":
                 if self.layout is None:
                     raise ValueError("Die Menüeinstellung ist hier nicht verfügbar")
@@ -7698,23 +7788,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.pipeline.set_active(d.get("key"), d.get("active"))
                 return self.reply(200, {"ok": True})
             if path == "/api/pipeline/swap":
-                with_key = d.get("with")
-                if with_key is not None and (not isinstance(with_key, str) or not KEY_RE.match(with_key)):
-                    raise ValueError("Kamera unbekannt")
-                target = with_key or self.pipeline.cfg.get("pip")
-                if target and any(x["key"] == target and x.get("state") == "offline" for x in self.cams.listing("")):
-                    raise ValueError("Diese Kamera ist nicht verbunden und lässt sich nicht zum Hauptbild machen.")
-                shown = self.pipeline.swap_main_pip(with_key)
-                if self.send.always_live() or self.send.swap_live():
-                    note = "Getauscht, ohne Unterbrechung."
-                    if shown:                      # das kleine Bild der bisherigen Hauptkamera war ausgeblendet gespeichert und ist jetzt sichtbar
-                        hide, aud = PipelineStore.view_values(self.pipeline.cfg)
-                        cur = self.send.view_state()
-                        if not (self.send.view_live() and self.send.apply_view(hide, aud, bool(cur and cur["mute"]))):
-                            note += " Das kleine Bild erscheint beim nächsten Start der Sendung."
-                    return self.reply(200, {"ok": True, "restarted": False, "note": note})
-                restarted, note = self.send.restart_if_live()
-                return self.reply(200, {"ok": True, "restarted": restarted, "note": note or "Getauscht."})
+                return self.reply(200, scene_swap(self.pipeline, self.cams, self.send, d.get("with")))
             if path == "/api/pipeline":
                 before = dict(self.pipeline.cfg)
                 before["styles"] = clean_styles(before.get("styles"))        # eine unveränderte Einstellung ohne Stile gilt nicht als Änderung
@@ -7899,6 +7973,8 @@ def main():
     Handler.cams.ipfn = Handler.netchoice.ip
     Handler.djisvc = DjiService(args.state, Handler.cams, args.rtmp_app, args.rtmp_port, args.demo)
     Handler.djisvc.pipeline = Handler.pipeline
+    Handler.ckeys = controller_keys.ControllerKeys(args.state, lambda fn: controller_action(fn, Handler.pipeline, Handler.cams, Handler.send), demo=args.demo)
+    Handler.ckeys.start()                                   # liest die Tasten gekoppelter Controller (Menü "Controller-Tasten")
     Handler.transfer = SettingsTransfer(args.state, Handler.cams, Handler.pipeline, Handler.srtla, Handler.autostart, Handler.names, Handler.djisvc,
                                         Handler.wifi, Handler.send, args.demo)
     def chat_sources():                                           # Quelladressen der gewählten Sendewege, in der Reihenfolge der Einstellung

@@ -38,6 +38,8 @@ except ImportError:  # Protokoll und Befehle lassen sich auch ohne bleak testen
     BleakClient = BleakScanner = None
 
 import dji
+import controllers
+import phone_battery
 
 LISTEN_HOST, LISTEN_PORT = "127.0.0.1", 9101
 RTMP_PORT = 1935
@@ -359,6 +361,18 @@ def preferred_adapter():
         return None
     names.sort(key=lambda n: (dji.usb_id_for_hci(n) == ONBOARD_USB_ID, int(n[3:])))
     return names[0]
+
+
+def adapter_address(hci):
+    """Bluetooth-Adresse des Adapters hciN (für den RFCOMM-Anschluss, damit die Abfrage über denselben Adapter läuft), sonst None."""
+    if not hci:
+        return None
+    try:
+        with open(os.path.join(dji.SYSFS_BT, hci, "address")) as f:
+            a = f.read().strip().upper()
+        return a if MAC_RE.match(a) else None
+    except OSError:
+        return None
 
 
 async def bluez_cleanup(addr, remove=True):
@@ -1045,6 +1059,10 @@ class Daemon:
         self.token = self._load_token()
         self._opts = (0.0, [])
         self._adapt = None
+        self.phones = phone_battery.Phones(state_dir, hci=preferred_adapter, adapter_mac=adapter_address,
+                                           busy=lambda: self.scanning, taken=lambda: list(self.cameras))
+        self.ctrl = controllers.Controllers(state_dir, hci=preferred_adapter,
+                                            taken=lambda: list(self.cameras) + list(self.phones.phones))
         self.load()
 
     # -- Dateien
@@ -1156,7 +1174,7 @@ class Daemon:
 
     def snapshot(self):
         return {"cameras": [c.public() for c in self.cameras.values()], "scan": self.scan_results,
-                "scanning": self.scanning, "scan_error": self.scan_error, "bleak": BleakScanner is not None}
+                "scanning": self.scanning, "scan_error": self.scan_error, "bleak": BleakScanner is not None, **self.phones.snapshot(), **self.ctrl.snapshot()}
 
     async def scan(self, seconds=8):
         self.scan_error = ""
@@ -1255,6 +1273,10 @@ class Daemon:
             self.pin_connection(cam)
             self.save()
             return {"ok": True, "key": cfg["rtmp_key"]}
+        if cmd in ("phone_pair", "phone_pair_stop", "phone_read", "phone_remove"):
+            return await self.handle_phone(cmd, req)
+        if cmd in ("ctrl_scan", "ctrl_pair", "ctrl_remove"):
+            return await self.handle_controller(cmd, req)
         addr = str(req.get("addr", "")).upper()
         cam = self.cameras.get(addr)
         if cam is None:
@@ -1308,6 +1330,57 @@ class Daemon:
             asyncio.ensure_future(cam.restart())    # sofort neu verbinden, ohne den Schalter anzufassen
             return {"ok": True}
         return {"error": "Unbekannter Befehl"}
+
+    async def handle_phone(self, cmd, req):
+        """Handys: koppeln (die Box ist zwei Minuten sichtbar), Akkustand jetzt lesen, Handy entfernen."""
+        if cmd == "phone_pair":
+            try:
+                await self.phones.start_pairing()
+            except phone_battery.PhoneError as e:
+                return {"error": str(e)}
+            return {"ok": True}
+        if cmd == "phone_pair_stop":
+            await self.phones.stop_pairing()
+            return {"ok": True}
+        addr = str(req.get("addr", ""))
+        if not MAC_RE.match(addr) or addr.upper() not in self.phones.phones:
+            return {"error": "Unbekanntes Handy"}
+        addr = addr.upper()
+        if cmd == "phone_read":
+            asyncio.ensure_future(self.phones.read(addr))
+            return {"ok": True}
+        self.phones.remove(addr)                  # phone_remove: aus der Liste nehmen und die Kopplung in BlueZ aufheben
+        await bluez_cleanup(addr, remove=True)
+        return {"ok": True}
+
+    async def handle_controller(self, cmd, req):
+        """Controller: in der Nähe suchen, ein Gerät aus der Liste koppeln, einen gekoppelten Controller entfernen."""
+        if cmd == "ctrl_scan":
+            try:
+                await self.ctrl.start_scan()
+            except controllers.ControllerError as e:
+                return {"error": str(e)}
+            return {"ok": True}
+        addr = str(req.get("addr", ""))
+        if not MAC_RE.match(addr):
+            return {"error": "Ungültige Geräteadresse"}
+        addr = addr.upper()
+        if cmd == "ctrl_pair":
+            if self.ctrl.pairing:
+                return {"error": "Es wird gerade ein anderes Gerät gekoppelt"}
+            asyncio.ensure_future(self._ctrl_pair(addr))      # dauert bis zu 40 s: im Hintergrund, die Oberfläche fragt den Zustand ab
+            return {"ok": True}
+        if addr not in self.ctrl.items:
+            return {"error": "Unbekannter Controller"}
+        self.ctrl.remove(addr)                                  # ctrl_remove: aus der Liste nehmen und die Kopplung in BlueZ aufheben
+        await bluez_cleanup(addr, remove=True)
+        return {"ok": True}
+
+    async def _ctrl_pair(self, addr):
+        try:
+            await self.ctrl.pair(addr)
+        except controllers.ControllerError as e:
+            self.ctrl.message = str(e)
 
     async def client(self, reader, writer):
         try:
@@ -1387,6 +1460,8 @@ class Daemon:
             if cam.cfg.get("autoconnect"):
                 cam.start()
         asyncio.ensure_future(self.supervise())
+        asyncio.ensure_future(self.phones.run())
+        asyncio.ensure_future(self.ctrl.run())
         async with server:
             await server.serve_forever()
 
