@@ -26,6 +26,7 @@ import socket
 import sys
 import ssl
 import stat
+import struct
 import subprocess
 import threading
 import time
@@ -5247,6 +5248,10 @@ class ThirdPartyEmotes:
         self.lock = threading.Lock()
         self.map, self.room, self.until, self.thread = {}, None, 0.0, None
         self.users, self.uq, self.uthread, self.on_user = collections.OrderedDict(), collections.deque(), None, None      # Listen der Schreiber (Uid -> (bis, Wörter))
+        self.personal = collections.OrderedDict()                       # persönliche BTTV-Emotes (Uid -> (bis, Wörter)), kommen über die Live-Verbindung von BTTV
+        self.sthread, self.stouch, self.sroom, self.sretry, self.sfails = None, 0.0, "", 0.0, 0
+        self.sock_on = paths is not None and fetch is None             # nur mit echten Wegen (Tests mit eigener Abfrage bleiben ohne Netz)
+        self.sock_host, self.sock_port, self.sock_tls, self.sock_path = "sockets.betterttv.net", 443, True, "/ws"
 
     def _fetch(self, url):
         try:
@@ -5264,6 +5269,7 @@ class ThirdPartyEmotes:
 
     def ensure(self, room):
         room = room if isinstance(room, str) and re.fullmatch(r"[0-9]{1,12}", room) else ""
+        self._watch(room)
         with self.lock:
             if (self.thread is not None and self.thread.is_alive()) or (self.room == room and self.clock() < self.until):
                 return
@@ -5323,12 +5329,160 @@ class ThirdPartyEmotes:
 
     USER_TTL, USER_MAX, USER_QUEUE = 1800.0, 300, 50
 
+    # Persönliche BTTV-Emotes (BTTV Pro): Die Erweiterung meldet sie über BTTVs Live-Verbindung (wss://sockets.betterttv.net/ws) bei jeder Nachricht, die der
+    # Zuschauer schickt, an alle, die den Kanal ("twitch:<Kanal-Nr>") abhören. Die Box hört nur zu (join_channel, nie broadcast_me), ohne Anmeldung. Die
+    # Verbindung steht, solange Nachrichten kommen (SOCK_IDLE Sekunden nach der letzten), und baut sich mit wachsender Wartezeit neu auf.
+    SOCK_IDLE, SOCK_MAX_FRAME = 900.0, 1_000_000
+
+    def _watch(self, room):
+        if not room or not self.sock_on:
+            return
+        with self.lock:
+            self.stouch, self.sroom = self.clock(), room
+            if (self.sthread is not None and self.sthread.is_alive()) or self.clock() < self.sretry:
+                return
+            self.sthread = threading.Thread(target=self._sock_loop, args=(room,), daemon=True)
+            self.sthread.start()
+
+    def _sock_open(self):
+        if self.paths is not None:
+            sk, _ = self.paths.connect(self.sock_host, self.sock_port, timeout=8)
+        else:
+            sk = socket.create_connection((self.sock_host, self.sock_port), timeout=8)
+        try:
+            if self.sock_tls:
+                sk = ssl.create_default_context().wrap_socket(sk, server_hostname=self.sock_host)
+            key = base64.b64encode(os.urandom(16)).decode()
+            sk.sendall((b"GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\n"
+                        b"Sec-WebSocket-Version: 13\r\nUser-Agent: pipbox\r\n\r\n") % (self.sock_path.encode(), self.sock_host.encode(), key.encode()))
+            sk.settimeout(8)
+            buf = b""
+            while b"\r\n\r\n" not in buf:
+                d = sk.recv(4096)
+                if not d or len(buf) > 8192:
+                    raise OSError("ws-no-answer")
+                buf += d
+            head, _, rest = buf.partition(b"\r\n\r\n")
+            if b" 101 " not in head.split(b"\r\n")[0] + b" ":
+                raise OSError("ws-no-upgrade")
+            return sk, rest
+        except Exception:
+            try:
+                sk.close()
+            except Exception:
+                pass
+            raise
+
+    @staticmethod
+    def _ws_frame(opcode, payload=b""):
+        m = os.urandom(4)
+        n = len(payload)
+        head = bytes([0x80 | opcode, 0x80 | (n if n < 126 else 126)]) + (struct.pack(">H", n) if n >= 126 else b"")
+        return head + m + bytes(b ^ m[i % 4] for i, b in enumerate(payload))
+
+    def _ws_frames(self, buf):
+        """(Liste (Opcode, Nutzdaten), Rest) aus den empfangenen Bytes; ValueError bei zu großem Rahmen."""
+        out = []
+        while len(buf) >= 2:
+            op, ln, off = buf[0] & 0x0F, buf[1] & 0x7F, 2
+            if ln == 126:
+                if len(buf) < 4:
+                    break
+                ln, off = struct.unpack(">H", buf[2:4])[0], 4
+            elif ln == 127:
+                if len(buf) < 10:
+                    break
+                ln, off = struct.unpack(">Q", buf[2:10])[0], 10
+            if ln > self.SOCK_MAX_FRAME:
+                raise ValueError("ws-frame-too-large")
+            if buf[1] & 0x80:
+                off += 4                                                 # Server maskiert nicht; falls doch, nur überspringen
+            if len(buf) < off + ln:
+                break
+            out.append((op, buf[off:off + ln]))
+            buf = buf[off + ln:]
+        return out, buf
+
+    def _sock_loop(self, room):
+        sk = None
+        try:
+            sk, buf = self._sock_open()
+            sk.sendall(self._ws_frame(1, json.dumps({"name": "join_channel", "data": {"name": "twitch:" + room}}).encode()))
+            sk.settimeout(5)
+            last_ping = self.clock()
+            while self.clock() - self.stouch < self.SOCK_IDLE and self.sroom == room:
+                frames, buf = self._ws_frames(buf)
+                for op, data in frames:
+                    if op == 1:
+                        self._on_event(data.decode("utf-8", "replace"))
+                    elif op == 9:
+                        sk.sendall(self._ws_frame(10, data[:125]))
+                    elif op == 8:
+                        raise OSError("ws-closed-by-peer")
+                if self.clock() - last_ping > 25:
+                    sk.sendall(self._ws_frame(9, b"pb"))
+                    last_ping = self.clock()
+                try:
+                    d = sk.recv(65536)
+                except socket.timeout:
+                    continue
+                if not d:
+                    raise OSError("ws-closed")
+                buf += d
+                if len(buf) > 2 * self.SOCK_MAX_FRAME:
+                    raise ValueError("ws-too-much-data")
+            self.sfails = 0
+        except Exception:
+            self.sfails = min(self.sfails + 1, 6)
+            with self.lock:
+                self.sretry = self.clock() + min(30.0 * 2 ** (self.sfails - 1), 900.0)         # nach Fehlern mit wachsender Wartezeit (30 s bis 15 min)
+        finally:
+            if sk is not None:
+                try:
+                    sk.close()
+                except Exception:
+                    pass
+            with self.lock:
+                self.sthread = None
+
+    def _on_event(self, text):
+        try:
+            d = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(d, dict) or d.get("name") != "lookup_user" or not isinstance(d.get("data"), dict):
+            return
+        data = d["data"]
+        uid = str(data.get("providerId") or "")
+        if not re.fullmatch(r"[0-9]{1,12}", uid) or not data.get("pro") or not isinstance(data.get("emotes"), list):
+            return
+        out = {}
+        self._add(out, "bttv", data["emotes"], "id", "code", self.BTTV_ID)
+        if not out:
+            return
+        with self.lock:
+            self.personal[uid] = (self.clock() + self.USER_TTL, out)
+            self.personal.move_to_end(uid)
+            while len(self.personal) > self.USER_MAX:
+                self.personal.popitem(last=False)
+        cb = self.on_user
+        if cb:
+            try:
+                cb(uid)
+            except Exception:
+                pass
+
     # Emotes der Schreiber: BTTV und 7TV zeigen in der Erweiterung auch die Emotes, die ein Zuschauer selbst eingerichtet hat (persönliche Liste). Die Listen sind
     # öffentlich (keine Anmeldung); die Box fragt sie je Schreiber einmal ab (nur über die Nummer aus Twitchs Nachricht), hält sie 30 Minuten und lädt nacheinander.
     def user_map(self, uid):
         with self.lock:
-            e = self.users.get(uid)
-            return e[1] if e and self.clock() < e[0] else None
+            now = self.clock()
+            e, p = self.users.get(uid), self.personal.get(uid)
+            base = e[1] if e and now < e[0] else None
+            per = p[1] if p and now < p[0] else None
+        if per is None:
+            return base
+        return {**(base or {}), **per}
 
     def want_user(self, uid):
         if not (isinstance(uid, str) and re.fullmatch(r"[0-9]{1,12}", uid)):
@@ -5399,10 +5553,9 @@ class ThirdPartyEmotes:
         self._apply(item, self.map)
         uid = item.get("uid")
         if uid:
+            self.want_user(uid)                              # holt die öffentliche Liste, falls sie fehlt oder abgelaufen ist
             um = self.user_map(uid)
-            if um is None:
-                self.want_user(uid)
-            else:
+            if um:
                 self._apply(item, um)
 
     def mark_user(self, item):
