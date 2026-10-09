@@ -10,6 +10,7 @@ Fernzugriff von unterwegs läuft über `tailscale serve`.
 import argparse
 import base64
 import binascii
+import glob
 import hashlib
 import ipaddress
 import hmac
@@ -290,11 +291,21 @@ class OutageWatch:
         self.seen = {}                 # Kamera-Schlüssel -> hat gesendet
         self.since = {}                # Kamera-Schlüssel -> seit wann nicht mehr (Zeit) oder fehlt
         self.hdmi_since = None
+        self.closed = set()            # vom Nutzer mit dem × geschlossene Meldungen: (Art, Zeit des Ausfalls); kommt die Kamera wieder, gilt ein neuer Ausfall wieder
+
+    def dismiss(self, kind, t):
+        """Eine Meldung "Kamera ausgefallen" oder "HDMI: kein Signal" schließen (zum Beispiel nach einem bewussten Abziehen). Gibt zurück, ob die Art bekannt ist."""
+        if kind not in ("cam", "hdmi") or isinstance(t, bool) or not isinstance(t, (int, float)):
+            raise ValueError("Ungültige Anfrage")
+        with self.lock:
+            self.closed.add((kind, int(t)))
+        return True
 
     def alerts(self, cameras, hdmi=None):
         now = self.clock()
         out = []
         with self.lock:
+            self.closed = {c for c in self.closed if now - c[1] <= self.MAX}                 # alte Einträge fallen weg
             keys = set()
             for c in cameras or []:
                 key = c.get("key")
@@ -308,7 +319,7 @@ class OutageWatch:
                 elif state == "offline" and self.seen.get(key):
                     self.since.setdefault(key, now)
                     t = self.since[key]
-                    if key != HDMI_KEY and now - t >= self.DOWN and now - t <= self.MAX:
+                    if key != HDMI_KEY and now - t >= self.DOWN and now - t <= self.MAX and ("cam", int(t)) not in self.closed:
                         kind = "dji" if str(key).startswith("dji-") else "cam"
                         out.append({"level": "warn", "kind": "cam", "cam": kind, "name": str(c.get("name") or "")[:40], "t": int(t)})
             for k in list(self.seen):
@@ -324,7 +335,7 @@ class OutageWatch:
             if bad:
                 if self.hdmi_since is None:
                     self.hdmi_since = now
-                if self.DOWN <= now - self.hdmi_since <= self.MAX:
+                if self.DOWN <= now - self.hdmi_since <= self.MAX and ("hdmi", int(self.hdmi_since)) not in self.closed:
                     out.append({"level": "warn", "kind": "hdmi", "src": (hdmi.get("settings") or {}).get("source", "hdmi"), "t": int(self.hdmi_since)})
             else:
                 self.hdmi_since = None
@@ -363,6 +374,23 @@ class Sampler:
         except (OSError, ValueError):
             pass
         return None
+
+    @staticmethod
+    def blocked_threads(proc="/proc", limit=6):
+        """Threads im Kernel-Zustand D (nicht unterbrechbar) mit Wartestelle im Kernel: ["usb-storage@usb_sg_wait", ...]. Zeigt, WER hinter der Meldung
+        "n Prozess(e) blockiert" steckt (oft ein USB-Modem, das sich zusätzlich als CD-Laufwerk meldet, oder der Treiber eines Geräts)."""
+        out = []
+        for d in sorted(glob.glob(proc + "/[0-9]*/task/[0-9]*")):
+            t = read(d + "/stat", "") or ""
+            i = t.rfind(")")
+            if i < 0 or t[i + 2:i + 3] != "D":
+                continue
+            name = t[t.find("(") + 1:i].replace(" ", "_")
+            wchan = (read(d + "/wchan", "") or "").strip()
+            out.append("%s@%s" % (name, wchan if wchan and wchan != "0" else "?"))
+            if len(out) >= limit:
+                break
+        return out
 
     def net_bytes(self):
         res = {}
@@ -437,7 +465,7 @@ class Sampler:
             zt = (read(f"/sys/class/thermal/thermal_zone{zi}/type", "") or "").strip()
             zones.append({"name": THERMAL_NAMES.get(zt, zt or f"Zone {zi}"), "c": round(temps[zi], 1)})
         out = self.finish(cores, freqs, max(temps) if temps else None,
-                          total, avail, rates, blocked, self.fan_pwm())
+                          total, avail, rates, blocked, self.fan_pwm(), self.blocked_threads() if blocked > 0 else None)
         out["details"] = {"temps": zones, "accel": devfreq_loads(), "disk": disk_usage("/"), "send": send_stats()}
         return out
 
@@ -462,7 +490,7 @@ class Sampler:
                      "drop_total": 0, "sent_total": 90210, "retrans_pct": 0.46, "loss_pct": 0.04}}
         return out
 
-    def finish(self, cores, freqs, temp, total_kb, avail_kb, rates, blocked, fan_pwm=None):
+    def finish(self, cores, freqs, temp, total_kb, avail_kb, rates, blocked, fan_pwm=None, blocked_names=None):
         cpu_avg = round(sum(cores) / len(cores), 1) if cores else None
         cpu_max = max(cores) if cores else None
         mem_used = round(100.0 * (1 - avail_kb / total_kb), 1) if total_kb else None
@@ -478,7 +506,7 @@ class Sampler:
         if mem_used is not None and mem_used >= LIMITS["mem_warn"]:
             alerts.append({"level": "warn", "text": f"RAM {mem_used:.0f} % belegt"})
         if blocked > 0:
-            alerts.append({"level": "warn", "text": f"{blocked} Prozess(e) blockiert (D-State)"})
+            alerts.append({"level": "warn", "text": f"{blocked} Prozess(e) blockiert (D-State)", "kind": "dstate", "names": list(blocked_names or [])})
         return {"time": int(time.time()), "demo": self.demo,
                 "cpu": {"cores": cores, "avg": cpu_avg, "max": cpu_max, "freq_mhz": freqs},
                 "temp_c": None if temp is None else round(temp, 1),
@@ -7876,6 +7904,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/dji/cmd":
                 return self.reply(200, self.djisvc.command(d))
             if path == "/api/alerts/dismiss":
+                if d.get("kind") in ("cam", "hdmi"):
+                    return self.reply(200, {"ok": bool(self.outages.dismiss(d.get("kind"), d.get("t")))})
                 return self.reply(200, {"ok": bool(self.usbwatch.dismiss(d.get("t")))})
             if path == "/api/uiaccess":
                 return self.reply(200, self.uiaccess.set(d.get("block_client_wifi"), self.local_ip()))
