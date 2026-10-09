@@ -106,6 +106,15 @@ Karte **Entwickler** (SSH-Zugang wie in der Original-Oberfläche der BELABOX):
 
 ## 8. Fehler melden
 
+**Am einfachsten über die Box:** Die Karte **Problem melden / Wunsch äußern** bereitet das Formular auf GitHub vor.
+
+- Wähle **Problem** (Titel Pflicht, Beschreibung freiwillig) oder **Wunsch** (Titel und Beschreibung Pflicht), trage den Titel ein und klicke **Formular vorbereiten**.
+- Bei einem Problem bekommst du eine **Support-Nummer** (`IRL-XXXXXX`). Sie steht im Titel (`[ISSUE] Titel (Nummer)`); damit könnt ihr beide das Issue wiederfinden. Mit dem Haken **Bereinigtes Protokoll mitnehmen** lädt die Box das Protokoll als Datei, die du auf GitHub ins Textfeld ziehst.
+- Der Knopf **Formular auf GitHub öffnen** öffnet einen neuen Tab. Dort brauchst du ein **GitHub-Konto** (kostenlos) und klickst auf „Submit new issue“. Die Box sendet selbst nichts, sie hat dafür keinen Zugang zu GitHub.
+- Unter **Meine Fälle** stehen deine Support-Nummern mit Datum, mit einer Suche auf GitHub. **Erledigt** gilt nur auf der Box; das Issue schließt du auf GitHub selbst.
+
+Von Hand geht es auch:
+
 1. Beschreibe, was du getan hast, was du erwartet hast und was passiert ist. Nenne die Version (steht in der Karte Software-Update unter "Installiert") und dein Gerät.
 2. Lade in der Karte **Protokolle** die Protokolle herunter und sieh sie durch (siehe oben). Hilft bei seltenen Fehlern, vorher die Stufe "Ausführlich" einzuschalten.
 3. Öffne ein **Issue** im GitHub-Projekt [IRL4YOU/irl4you-pip](https://github.com/IRL4YOU/irl4you-pip) und hänge das Protokoll an.
