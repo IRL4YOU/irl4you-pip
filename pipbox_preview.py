@@ -357,6 +357,95 @@ class Preview:
             self._release()
 
 
+def iface_addrs(names):
+    """IPv4-Adresse je Netzwerkschnittstelle ({Name: Adresse}); was keine hat, fehlt."""
+    out = {}
+    try:
+        import fcntl
+    except ImportError:
+        return out
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        for n in names:
+            try:
+                out[n] = socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack("256s", n[:15].encode()))[20:24])      # SIOCGIFADDR
+            except OSError:
+                pass
+    finally:
+        s.close()
+    return out
+
+
+def default_route_iface(path="/proc/net/route"):
+    """Schnittstelle der Standardroute (kleinste Metrik), sonst None."""
+    best = None
+    try:
+        with open(path) as f:
+            for line in f.read().splitlines()[1:]:
+                c = line.split()
+                if len(c) >= 7 and c[1] == "00000000" and int(c[3], 16) & 2:
+                    m = int(c[6])
+                    if best is None or m < best[0]:
+                        best = (m, c[0])
+    except (OSError, ValueError):
+        return None
+    return best[1] if best else None
+
+
+def is_home_address(ip):
+    """Kommt der Browser aus dem Heimnetz (private, Link-lokale oder lokale Adresse)? True/False, None wenn die Adresse unlesbar ist. Adressen des Tailnets (100.64.0.0/10) und
+    öffentliche Adressen zählen als "außerhalb"."""
+    import ipaddress
+    try:
+        a = ipaddress.ip_address(str(ip).split("%")[0])
+    except ValueError:
+        return None
+    if a.version == 6 and a.ipv4_mapped:
+        a = a.ipv4_mapped
+    if a in ipaddress.ip_network("100.64.0.0/10"):
+        return False
+    return bool(a.is_private or a.is_loopback or a.is_link_local)
+
+
+class Traffic:
+    """Verkehr der Vorschau zum Browser. Er steht sonst im Upload-Zähler der Netzwerkkarte (/proc/net/dev) und verfälscht die Anzeige der Sendung
+    (3 Mbit/s zusätzlich bei voller Bildrate). Der Webserver meldet, was er je Verbindung (lokale Adresse) an den Browser schickt; adjust() zieht das
+    samt Aufschlag für Netzwerkköpfe von der Schnittstelle ab, die diese Adresse hat. Kommt der Browser über einen Proxy auf der Box (Tailscale, Adresse
+    127.0.0.1) oder ist die Adresse unbekannt, gilt die Schnittstelle der Standardroute."""
+    TX_FACTOR = 1.046          # Ethernet 14 + IP 20 + TCP 32 Byte je 1448 Byte Nutzdaten
+    RX_FACTOR = 0.01           # Bestätigungen des Browsers (gemessen 0,9 %)
+
+    def __init__(self, addrs=None, default=None):
+        self.lock = threading.Lock()
+        self.by_ip = {}
+        self.addrs, self.default = addrs or iface_addrs, default or default_route_iface
+
+    def add(self, ip, nbytes):
+        with self.lock:
+            self.by_ip[ip or ""] = self.by_ip.get(ip or "", 0) + nbytes
+
+    def adjust(self, net):
+        """net: {Schnittstelle: (rx, tx)} aus /proc/net/dev; zurück dasselbe ohne den Verkehr der Vorschau."""
+        with self.lock:
+            snap = dict(self.by_ip)
+        if not snap:
+            return net
+        addr = self.addrs(list(net))
+        per = {}
+        for ip, n in snap.items():
+            ifc = next((i for i, a in addr.items() if a == ip), None) or self.default()
+            if ifc in net:
+                per[ifc] = per.get(ifc, 0) + n
+        out = dict(net)
+        for ifc, n in per.items():
+            rx, tx = net[ifc]
+            out[ifc] = (max(0, rx - int(n * self.RX_FACTOR)), max(0, tx - int(n * self.TX_FACTOR)))
+        return out
+
+
+TRAFFIC = Traffic()
+
+
 def read_line(sock, limit=MAX_REQUEST):
     """Eine Zeile (bis \\n) byteweise lesen, damit danach die Nutzdaten unberührt im Socket bleiben. Zu lang oder zu früh geschlossen: ValueError."""
     out = b""

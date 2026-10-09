@@ -373,6 +373,8 @@ class Sampler:
                     (read(f"/sys/class/net/{name}/operstate", "") or "").strip() in ("up", "unknown"):
                 f = rest.split()
                 res[name] = (int(f[0]), int(f[8]))
+        if pipbox_preview:
+            res = pipbox_preview.TRAFFIC.adjust(res)            # der Verkehr der Vorschau zum Browser zählt nicht zum Upload der Sendung
         return res
 
     def sample(self):
@@ -401,8 +403,8 @@ class Sampler:
             for n, (rx, tx) in net.items():
                 p = self.prev_net.get(n)
                 if p:
-                    rates[n] = {"rx_mbit": round((rx - p[0]) * 8 / dt_s / 1e6, 2),
-                                "tx_mbit": round((tx - p[1]) * 8 / dt_s / 1e6, 2)}
+                    rates[n] = {"rx_mbit": max(0.0, round((rx - p[0]) * 8 / dt_s / 1e6, 2)),
+                                "tx_mbit": max(0.0, round((tx - p[1]) * 8 / dt_s / 1e6, 2))}
         self.prev_cpu, self.prev_net, self.prev_t = cpu, net, now
 
         freqs = []
@@ -7585,6 +7587,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(429 if why == "busy" else 503, {"error": why})
         started = False
         self.close_connection = True
+        lip = self.local_ip() or ""
         try:
             up.settimeout(20)
             while True:
@@ -7601,6 +7604,7 @@ class Handler(BaseHTTPRequestHandler):
                     started = True
                 self.wfile.write(data)
                 self.wfile.flush()
+                pipbox_preview.TRAFFIC.add(lip, len(data))               # für die Anzeige des Uploads (siehe Sampler.net_bytes)
         except OSError:
             pass                                       # Browser weg oder Dienst still: Verbindung zum Dienst schließen beendet die Vorschau dort
         finally:
@@ -7706,11 +7710,12 @@ class Handler(BaseHTTPRequestHandler):
                         c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
             return self.reply(200, m)
         if path == "/api/preview":
+            home = pipbox_preview.is_home_address(self.ip()) if pipbox_preview else None      # echte Absenderadresse (hinter dem Tailscale-Proxy die weitergereichte)
             if not self.preview:
-                return self.reply(200, {"available": False, "why": "missing"})
+                return self.reply(200, {"available": False, "why": "missing", "home": home})
             if not self.send._active():
-                return self.reply(200, {"available": False, "why": "off"})            # ohne Sendung gar nicht erst den Dienst wecken
-            return self.reply(200, self.preview.status())
+                return self.reply(200, {"available": False, "why": "off", "home": home})            # ohne Sendung gar nicht erst den Dienst wecken
+            return self.reply(200, dict(self.preview.status(), home=home))
         if path == "/api/preview/stream":
             return self.preview_stream()
         if path == "/api/layout":
