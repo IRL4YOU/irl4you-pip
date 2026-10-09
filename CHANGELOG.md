@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.198 (Beta)
+- **Feste Zusatzadresse: Einverständnis nötig (Wunsch des Nutzers zu #65).** Zum Einschalten muss der Haken **„Ich bin einverstanden, dass die Änderung am Netzwerk der Box auf meine eigene Verantwortung erfolgt“** gesetzt sein, sonst bleibt „Speichern“ gesperrt. Der Server prüft das ebenfalls (`ack` muss genau `true` sein; ohne Haken wird nichts geschrieben und der Helfer nicht gestartet). Ausschalten braucht den Haken nicht. Der Haken gilt je Speichern und wird danach wieder zurückgesetzt. Zwei neue Texte in allen 14 Sprachen, `tools/test_netaddr.py` 25 Tests.
+
 ## 0.9.197 (Beta)
 - **Neu: feste Zusatzadresse für das LAN-Kabel, einstellbar in der Oberfläche (Issue #65, Entscheidung des Nutzers).** Unter **Optionen → „Feste Zusatzadresse (LAN)“**. Die Box bekommt ihre Adresse weiter per **DHCP vom Router**; zusätzlich kann sie eine **feste** Adresse haben, zum Beispiel wenn sie am selben Router hängt wie andere Geräte. Das ist **kein Ersatz** für die DHCP-Adresse und **keine Standardeinstellung**: Wer nichts einstellt, merkt nichts. Die zuverlässigste Lösung bleibt eine feste Zuordnung (DHCP-Reservierung) im Router.
   - **An die MAC-Adresse gebunden:** Man wählt die Netzkarte aus der Liste (Name, MAC-Adresse, aktuelle Adressen); die feste Adresse gehört zur **MAC-Adresse**, nicht zum Namen (`eth0`, `eth1` und `enx…` wechseln bei USB-Adaptern). Sie wird auf die Karte gesetzt, die diese MAC hat.
