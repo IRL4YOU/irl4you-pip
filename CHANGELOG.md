@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.175 (Beta)
+- **Kompakte Ansicht: Die Symbole der Vorschau stören nicht mehr im Bild (Wunsch des Nutzers).** Mit ausgeblendeten Überschriften (Optionen → Menüpunkte anzeigen) lagen Start/Stop, ⚙ und ⓘ weiter über dem laufenden Bild. Jetzt sind sie unsichtbar (`visibility:hidden`, nicht anklickbar), solange die Vorschau läuft, und erscheinen für 3 Sekunden, wenn die Maus über die Karte bewegt oder das Bild angetippt wird. Läuft keine Vorschau, bleibt **Start** sichtbar. Ohne die Option (Überschriften sichtbar) ändert sich nichts.
+- Tests: `tools/test_preview.py` jetzt 82 Tests; im Browser mit der lokalen Oberfläche geprüft (unsichtbar bei laufender Vorschau, sichtbar nach Mausbewegung und nach Antippen, nach 3 Sekunden wieder weg, nach Stop sichtbar).
+
 ## 0.9.174 (Beta)
 - **Die Vorschau kommt jetzt als echtes Video (H.264) statt als Einzelbilder (Issue #52).** Rückmeldung des Nutzers: Am Handy ruckelte die Vorschau stark, und er hatte von Anfang an ein Video erwartet. Gemessen im Heimnetz war die Auslieferung der Einzelbilder gleichmäßig (30 Bilder pro Sekunde, 99 % der Abstände unter 70 ms), das Ruckeln lag also an der Art (Einzelbilder, 5 bis 7 Mbit/s, auf dem Handy bei jedem Bild entpackt) und an den 5 Bildern pro Sekunde außerhalb des Heimnetzes. Jetzt: Dekoder (`mppvideodec`) → klein (640 × 360) → Hardware-Kodierer `mpph264enc` (1,5 Mbit/s, Profil main, Stufe 3.1, ein Schlüsselbild je Sekunde) → fragmentiertes MP4 → Browser (Media Source Extensions, `<video>`).
 - **Gemessen** (ein Zuschauer, 15 s, Dienst auf den kleinen Kernen): Video **1,7 Mbit/s** und 43 bis 57 % eines kleinen Kerns; Einzelbilder 5,6 bis 5,8 Mbit/s und 47 bis 59 %. Im Browser (Chromium) mit den echten Daten der Box: **30,0 Bilder pro Sekunde, 0 verworfene Bilder, 0,2 s hinter dem aktuellen Ende**, 640 × 360; die Sendung blieb bei 29,8 bis 30,8 Bildern pro Sekunde ohne verworfene Bilder.
