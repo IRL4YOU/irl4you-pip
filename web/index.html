@@ -1771,9 +1771,11 @@ function alertWhen(t){
 function alertParts(a){                                                                              // {main: Zeile als HTML, info: Text hinter dem "i" oder ""}
   if(a.kind==="usb"){
     const power=a.why==="emi"||a.why==="over";
-    return {main:`<span>${USB_LABEL[a.cat]||USB_LABEL.other}</span> · <span>${alertWhen(a.t)}</span>`+(a.back?` · <span>wieder da</span>`:"")+(power?` · <span>Bitte Stromversorgung prüfen</span>`:""),
-            info:power?"Der USB-Anschluss wurde abgeschaltet (Störung oder Spannungseinbruch). Netzteil und USB-Hub prüfen, den Adapter möglichst direkt am Board anstecken."
-                      :"Das USB-Gerät wurde getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen."};
+    const nm=a.name?` <b translate="no">${esc(a.name)}</b>`:"";                                         // Name des Geräts aus dem Kernel-Protokoll (nie übersetzt)
+    const where=(a.port||a.ids)?` <span class="muted" translate="no">(${esc([a.port?"USB "+a.port:"",a.ids].filter(Boolean).join(", "))})</span>`:"";      // Anschluss und Kennung, hilft beim Eingrenzen
+    return {main:`<span>${USB_LABEL[a.cat]||USB_LABEL.other}</span>${nm} · <span>${alertWhen(a.t)}</span>`+(a.back?` · <span>wieder da</span>`:"")+(power?` · <span>Bitte Stromversorgung prüfen</span>`:""),
+            info:(power?"Der USB-Anschluss wurde abgeschaltet (Störung oder Spannungseinbruch). Netzteil und USB-Hub prüfen, den Adapter möglichst direkt am Board anstecken."
+                      :"Das USB-Gerät wurde getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen.")+where};
   }
   if(a.kind==="cam"){
     const dji=a.cam==="dji";
