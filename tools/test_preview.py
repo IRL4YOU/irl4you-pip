@@ -210,6 +210,155 @@ class Command(unittest.TestCase):
         self.assertEqual(P.clamp("320", *P.WIDTH_RANGE, 640), 320)
 
 
+def nal(t, payload=b"\x88\x84\x21\xa0", ref=3):
+    return bytes([(ref << 5) | t]) + payload
+
+
+SPS = bytes([0x67, 0x4D, 0x40, 0x1F, 0xE9, 0x02, 0x80, 0x2D, 0xD0, 0x80, 0x00, 0x00, 0x03, 0x00, 0x80])      # Profil main, Stufe 3.1 (Beispiel; Inhalt nur für avcC)
+PPS = bytes([0x68, 0xEE, 0x3C, 0x80])
+
+
+def idr(n=0):
+    return nal(5, b"\x88\x84" + bytes([n, 1, 2, 3]))
+
+
+def pframe(n=0):
+    return nal(1, b"\x9a\x00" + bytes([n, 5, 6, 7, 8]), ref=2)
+
+
+def annexb(nals, four=True):
+    return b"".join((b"\x00\x00\x00\x01" if (four or i % 2) else b"\x00\x00\x01") + n for i, n in enumerate(nals))
+
+
+def boxes(data):
+    out, i = [], 0
+    while i < len(data):
+        size, typ = struct.unpack(">I4s", data[i:i + 8])
+        assert size >= 8 and i + size <= len(data), "Kiste reicht über das Ende"
+        out.append((typ.decode(), data[i + 8:i + size]))
+        i += size
+    return out
+
+
+def find(payload, path):
+    for name in path:
+        d = dict(boxes(payload))
+        payload = d[name]
+    return payload
+
+
+class Mp4(unittest.TestCase):
+    """Das fragmentierte MP4 aus dem H.264-Byte-Strom (Init-Segment, Häppchen, Zeiten, Schlüsselbilder)."""
+
+    def stream_bytes(self, frames=14):
+        nals = [SPS, PPS, idr(0)] + [pframe(i) for i in range(1, 7)] + [idr(7)] + [pframe(i) for i in range(8, frames)]
+        # Bilder beginnen mit SPS/PPS vor jedem Schlüsselbild (config-interval=-1), dazwischen Folgebilder
+        return nals
+
+    def test_init_segment_structure(self):
+        init = P.init_segment(SPS, PPS, 640, 360)
+        top = boxes(init)
+        self.assertEqual([n for n, _ in top], ["ftyp", "moov"])
+        moov = dict(boxes(top[1][1]))
+        self.assertEqual(set(moov), {"mvhd", "trak", "mvex"})
+        stsd = find(top[1][1], ["trak", "mdia", "minf", "stbl", "stsd"])
+        avc1 = boxes(stsd[8:])[0]
+        self.assertEqual(avc1[0], "avc1")
+        w, h = struct.unpack(">HH", avc1[1][24:28])
+        self.assertEqual((w, h), (640, 360))
+        avcc = dict(boxes(avc1[1][78:]))["avcC"]
+        self.assertEqual(avcc[:4], bytes([1, 0x4D, 0x40, 0x1F]))                         # Profil, Verträglichkeit, Stufe aus dem SPS
+        n = struct.unpack(">H", avcc[6:8])[0]
+        self.assertEqual(avcc[8:8 + n], SPS)
+        self.assertEqual(avcc[8 + n + 3:], PPS)
+        self.assertEqual(find(top[1][1], ["trak", "tkhd"])[-8:], struct.pack(">II", 640 << 16, 360 << 16))
+        self.assertEqual(find(top[1][1], ["trak", "mdia", "mdhd"])[12:16], struct.pack(">I", 90000))
+
+    def test_media_segment_offsets_sizes_and_flags(self):
+        samples = [(b"A" * 10, 3000, True), (b"B" * 20, 3000, False), (b"C" * 5, 3000, False)]
+        seg = P.media_segment(7, 123456, samples)
+        top = boxes(seg)
+        self.assertEqual([n for n, _ in top], ["moof", "mdat"])
+        moof_size = 8 + len(top[0][1])
+        traf = dict(boxes(dict(boxes(top[0][1]))["traf"]))
+        self.assertEqual(struct.unpack(">I", dict(boxes(top[0][1]))["mfhd"][4:8])[0], 7)
+        self.assertEqual(struct.unpack(">Q", traf["tfdt"][4:12])[0], 123456)
+        self.assertEqual(struct.unpack(">I", traf["tfhd"][:4])[0] & 0xFFFFFF, 0x020000)       # default-base-is-moof
+        trun = traf["trun"]
+        count, offset = struct.unpack(">Ii", trun[4:12])
+        self.assertEqual(count, 3)
+        self.assertEqual(offset, moof_size + 8)                                                # zeigt auf den Anfang der Nutzdaten im mdat
+        rows = [struct.unpack(">III", trun[12 + 12 * i:24 + 12 * i]) for i in range(3)]
+        self.assertEqual([r[1] for r in rows], [10, 20, 5])
+        self.assertEqual([r[2] for r in rows], [0x02000000, 0x01010000, 0x01010000])
+        self.assertEqual(top[1][1], b"A" * 10 + b"B" * 20 + b"C" * 5)
+
+    def run_mux(self, chunks, **kw):
+        m = P.Fmp4(**kw)
+        out = []
+        for c in chunks:
+            out += m.feed(c)
+        return out
+
+    def test_first_output_is_init_then_fragments(self):
+        data = annexb(self.stream_bytes(), four=True) + annexb([SPS, PPS, idr(99)])        # das letzte Bild erscheint erst mit dem nächsten
+        out = self.run_mux([data], frames=6)
+        self.assertEqual(boxes(out[0])[0][0], "ftyp")
+        self.assertEqual([boxes(o)[0][0] for o in out[1:]], ["moof"] * (len(out) - 1))
+        self.assertGreaterEqual(len(out), 3)
+        seqs = [struct.unpack(">I", dict(boxes(dict(boxes(o))["moof"]))["mfhd"][4:8])[0] for o in out[1:]]
+        self.assertEqual(seqs, list(range(1, len(seqs) + 1)))
+        t = [struct.unpack(">Q", dict(boxes(dict(boxes(dict(boxes(o))["moof"]))["traf"]))["tfdt"][4:12])[0] for o in out[1:]]
+        self.assertEqual(t, [i * 6 * 3000 for i in range(len(t))])                          # 30 Bilder/s, 6 Bilder je Häppchen
+        first = dict(boxes(dict(boxes(dict(boxes(out[1]))["moof"]))["traf"]))["trun"]
+        flags = [struct.unpack(">I", first[12 + 12 * i + 8:12 + 12 * i + 12])[0] for i in range(6)]
+        self.assertEqual(flags[0], 0x02000000)                                              # beginnt mit einem Schlüsselbild
+        self.assertTrue(all(f == 0x01010000 for f in flags[1:]))
+
+    def test_samples_are_length_prefixed_without_parameter_sets(self):
+        data = annexb([SPS, PPS, idr(0), pframe(1), pframe(2), SPS, PPS, idr(3)])
+        out = self.run_mux([data], frames=2)
+        mdat = boxes(out[1])[1][1]
+        i0 = idr(0)
+        self.assertEqual(mdat[:4 + len(i0)], struct.pack(">I", len(i0)) + i0)               # Schlüsselbild, ohne SPS und PPS
+        p1 = pframe(1)
+        self.assertEqual(mdat[4 + len(i0):8 + len(i0) + len(p1)], struct.pack(">I", len(p1)) + p1)
+
+    def test_byte_by_byte_gives_the_same_output(self):
+        data = annexb(self.stream_bytes(20), four=False) + annexb([SPS, PPS, idr(50)])
+        a = self.run_mux([data], frames=4)
+        b = self.run_mux([data[i:i + 1] for i in range(len(data))], frames=4)
+        c = self.run_mux([data[i:i + 7] for i in range(0, len(data), 7)], frames=4)
+        self.assertEqual(a, b)
+        self.assertEqual(a, c)
+
+    def test_waits_for_the_first_key_frame_with_parameter_sets(self):
+        data = annexb([pframe(1), pframe(2), idr(3), pframe(4), SPS, PPS, idr(5), pframe(6), SPS, PPS, idr(7)])
+        out = self.run_mux([data], frames=1)
+        self.assertEqual(boxes(out[0])[0][0], "ftyp")
+        first = boxes(out[1])[1][1]
+        self.assertEqual(first[4:4 + len(idr(5))], idr(5))                                   # der Strom beginnt erst am Schlüsselbild mit SPS und PPS
+
+    def test_nothing_before_a_complete_picture(self):
+        self.assertEqual(self.run_mux([annexb([SPS, PPS, idr(0)])], frames=1), [])
+
+    def test_four_byte_start_codes_do_not_leave_zero_bytes(self):
+        data = annexb([SPS, PPS, idr(0), pframe(1), SPS, PPS, idr(2)], four=True)
+        out = self.run_mux([data], frames=1)
+        self.assertEqual(boxes(out[1])[1][1][4:4 + len(idr(0))], idr(0))
+
+    def test_command_line_per_format(self):
+        mp4 = " ".join(P.gst_argv("h265", 30, 640, fmt="mp4"))
+        self.assertIn("mpph264enc", mp4)
+        self.assertIn("stream-format=byte-stream", mp4)
+        self.assertIn("gop=30", mp4)
+        self.assertNotIn("mppjpegenc", mp4)
+        self.assertNotIn("mp4mux", mp4)
+        jpg = " ".join(P.gst_argv("h265", 30, 640, fmt="mjpeg"))
+        self.assertIn("mppjpegenc", jpg)
+        self.assertNotIn("mpph264enc", jpg)
+
+
 class FakePreview(P.Preview):
     """Preview mit nachgebautem Mitlese-Socket und einem Dekoder-Ersatz, der stdin nach stdout kopiert."""
 
@@ -223,7 +372,7 @@ class FakePreview(P.Preview):
         self.b.settimeout(0.5)
         return self.b
 
-    def spawn(self, fps, width):
+    def spawn(self, fps, width, fmt="mjpeg"):
         import subprocess
         p = subprocess.Popen(self.cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
         self.procs.append(p)
@@ -385,7 +534,7 @@ class Helper(unittest.TestCase):
         self.assertEqual(st["why"], "off")
 
     def test_stream_delivers_the_decoder_output(self):
-        s, head = self.client.open(30, 640)
+        s, head = self.client.open(30, 640, fmt="mjpeg")
         self.assertEqual(head, {"ok": True})
         self.a.send(udp(9100, srt(5, b"Q" * 188)))
         s.settimeout(5)
@@ -394,26 +543,26 @@ class Helper(unittest.TestCase):
         self.assertTrue(self.wait_viewers(0), "Platz wird nach dem Schließen frei")
 
     def test_long_flag_reaches_the_limit(self):
-        s, _ = self.client.open(30, 640, long=True)
+        s, _ = self.client.open(30, 640, long=True, fmt="mjpeg")
         s.close()
         self.assertTrue(self.wait_viewers(0))
         self.a, self.b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)        # der nachgebaute Mitlese-Socket wird je Vorschau geschlossen
         self.pv.a, self.pv.b = self.a, self.b
-        s, _ = self.client.open(30, 640)
+        s, _ = self.client.open(30, 640, fmt="mjpeg")
         s.close()
         self.assertTrue(self.wait_viewers(0))
         self.assertEqual(self.limits, [True, False])
 
     def test_not_sending_is_refused(self):
         self.sending[0] = False
-        s, head = self.client.open(30, 640)
+        s, head = self.client.open(30, 640, fmt="mjpeg")
         self.assertIsNone(s)
         self.assertEqual(head["error"], "off")
 
     def test_busy(self):
         for _ in range(P.MAX_VIEWERS):
             self.pv._acquire()
-        s, head = self.client.open(30, 640)
+        s, head = self.client.open(30, 640, fmt="mjpeg")
         self.assertIsNone(s)
         self.assertEqual(head["error"], "busy")
 
@@ -455,7 +604,7 @@ class Helper(unittest.TestCase):
             got.append((fps, width))
             return orig(write, fps, width, *a, **k)
         self.pv.stream = spy
-        s, _ = self.client.open(999, 5000)
+        s, _ = self.client.open(999, 5000, fmt="mjpeg")
         s.close()
         self.assertTrue(self.wait_viewers(0))
         self.assertEqual(got, [(30, 1280)])
@@ -624,36 +773,34 @@ class TrafficAccounting(unittest.TestCase):
         self.assertIn("pipbox_preview.TRAFFIC.adjust(res)", src)
 
 
-class HomeNetwork(unittest.TestCase):
-    def test_private_and_local_addresses(self):
-        for ip in ("192.168.178.20", "10.1.2.3", "172.16.0.9", "172.31.255.1", "169.254.1.1", "127.0.0.1", "::1", "fe80::1", "::ffff:192.168.1.7"):
-            self.assertTrue(P.is_home_address(ip), ip)
+class FullFrameRate(unittest.TestCase):
+    """Immer volle 30 Bilder pro Sekunde in 640 x 360, auch außerhalb des Heimnetzes (weniger Bilder wirken am Handy ruckelig und sparen kaum Rechenzeit)."""
 
-    def test_outside_addresses(self):
-        for ip in ("8.8.8.8", "93.184.216.34", "100.64.0.1", "100.101.102.103", "172.32.0.1", "2001:4860:4860::8888", "::ffff:100.100.1.1"):
-            self.assertFalse(P.is_home_address(ip), ip)
+    def setUp(self):
+        self.html = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
 
-    def test_unreadable(self):
-        for ip in ("", "kein ip", None):
-            self.assertIsNone(P.is_home_address(ip))
+    def test_one_mode_only(self):
+        self.assertIn('"&fps=30&w=640"+(always()?"&long=1":"")', self.html)                    # immer 30 Bilder pro Sekunde in 640 x 360
+        self.assertIn('"/api/preview/stream?fmt=mp4"+query()', self.html)                       # Video (H.264, fragmentiertes MP4)
+        self.assertIn('"/api/preview/stream?fmt=mjpeg"+query()', self.html)                     # Ausweichlösung: Einzelbilder
+        self.assertNotIn("home?30:5", self.html)
+        self.assertNotIn("st.home", self.html)
+
+    def test_server_has_no_network_guessing_left(self):
+        src = open(os.path.join(os.path.dirname(HERE), "server.py"), encoding="utf-8").read()
+        self.assertNotIn("is_home_address", src)
+        self.assertNotIn("home=home", src)
+        self.assertFalse(hasattr(P, "is_home_address"))
 
     def test_card_stays_small(self):
-        html = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
-        self.assertIn('id="prev_set"', html)                                   # Zahnrad holt das Häkchen-Feld zurück
-        self.assertIn("keepRow.hidden=keep.checked&&!gearOpen", html)
-        self.assertIn("#prev_img{display:block;width:100%;max-width:640px;", html)
-        self.assertNotIn("Außerhalb des Heimnetzes: 10 Bilder", html)          # der Satz steht nur in der Info
+        self.assertIn('id="prev_set"', self.html)                                   # Zahnrad holt das Häkchen-Feld zurück
+        self.assertIn("keepRow.hidden=keep.checked&&!gearOpen", self.html)
+        self.assertIn("#prev_img,#prev_vid{display:block;width:100%;max-width:640px;", self.html)
+        self.assertNotIn("Außerhalb des Heimnetzes: 10 Bilder", self.html)
 
-    def test_outside_the_home_network_sends_five_frames(self):
-        html = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
-        self.assertIn('stream?fps="+(home?30:5)+"&w="+(home?640:480)', html)
-        self.assertIn('row(g,"heads","Überschriften von Chat und Vorschau",false)', html)
-        self.assertIn('document.documentElement.classList.toggle("nohead",compact)', html)
-
-    def test_status_route_reports_home(self):
-        src = open(os.path.join(os.path.dirname(HERE), "server.py"), encoding="utf-8").read()
-        self.assertIn("pipbox_preview.is_home_address(self.ip())", src)
-        self.assertIn("dict(self.preview.status(), home=home)", src)
+    def test_headings_option(self):
+        self.assertIn('row(g,"heads","Überschriften von Chat und Vorschau",false)', self.html)
+        self.assertIn('document.documentElement.classList.toggle("nohead",compact)', self.html)
 
 
 if __name__ == "__main__":
