@@ -960,6 +960,7 @@ def sections():
            ("System: Druck, freier Platz, Speicherbedarf", system_load()),
            ("Netzwerk-Zähler (seit dem Start)", net_counters()),
            ("Ereignisse der Sendekette (belacoder: Zweige starten, Zeitausrichtung)", tail_file("/run/pipbox-send/belacoder-events.txt", 80)),
+           ("Hänger der Sendekette (Diagnosepakete des Wächters: Threads von belacoder, Zustand D, Statistik; Neustart erfolgte automatisch)", tail_file("/var/lib/pipbox/hang-diagnose.txt", 400)),
            ("nginx: letzte Fehler", tail_file("/var/log/nginx/error.log", 40)),
            ("Zustand der Software-Updates", tail_file("/run/pipbox-swupdate/status.json", 40)),
            ("Protokoll der Software-Updates", collapse_repeats(tail_file("/var/log/pipbox-swupdate.log", 150))),
