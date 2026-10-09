@@ -108,6 +108,15 @@ Karte **Entwickler** (SSH-Zugang wie in der Original-Oberfläche der BELABOX):
 3. Öffne ein **Issue** im GitHub-Projekt [IRL4YOU/irl4you-pip](https://github.com/IRL4YOU/irl4you-pip) und hänge das Protokoll an.
 4. Oder frag in der Community auf Discord: https://discord.gg/nrBCEarMup
 
+### Wächter der Sendekette
+
+Im Modus **Alle Kameras immer bereit** prüft die Box jede Sekunde drei Dinge und startet bei einem Fehler **nur den Encoder (belacoder)** neu, nie die Verbindung zum Server:
+- **Statistik steht still:** Die Statistikdatei von belacoder ist älter als 15 Sekunden.
+- **Threads hängen im Kernel:** Mindestens ein Thread von belacoder bleibt länger als 12 Sekunden im Zustand D (wartet im Kernel, meist im Treiber des Hardware-Dekoders). Das ist dieselbe Zahl wie „Prozess(e) blockiert (D-State)“ in der Oberfläche.
+- **Kamera ohne Bild im Mischer:** Eine Kamera sendet mit Bild bei nginx und ihr Zweig gilt als laufend, im Mischer kommen aber seit 25 Sekunden keine Bilder an.
+
+In den ersten 30 Sekunden nach dem Start wird nichts bewertet. Zwischen zwei Eingriffen liegen mindestens 90 Sekunden, und es gibt höchstens vier je Stunde (sonst gäbe ein Dauerfehler eine Neustartschleife). Vor dem Neustart schreibt der Wächter ein **Diagnosepaket** nach `/var/lib/pipbox/hang-diagnose.txt` (die letzten sechs bleiben): alle Threads von belacoder mit Zustand, Wartestelle im Kernel und CPU-Zeit, alle Threads im Zustand D im ganzen System mit dem Kernel-Stapel, die Statistik und die letzten Ereignisse der Sendekette, je Platz was nginx meldet. Es enthält keine Schlüssel und keine Adressen und erscheint in den Protokollen (Karte Protokolle, Abschnitt „Hänger der Sendekette“). Das Journal nennt den Eingriff mit einer Zeile „send: Hänger erkannt …“. Der Status der Sendekette zählt sie als `hang_restarts`.
+
 ## 9. Wenn etwas nicht geht
 
 | Problem | Was du tun kannst |
@@ -118,6 +127,7 @@ Karte **Entwickler** (SSH-Zugang wie in der Original-Oberfläche der BELABOX):
 | Software-Update lässt sich nicht starten | Läuft gerade eine Übertragung? Dann ist es gesperrt. Übertragung beenden. Steht dort, der Update-Helfer sei nicht installiert, einmal `install.sh` erneut ausführen. |
 | Update schlägt fehl | Der Update-Helfer stellt die vorige Version automatisch wieder her. Nach dem Neuladen steht die Meldung in der Karte. Protokoll herunterladen und melden. |
 | Neue Version macht Probleme | In der Karte Software-Update auf eine frühere Version wechseln. |
+| Upload bricht ein, Bitrate fällt auf unter 1 Mbit/s oder „Prozesse blockiert (D-State)“ erscheint | Meist hängt der Mischer der Sendekette nach dem Ausfall und Wiederkommen einer Kamera (Issue #51). Die Box erkennt das seit 0.9.170 selbst (Statistik steht still, Threads im Kernel-Zustand D, oder eine sendende Kamera liefert dem Mischer keine Bilder), sichert ein Diagnosepaket und startet den Encoder neu (dauert einige Sekunden). Das Paket steht in den Protokollen unter „Hänger der Sendekette“; bitte Protokoll herunterladen und melden. Hilft der Neustart nicht, Stop und dann Live drücken. |
 | Nach dem Neustart ist die Seite weg | Etwa eine Minute warten, dann neu laden. |
 | Box nach dem Herunterfahren aus | Strom kurz trennen oder Ein-Taste nutzen. |
 | Box schaltet sich von selbst aus | Stromversorgung prüfen. Stufe "Ausführlich" einschalten, damit nach einem Ausfall Spuren bleiben, und das Protokoll melden. |
