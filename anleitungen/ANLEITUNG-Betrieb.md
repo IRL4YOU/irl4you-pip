@@ -109,7 +109,7 @@ Karte **Entwickler** (SSH-Zugang wie in der Original-Oberfläche der BELABOX):
 **Am einfachsten über die Box:** Die Karte **Problem melden / Wunsch äußern** bereitet das Formular auf GitHub vor.
 
 - Wähle **Problem** (Titel Pflicht, Beschreibung freiwillig) oder **Wunsch** (Titel und Beschreibung Pflicht), trage den Titel ein und klicke **Formular vorbereiten**.
-- Bei einem Problem bekommst du eine **Support-Nummer** (`IRL-XXXXXX`). Sie steht im Titel (`[ISSUE] Titel (Nummer)`); damit könnt ihr beide das Issue wiederfinden. Mit dem Haken **Bereinigtes Protokoll mitnehmen** lädt die Box das Protokoll als Datei, die du auf GitHub ins Textfeld ziehst.
+- Du bekommst eine **Nummer** (`IRL-XXXXXX`), bei einem Problem wie bei einem Wunsch. Sie steht im Titel (`[ISSUE] Titel (Nummer)` oder `[FEATURE] Titel (Nummer)`); damit könnt ihr beide das Issue wiederfinden. Bei einem Problem lädt die Box mit dem Haken **Bereinigtes Protokoll mitnehmen** das Protokoll als Datei, die du auf GitHub ins Textfeld ziehst.
 - Der Knopf **Formular auf GitHub öffnen** öffnet einen neuen Tab. Dort brauchst du ein **GitHub-Konto** (kostenlos) und klickst auf „Submit new issue“. Die Box sendet selbst nichts, sie hat dafür keinen Zugang zu GitHub.
 - Unter **Meine Fälle** stehen deine Support-Nummern mit Datum, mit einer Suche auf GitHub. **Erledigt** gilt nur auf der Box; das Issue schließt du auf GitHub selbst.
 
