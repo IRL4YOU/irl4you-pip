@@ -48,6 +48,8 @@ html.nohead :is(#c_chat,#c_prev)>summary>.sumh,html.nohead #c_chat>summary>:is(.
 html.nohead :is(#c_chat,#c_prev)>summary :is(button,.prevctl){pointer-events:auto}
 html.nohead #c_prev .prevctl{background:var(--card);border-radius:10px;padding:2px 4px;opacity:.94}
 html.nohead #c_prev{min-height:48px}
+html.nohead #c_prev.prevrun>summary{visibility:hidden;opacity:0;transition:opacity .2s}      /* läuft die Vorschau, stören die Knöpfe im Bild: sie erscheinen nur kurz bei Mausbewegung oder Antippen */
+html.nohead #c_prev.prevrun.showctl>summary{visibility:visible;opacity:1}
 html.nohead #c_prev>:is(.ph,.prevkeep){margin-right:150px}
 .prevctl{display:flex;align-items:center;gap:8px;margin-left:auto}
 .prevctl button.small{padding:2px 12px;line-height:1.3}
@@ -3074,7 +3076,7 @@ $("chat_form").addEventListener("submit",async e=>{
 // ---- Vorschau des Sendebilds (Issue #52): H.264-Video (fragmentiertes MP4 über Media Source Extensions), sonst Motion-JPEG; nur solange die Vorschau läuft und die Seite sichtbar ist; höchstens 10 Minuten, außer mit dem Häkchen (nur in diesem Browser) ----
 (function(){
   const card=$("c_prev"), btn=$("prev_btn"), img=$("prev_img"), vid=$("prev_vid"), msg=$("prev_msg"), box=$("prev_box"), keep=$("prev_always");
-  let on=false, timer=0, wait=0, gen=0, poll=0, abortCtl=null, urlObj="", keepTimer=0, dogTimer=0, mode="";
+  let on=false, timer=0, wait=0, gen=0, poll=0, abortCtl=null, urlObj="", keepTimer=0, dogTimer=0, mode="", ctlTimer=0;
   const WHY={off:"Die Vorschau gibt es nur, während die Box sendet.", busy:"Es laufen schon so viele Vorschauen, wie die Box zugleich zeigen kann.",
              "kein-bild":"Es kommt kein Bild. Läuft die Sendung?", missing:"Die Vorschau ist auf dieser Box nicht verfügbar.", gst:"Die Vorschau ist auf dieser Box nicht verfügbar.",
              root:"Die Vorschau ist auf dieser Box nicht verfügbar.", capture:"Die Vorschau ist auf dieser Box nicht verfügbar."};
@@ -3096,7 +3098,7 @@ $("chat_form").addEventListener("submit",async e=>{
     vid.hidden=true;
   }
   function halt(){
-    on=false; gen++; clearTimeout(timer); clearInterval(poll); mode="";
+    on=false; gen++; clearTimeout(timer); clearInterval(poll); mode=""; card.classList.remove("prevrun","showctl");
     closeVideo(); img.removeAttribute("src"); img.hidden=true; box.hidden=true;    // schließt die Verbindung: der Server beendet die Vorschau sofort
   }
   function stop(text,more){
@@ -3115,7 +3117,7 @@ $("chat_form").addEventListener("submit",async e=>{
     let st; try{ const r=await fetch("/api/preview"); st=await r.json(); }catch(e){ st={available:false,why:"missing"}; }
     if(my!==gen) return;
     if(!st.available){ if(running()&&st.why!=="missing") return waiting(); return stop(WHY[st.why]||WHY.missing); }
-    on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent="";
+    on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent=""; card.classList.add("prevrun");
     playStream(my);                                                                // immer volle 30 Bilder pro Sekunde in 640 × 360: auf dem Handy wie am Rechner gleich
     if(!always()) timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),Math.max(5,(st.max_seconds||600)-3)*1000);
     clearInterval(poll);
@@ -3188,6 +3190,11 @@ $("chat_form").addEventListener("submit",async e=>{
     }
     if(my===gen&&on&&mode==="mp4") ended();                                        // der Strom hat aufgehört
   }
+  function showCtl(){                                                              // kompakte Ansicht: Knöpfe für 3 Sekunden zeigen
+    card.classList.add("showctl"); clearTimeout(ctlTimer); ctlTimer=setTimeout(()=>card.classList.remove("showctl"),3000);
+  }
+  card.addEventListener("pointermove",e=>{ if(e.pointerType==="mouse"&&on) showCtl(); });
+  box.addEventListener("click",()=>{ if(on) showCtl(); });                          // am Handy: das Bild antippen
   function userStop(){ store("pb_prev_run",null); stop(); }                        // Stop-Knopf, Zuklappen, Ausblenden: gilt auch mit Häkchen als "aus"
   btn.addEventListener("click",e=>{ e.preventDefault(); if(on||wait) userStop(); else { if(always()) store("pb_prev_run","1"); start(); } });       // der Knopf sitzt in der Kopfzeile: er klappt die Karte nicht selbst zu
   keep.addEventListener("change",()=>{
