@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.162 (Beta)
+- **Bildaufbau: Eine Kamera aus einem kleinen Bild zum Hauptbild zu machen tauscht jetzt die Plätze.** Bisher flog die bisherige Hauptkamera aus dem Aufbau, wenn man zum Beispiel die USB-Kamera (kleines Bild 3) als Hauptbild wählte; danach fehlte sie in allen Auswahlfeldern und man musste sie wieder einsetzen. Jetzt rückt die bisherige Hauptkamera auf den frei gewordenen Platz, alle Kameras bleiben im Aufbau (auch RTMP-Kameras, die gerade nicht senden). Gemeldet am 9. Oktober 2026: Nutzer wollte die angeschlossene USB-Kamera als Hauptkamera, ohne die RTMP-Kameras zu verlieren.
+- Im selben Zug gefunden: ein Fehler in der ersten Fassung dieser Änderung (nicht veröffentlicht) lag an einer nicht vorhandenen Variablen im Änderungs-Ereignis. Die Auswahl in der Demo-Oberfläche mit der echten Kameraliste der Box wurde nachgeprüft (vier Wechsel hintereinander, jedes Mal sind alle vier Kameras noch im Aufbau).
+
 ## 0.9.161 (Beta)
 - **USB-Webcam: Zuschnitt der Füllzeilen nur noch bei der Action 6.** In 0.9.160 schnitt die Box bei **jeder** H.264-Kamera in 1080p zu und kodierte neu, weil 1080 kein Vielfaches von 16 ist. Das passt nur zur Action 6 (Strom mit 1088 Zeilen, unten 8 schwarze Zeilen, am echten Bild gemessen). Eine Kamera ohne Füllzeilen (laut Nutzer zum Beispiel die Action 4) geht jetzt unverändert durch, ohne Neukodieren. Welche Kameras zuschneiden, steht in `PADDED_H264` (Namensteil `action6`); weitere lassen sich dort eintragen.
 - Tests: `tools/test_usbcam.py` jetzt 33 Tests (Action 6 wird zugeschnitten, Action 4, Logitech und unbekannte Namen gehen durch).
