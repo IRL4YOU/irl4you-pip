@@ -108,11 +108,56 @@ class Cases(unittest.TestCase):
         self.assertTrue(c.create("Trotzdem")["id"])
 
 
+class DeleteAndNumbers(unittest.TestCase):
+    """Issue #64: Fälle bleiben erhalten; Entfernen nur kurz nach dem Anlegen; Nummer schon im Link, Eintrag erst beim Öffnen."""
+
+    def test_number_chosen_by_the_page_is_used_if_valid_and_free(self):
+        c, _ = cases()
+        a = c.create("Titel eins", "issue", "IRL-ABCDEF")
+        self.assertEqual(a["id"], "IRL-ABCDEF")
+        for bad in ("IRL-ABCDEF", "irl-abcdef", "IRL-ABCDE", "IRL-ABCDE0", "XYZ", 5):
+            with self.assertRaises(ValueError):
+                c.create("Titel zwei", "issue", bad)                                          # doppelt oder ungültig
+
+    def test_entry_can_be_removed_only_in_the_first_30_minutes(self):
+        c, t = cases()
+        a = c.create("Falsch angelegt")
+        t[0] += 29 * 60
+        self.assertEqual(c.delete(a["id"]), {"ok": True})
+        self.assertEqual(c.list(), [])
+        b = c.create("Bleibt")
+        t[0] += 31 * 60
+        with self.assertRaises(ValueError) as cm:
+            c.delete(b["id"])
+        self.assertIn("Danach bleibt der Eintrag erhalten", str(cm.exception))
+        self.assertEqual(len(c.list()), 1)                                                    # auch ein erledigter Fall bleibt erhalten
+        c.mark(b["id"], True)
+        with self.assertRaises(ValueError):
+            c.delete(b["id"])
+
+    def test_delete_validates_the_request(self):
+        c, _ = cases()
+        with self.assertRaises(ValueError):
+            c.delete("kaputt")
+        with self.assertRaises(KeyError):
+            c.delete("IRL-ABCDEF")
+
+    def test_box_never_touches_github_when_removing(self):
+        cls = SRC[SRC.index("    def delete(self, cid):"):SRC.index("    def mark(self, cid, done):")]
+        for needle in ("urllib", "http", "socket", "token"):
+            self.assertNotIn(needle, cls, needle)
+
+    def test_list_answer_carries_the_clock_and_the_window(self):
+        self.assertIn('"now": int(time.time()), "delete_window": int(self.support.DELETE_WINDOW)', SRC)
+        self.assertEqual(server.SupportCases.DELETE_WINDOW, 1800.0)
+
+
 class Routes(unittest.TestCase):
     def test_routes_exist_and_need_login(self):
         self.assertIn('if path == "/api/support":', SRC)
         self.assertIn("Handler.support = SupportCases(", SRC)
-        self.assertIn('self.support.create(d.get("title"), d.get("kind", "issue"))', SRC)
+        self.assertIn('self.support.create(d.get("title"), d.get("kind", "issue"), d.get("id"))', SRC)
+        self.assertIn('self.support.delete(d.get("id"))', SRC)
         self.assertIn('self.support.mark(d.get("id"), d.get("done"))', SRC)
 
     def test_box_never_talks_to_github_itself(self):
@@ -130,8 +175,8 @@ class Page(unittest.TestCase):
         self.assertIn('value="feature"', PAGE)
 
     def test_titles_follow_the_requested_form(self):
-        self.assertIn('const ttl=(f?"[FEATURE] ":"[ISSUE] ")+c.title+" ("+id+")";', BLK)   # "[ISSUE] Titeltext (Nummer)" und "[FEATURE] Titeltext (Nummer)"
-        self.assertIn('{action:"create",kind:f?"feature":"issue",title:t}', BLK)
+        self.assertIn('ttl=(f?"[FEATURE] ":"[ISSUE] ")+t+" ("+id+")";', BLK)               # "[ISSUE] Titeltext (Nummer)" und "[FEATURE] Titeltext (Nummer)"
+        self.assertIn('{action:"create",kind:n.f?"feature":"issue",title:n.t,id:n.id}', BLK)
         self.assertIn('if(f&&!body0){ msg.textContent="Bei einem Wunsch ist die Beschreibung Pflicht."', BLK)
         self.assertIn("t.length<3", BLK)                                              # Titel immer Pflicht
 
@@ -148,6 +193,22 @@ class Page(unittest.TestCase):
 
     def test_list_shows_problem_or_wish(self):
         self.assertIn('kd.textContent=c.kind==="feature"?"Wunsch":"Problem"', BLK)
+
+    def test_prepare_saves_nothing_and_the_link_is_rebuilt_on_click(self):
+        """Issue #64: "Formular vorbereiten" legte jedes Mal einen Eintrag an, und der Link konnte alte Daten enthalten."""
+        i = BLK.index('go.addEventListener("click"')
+        prepare = BLK[i:BLK.index("card.addEventListener", i)]
+        self.assertNotIn('"/api/support"', prepare)                                          # vorbereiten speichert nichts
+        self.assertIn("a.href=n.url;", BLK)                                                   # beim Klick aus den aktuellen Feldern neu gebaut
+        self.assertIn("if(!draft.saved){", BLK)                                               # der Eintrag entsteht erst beim Öffnen, nur einmal je Nummer
+        self.assertIn("(draft.saved&&t!==draft.title)", BLK)                                  # anderer Titel nach dem Öffnen: neuer Fall, neue Nummer
+
+    def test_remove_button_only_inside_the_window_and_reopen_label(self):
+        self.assertIn('if(age-c.t<=win){', BLK)
+        self.assertIn('x.dataset.del="1"; x.textContent="Entfernen";', BLK)
+        self.assertIn('{action:"delete",id:b.dataset.id}', BLK)
+        self.assertIn('c.done?"Wieder öffnen":"Erledigt"', BLK)
+        self.assertNotIn("Wieder offen", PAGE)
 
     def test_cases_can_be_searched_on_github_and_marked_done(self):
         self.assertIn('"?q="+encodeURIComponent("is:issue "+c.id)', BLK)
