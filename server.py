@@ -2717,46 +2717,6 @@ class DeviceNames:
             os.replace(tmp, self.path)
 
 
-class UiLayout:
-    """Reihenfolge der Hauptmenüs und ausgeblendete Menüpunkte (Optionen): gilt für alle Geräte an dieser Box (Handy, Rechner). Die Datei steht im
-    Zustandsordner; es sind keine Geheimnisse. Ohne Datei gilt das Standardaussehen (und die Oberfläche übernimmt einmal den Stand des ersten Geräts)."""
-    ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,39}$")
-    MAX = 80
-
-    def __init__(self, state_dir):
-        self.path = os.path.join(state_dir, "ui-layout.json")
-        self.lock = threading.Lock()
-
-    @classmethod
-    def _ids(cls, raw):
-        if not isinstance(raw, list) or len(raw) > cls.MAX:
-            raise ValueError("Die Liste der Menüs ist ungültig")
-        out = []
-        for x in raw:
-            if not isinstance(x, str) or not cls.ID_RE.match(x):
-                raise ValueError("Ein Menü ist ungültig")
-            if x not in out:
-                out.append(x)
-        return out
-
-    def get(self):
-        try:
-            with open(self.path, encoding="utf-8") as f:
-                d = json.load(f)
-            return {"set": True, "order": self._ids(d.get("order", [])), "hidden": self._ids(d.get("hidden", []))}
-        except (OSError, ValueError, AttributeError):
-            return {"set": False, "order": [], "hidden": []}
-
-    def set(self, order, hidden):
-        d = {"order": self._ids(order), "hidden": self._ids(hidden)}
-        with self.lock:
-            tmp = self.path + ".tmp"
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(d, f, indent=1, ensure_ascii=False)
-            os.replace(tmp, self.path)
-
-
 def label_bluetooth(st, names):
     """Anzeigenamen der Bluetooth-Adapter und der Sticks ohne Adapter in der Antwort des Bluetooth-Dienstes: eigener Name (names), sonst der
     Standardname aus der Meldung des Sticks (Hersteller davor, wenn der Name nur eine Standardbezeichnung ist)."""
@@ -6645,7 +6605,7 @@ SETTINGS_VERSION = 1
 SETTINGS_SECTIONS = (("cameras", "Kameras"), ("pipeline", "Bildaufbau"), ("srtla", "SRTLA-Server und Sendeeinstellungen"),
                      ("autostart", "Automatischer Start"), ("names", "Namen (Verbindungen, WLAN- und Bluetooth-Sticks)"),
                      ("dji", "DJI-Kameras (Einstellungen)"), ("hdmi", "HDMI-Eingang (Einstellungen)"), ("twitch", "Akku-Warnung im Twitch-Chat (Einstellungen)"),
-                     ("camnet", "Netzwerk für Kameras (Standard)"), ("layout", "Optionen (Menüs: Reihenfolge und Ausblenden)"),
+                     ("camnet", "Netzwerk für Kameras (Standard)"),
                      ("hotspots", "Hotspots"), ("wifi", "Gespeicherte WLAN-Netze"))
 IFACE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,15}$")
 
@@ -6665,7 +6625,7 @@ class SettingsTransfer:
     def __init__(self, state_dir, cams, pipeline, srtla, autostart, names, djisvc, wifi, send, demo=False):
         self.cams, self.pipeline, self.srtla, self.autostart = cams, pipeline, srtla, autostart
         self.names, self.djisvc, self.wifi, self.send, self.demo = names, djisvc, wifi, send, demo
-        self.hdmi = self.twitch = self.layout = self.netchoice = None          # werden nach dem Start gesetzt (entstehen später oder fehlen in Tests)
+        self.hdmi = self.twitch = self.netchoice = None          # werden nach dem Start gesetzt (entstehen später oder fehlen in Tests)
         self.backup_dir = os.path.join(state_dir, "backup")
         self.backup_path = os.path.join(self.backup_dir, "vor-einspielen.json")
         self.version = (read(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"), "") or "").strip()
@@ -6718,10 +6678,6 @@ class SettingsTransfer:
                                  "message": t["message"], "only_live": bool(t["only_live"])}
         if self.netchoice is not None and self.netchoice.iface:
             doc["camnet"] = {"iface": self.netchoice.iface}
-        if self.layout is not None:
-            lay = self.layout.get()
-            if lay["set"]:
-                doc["layout"] = {"order": lay["order"], "hidden": lay["hidden"]}
         if wifi_data is not None:
             doc["wifi"] = {"networks": [{k: v for k, v in n.items() if secrets_on or k != "password"} for n in wifi_data.get("networks", [])],
                            "skipped": list(wifi_data.get("skipped", []))}
@@ -6943,11 +6899,6 @@ class SettingsTransfer:
             raise ValueError("Das Netzwerk für Kameras ist ungültig")
         return {"iface": raw["iface"]}, []
 
-    def _clean_layout(self, raw):
-        if not isinstance(raw, dict):
-            raise ValueError("Die Optionen sind ungültig")
-        return {"order": UiLayout._ids(raw.get("order", [])), "hidden": UiLayout._ids(raw.get("hidden", []))}, []
-
     def _clean_hotspots(self, raw):
         if not isinstance(raw, dict) or len(raw) > 8:
             raise ValueError("Die Hotspots sind ungültig")
@@ -7028,9 +6979,6 @@ class SettingsTransfer:
                     count = 1
                 elif sid == "camnet":
                     data, notes = self._clean_camnet(raw)
-                    count = 1
-                elif sid == "layout":
-                    data, notes = self._clean_layout(raw)
                     count = 1
                 elif sid == "hotspots":
                     data, notes = self._clean_hotspots(raw)
@@ -7209,12 +7157,6 @@ class SettingsTransfer:
         except ValueError:
             return "Netzwerk für Kameras: „%s“ gibt es hier nicht (ausgelassen)" % d["iface"]
         return "Netzwerk für Kameras eingespielt"
-
-    def _apply_layout(self, d):
-        if self.layout is None:
-            raise RuntimeError("Die Optionen sind hier nicht verfügbar")
-        self.layout.set(d["order"], d["hidden"])
-        return "Optionen eingespielt"
 
     def _apply_hotspots(self, hs):
         return self.wifi.hotspot_import(hs)
@@ -7488,7 +7430,6 @@ class Handler(BaseHTTPRequestHandler):
     netchoice = None
     names = None
     ckeys = None
-    layout = None
     srtla = None
     pipeline = None
     send = None
@@ -7719,8 +7660,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.preview.status())
         if path == "/api/preview/stream":
             return self.preview_stream()
-        if path == "/api/layout":
-            return self.reply(200, self.layout.get() if self.layout else {"set": False, "order": [], "hidden": []})
         if path == "/api/controller-keys":
             return self.reply(200, self.ckeys.snapshot())
         if path == "/api/logmode":
@@ -7848,11 +7787,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {"ok": True})
             if path == "/api/controller-keys":
                 self.ckeys.set_map(d.get("addr"), d.get("code"), d.get("fn"))
-                return self.reply(200, {"ok": True})
-            if path == "/api/layout":
-                if self.layout is None:
-                    raise ValueError("Die Menüeinstellung ist hier nicht verfügbar")
-                self.layout.set(d.get("order", []), d.get("hidden", []))
                 return self.reply(200, {"ok": True})
             if path == "/api/devname":
                 if self.names is None:
@@ -8064,7 +7998,6 @@ def main():
     Handler.remote = Remote(args.state, args.demo)
     Handler.netchoice = NetChoice(os.path.join(args.state, "camera-net.json"))
     Handler.names = DeviceNames(args.state)
-    Handler.layout = UiLayout(args.state)
     Handler.wifi = Wifi(args.state, args.demo, Handler.netchoice, Handler.names, Handler.srtla)
     Handler.power = Power(args.state, args.demo, Handler.send)
     Handler.logmode = LogMode(args.state, args.demo)
@@ -8085,7 +8018,7 @@ def main():
         ips = {x["iface"]: x["ip"] for x in iface_ips() if x.get("ip")}
         return [ips[u] for u in ups if u in ips]
     Handler.chatpaths = ChatPaths(chat_sources)
-    Handler.transfer.layout, Handler.transfer.netchoice = Handler.layout, Handler.netchoice
+    Handler.transfer.netchoice = Handler.netchoice
     Handler.twitch = TwitchNotifier(TwitchStore(os.path.join(args.state, "twitch.json")), Handler.djisvc, Handler.cams, Handler.send, chat=TwitchChat(paths=Handler.chatpaths), demo=args.demo)
     Handler.twitchlogin = TwitchLogin(os.path.join(args.state, "twitch-login.json"), demo=args.demo, paths=Handler.chatpaths)
     Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
