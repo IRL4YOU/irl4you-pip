@@ -551,5 +551,110 @@ class Environment(unittest.TestCase):
         self.assertIn('(q.get("long") or [""])[0] == "1"', src)
 
 
+
+class TrafficAccounting(unittest.TestCase):
+    """Der Verkehr der Vorschau zum Browser wird aus der Anzeige des Uploads herausgerechnet."""
+
+    def traffic(self, addrs, default="eth0"):
+        return P.Traffic(addrs=lambda names: {n: a for n, a in addrs.items() if n in names}, default=lambda: default)
+
+    def test_subtracts_on_the_interface_of_the_connection(self):
+        t = self.traffic({"eth0": "192.168.1.5", "wlan0": "10.0.0.2"})
+        t.add("10.0.0.2", 1_000_000)
+        out = t.adjust({"eth0": (5_000_000, 90_000_000), "wlan0": (2_000_000, 40_000_000)})
+        self.assertEqual(out["eth0"], (5_000_000, 90_000_000))
+        self.assertEqual(out["wlan0"], (2_000_000 - 10_000, 40_000_000 - 1_046_000))
+
+    def test_adds_up_connections_on_the_same_address(self):
+        t = self.traffic({"eth0": "192.168.1.5"})
+        t.add("192.168.1.5", 400_000)
+        t.add("192.168.1.5", 600_000)
+        self.assertEqual(t.adjust({"eth0": (0, 10_000_000)})["eth0"][1], 10_000_000 - 1_046_000)
+
+    def test_proxy_on_the_box_uses_the_default_route(self):
+        t = self.traffic({"eth0": "192.168.1.5", "wlan0": "10.0.0.2"}, default="wlan0")
+        t.add("127.0.0.1", 1_000_000)
+        out = t.adjust({"eth0": (0, 50_000_000), "wlan0": (0, 40_000_000)})
+        self.assertEqual(out["eth0"][1], 50_000_000)
+        self.assertEqual(out["wlan0"][1], 40_000_000 - 1_046_000)
+
+    def test_unknown_interface_is_left_alone(self):
+        t = self.traffic({"eth0": "192.168.1.5"}, default=None)
+        t.add("127.0.0.1", 1_000_000)
+        self.assertEqual(t.adjust({"eth0": (1, 2)}), {"eth0": (1, 2)})
+        t2 = self.traffic({"eth0": "192.168.1.5"}, default="usb0")
+        t2.add("127.0.0.1", 1_000_000)
+        self.assertEqual(t2.adjust({"eth0": (1, 2)}), {"eth0": (1, 2)})
+
+    def test_nothing_without_a_preview(self):
+        t = self.traffic({"eth0": "192.168.1.5"})
+        net = {"eth0": (7, 8)}
+        self.assertIs(t.adjust(net), net)
+
+    def test_never_negative(self):
+        t = self.traffic({"eth0": "192.168.1.5"})
+        t.add("192.168.1.5", 10_000_000)
+        self.assertEqual(t.adjust({"eth0": (100, 200)})["eth0"], (0, 0))
+
+    def test_default_route_parser(self):
+        import tempfile
+        p = os.path.join(tempfile.mkdtemp(), "route")
+        with open(p, "w") as f:
+            f.write("Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n"
+                    "wlan0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\n"
+                    "eth0\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+                    "eth0\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n")
+        self.assertEqual(P.default_route_iface(p), "eth0")
+        self.assertIsNone(P.default_route_iface(p + ".fehlt"))
+
+    def test_sampler_uses_the_adjustment(self):
+        import server
+        tr = self.traffic({"eth0": "192.168.1.5"})
+        tr.add("192.168.1.5", 2_000_000)
+        proc = ("Inter-|   Receive\n face |bytes\n"
+                "  eth0: 1000 0 0 0 0 0 0 0 30000000 0 0 0 0 0 0 0\n")
+        with mock.patch.object(P, "TRAFFIC", tr), \
+                mock.patch.object(server, "read", lambda p, d=None: proc if p == "/proc/net/dev" else "up"):
+            out = server.Sampler(False).net_bytes()
+        self.assertEqual(out["eth0"], (0, 30_000_000 - 2_092_000))
+
+    def test_server_counts_the_bytes_it_passes_on(self):
+        src = open(os.path.join(os.path.dirname(HERE), "server.py"), encoding="utf-8").read()
+        self.assertIn("pipbox_preview.TRAFFIC.add(lip, len(data))", src)
+        self.assertIn("pipbox_preview.TRAFFIC.adjust(res)", src)
+
+
+class HomeNetwork(unittest.TestCase):
+    def test_private_and_local_addresses(self):
+        for ip in ("192.168.178.20", "10.1.2.3", "172.16.0.9", "172.31.255.1", "169.254.1.1", "127.0.0.1", "::1", "fe80::1", "::ffff:192.168.1.7"):
+            self.assertTrue(P.is_home_address(ip), ip)
+
+    def test_outside_addresses(self):
+        for ip in ("8.8.8.8", "93.184.216.34", "100.64.0.1", "100.101.102.103", "172.32.0.1", "2001:4860:4860::8888", "::ffff:100.100.1.1"):
+            self.assertFalse(P.is_home_address(ip), ip)
+
+    def test_unreadable(self):
+        for ip in ("", "kein ip", None):
+            self.assertIsNone(P.is_home_address(ip))
+
+    def test_card_stays_small(self):
+        html = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
+        self.assertIn('id="prev_set"', html)                                   # Zahnrad holt das Häkchen-Feld zurück
+        self.assertIn("keepRow.hidden=keep.checked&&!gearOpen", html)
+        self.assertIn("#prev_img{display:block;width:100%;max-width:640px;", html)
+        self.assertNotIn("Außerhalb des Heimnetzes: 10 Bilder", html)          # der Satz steht nur in der Info
+
+    def test_outside_the_home_network_sends_five_frames(self):
+        html = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
+        self.assertIn('stream?fps="+(home?30:5)+"&w="+(home?640:480)', html)
+        self.assertIn('row(g,"heads","Überschriften von Chat und Vorschau",false)', html)
+        self.assertIn('document.documentElement.classList.toggle("nohead",compact)', html)
+
+    def test_status_route_reports_home(self):
+        src = open(os.path.join(os.path.dirname(HERE), "server.py"), encoding="utf-8").read()
+        self.assertIn("pipbox_preview.is_home_address(self.ip())", src)
+        self.assertIn("dict(self.preview.status(), home=home)", src)
+
+
 if __name__ == "__main__":
     unittest.main()
