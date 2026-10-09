@@ -5351,7 +5351,7 @@ class TwitchReader:
     COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
     MID_RE = re.compile(r"[0-9a-fA-F-]{20,40}")
     BADGES = ("broadcaster", "moderator", "vip", "subscriber", "founder", "staff", "partner")        # nur diese Abzeichen zeigt die Oberfläche
-    EMOTE_ID_RE = re.compile(r"[A-Za-z0-9_]{1,40}")
+    EMOTE_ID_RE = re.compile(r"[A-Za-z0-9_]{1,64}")                 # alte Kennungen sind Zahlen ("25"), neue (Kanal-, Abo-, Follower- und bewegte Emotes) "emotesv2_" plus 32 Zeichen = 41; bis 40 war zu knapp
     NOTICE_KINDS = {"sub": "sub", "resub": "sub", "subgift": "sub", "submysterygift": "sub", "giftpaidupgrade": "sub", "anongiftpaidupgrade": "sub",
                     "raid": "raid", "announcement": "notice", "ritual": "notice"}
     UNESC = {"s": " ", ":": ";", "\\": "\\", "r": "", "n": ""}
