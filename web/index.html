@@ -3215,14 +3215,12 @@ $("chat_form").addEventListener("submit",async e=>{
   if(running()&&!document.hidden) setTimeout(()=>{ if(running()&&!on) start(true); },1500);   // nach Neuladen der Seite: mit Häkchen von selbst weiter
 })();
 
-// ---- Hauptmenüs: Reihenfolge (▲ ▼) und Menüpunkte ausblenden, beides unter Optionen; je Browser gemerkt, Standard unverändert ----
+// ---- Hauptmenüs: Reihenfolge (▲ ▼) und Menüpunkte ausblenden, beides unter Optionen; je Gerät (Browser) gemerkt, nicht auf der Box: Handy und Rechner können verschieden aussehen ----
 (function(){
   const KEY="pb_layout", main=document.querySelector("main"); let st={order:[],hidden:[]};
   try{ const v=JSON.parse(localStorage.getItem(KEY)||"{}")||{};
        st.order=(Array.isArray(v.order)?v.order:[]).filter(x=>typeof x==="string"); st.hidden=(Array.isArray(v.hidden)?v.hidden:[]).filter(x=>typeof x==="string"); }catch(e){}
-  let pushT=0;
-  function push(){ clearTimeout(pushT); pushT=setTimeout(()=>{ srtlaCall("POST","/api/layout",{order:st.order,hidden:st.hidden}).catch(()=>{}); },400); }       // auf der Box ablegen: gilt für alle Geräte
-  const save=()=>{ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} push(); };
+  const save=()=>{ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} };
   const allCards=()=>[...main.children].filter(el=>el.matches("details.card[id]"));
   const movables=()=>allCards().filter(el=>!el.hidden);                    // eine versteckte Karte (Controller-Tasten ohne Controller) steht nicht in den Listen
   const DEFAULT=allCards().map(e=>e.id);                                   // Standardreihenfolge
@@ -3288,16 +3286,8 @@ $("chat_form").addEventListener("submit",async e=>{
   });
   $("lay_showall").addEventListener("click",()=>{ st.hidden=[]; save(); applyHidden(); buildList(); });
   $("lay_reset").addEventListener("click",()=>{ st.order=[]; save(); applyOrder(); buildOrder(); });
-  const ids=a=>(Array.isArray(a)?a:[]).filter(x=>typeof x==="string");
-  async function pull(){                                                   // Stand der Box übernehmen; hat die Box noch keinen, liefert dieses Gerät seinen
-    let d; try{ d=await srtlaCall("GET","/api/layout"); }catch(e){ return; }
-    if(d&&d.set){ st.order=ids(d.order); st.hidden=ids(d.hidden); try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){}
-                  applyOrder(); applyHidden(); buildList(); }
-    else if(st.order.length||st.hidden.length) push();
-  }
-  document.addEventListener("visibilitychange",()=>{ if(!document.hidden) pull(); });
   document.addEventListener("pb-menus-changed",()=>{ applyOrder(); applyHidden(); buildList(); });
-  applyOrder(); applyHidden(); buildList(); pull();
+  applyOrder(); applyHidden(); buildList();
 })();
 
 // ---- Controller-Tasten: erscheint, sobald ein Controller gekoppelt ist; je Taste eine Funktion wählen ----
