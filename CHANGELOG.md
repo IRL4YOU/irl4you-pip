@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.176 (Beta)
+- **Menüeinstellungen gelten je Gerät statt für die ganze Box.** Reihenfolge der Hauptmenüs, ausgeblendete Menüpunkte und die Überschriften von Chat und Vorschau (Optionen) wurden bisher zusätzlich auf der Box abgelegt und von jedem Gerät beim Öffnen übernommen: Wer am Rechner etwas umstellte, änderte damit auch das Handy (Rückmeldung des Nutzers, der deshalb beinahe eine falsche Meldung gegeben hätte). Jetzt liegt der Stand nur im Browser (`localStorage`), die Seite fragt die Box nicht mehr danach und schickt nichts mehr hin. Jedes Gerät behält seinen bisherigen Stand (er stand dort schon als Kopie), ein neues Gerät beginnt mit dem Standard.
+- **Aufgeräumt:** `UiLayout`, die Wege `/api/layout` (lesen und schreiben) und die Datei `ui-layout.json` entfallen (eine vorhandene Datei bleibt ungenutzt liegen). In der Sicherung gibt es den Teil „Optionen (Menüs: Reihenfolge und Ausblenden)“ nicht mehr; ältere Sicherungsdateien mit diesem Teil lassen sich weiter einspielen, der Teil wird ohne Meldung übergangen.
+- Tests: `tools/test_ui_layout.py` neu geschrieben (5 Tests: nur Browserspeicher, nichts mehr auf der Box, Sicherung ohne Menüeinstellung); `tools/test_settings.py` angepasst (alte Dateien mit dem Teil werden ignoriert).
+
 ## 0.9.175 (Beta)
 - **Kompakte Ansicht: Die Symbole der Vorschau stören nicht mehr im Bild (Wunsch des Nutzers).** Mit ausgeblendeten Überschriften (Optionen → Menüpunkte anzeigen) lagen Start/Stop, ⚙ und ⓘ weiter über dem laufenden Bild. Jetzt sind sie unsichtbar (`visibility:hidden`, nicht anklickbar), solange die Vorschau läuft, und erscheinen für 3 Sekunden, wenn die Maus über die Karte bewegt oder das Bild angetippt wird. Läuft keine Vorschau, bleibt **Start** sichtbar. Ohne die Option (Überschriften sichtbar) ändert sich nichts.
 - Tests: `tools/test_preview.py` jetzt 82 Tests; im Browser mit der lokalen Oberfläche geprüft (unsichtbar bei laufender Vorschau, sichtbar nach Mausbewegung und nach Antippen, nach 3 Sekunden wieder weg, nach Stop sichtbar).
