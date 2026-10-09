@@ -150,6 +150,17 @@ class LiveAlwaysReachable(unittest.TestCase):
         self.assertNotIn("  #hdr_live{display:none!important}", PAGE)                            # nicht mehr bedingungslos weg
         self.assertIn('root.classList.toggle("mfperm",mode==="off"||(mode==="hide"&&wide))', PAGE)  # mfperm = Leiste dauerhaft weg (Ausblenden bei Chat/Vorschau, Immer ausblenden)
 
+    def test_live_button_in_the_preview_card_while_not_sending(self):
+        """Die Vorschau gibt es nur beim Senden; solange nicht gesendet wird, steht dort ein Knopf zum Live-Gehen."""
+        self.assertIn('<button type="button" id="prev_live" class="livebtn" hidden>Live gehen</button>', PAGE)
+        self.assertIn("pl.hidden=live||busy; pl.disabled=!d.can_start; pl.title=b.title;", PAGE)
+        self.assertIn('$("prev_live").addEventListener("click",liveToggle);', PAGE)
+
+    def test_header_label_is_short_on_phones_and_the_header_does_not_overflow(self):
+        self.assertIn('matchMedia("(max-width:620px)").matches?"Live":"Live gehen"', PAGE)
+        self.assertIn("header .hdr #fold_toggle,header .hdr #sm_btn{padding-left:8px;padding-right:8px}", PAGE)
+        self.assertIn("header .hdr{flex-wrap:nowrap;gap:5px;min-width:0}", PAGE)
+
 
 if __name__ == "__main__":
     unittest.main()
