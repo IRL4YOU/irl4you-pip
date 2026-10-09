@@ -1759,12 +1759,13 @@ function alertParts(a){                                                         
   }
   if(a.kind==="hdmi"&&a.src==="usb") return {main:`<span>USB-Kamera: nicht gefunden</span> · <span>${alertWhen(a.t)}</span>`, info:"Kamera anstecken und einschalten: Sie muss sich als USB-Webcam (UVC) melden, bei Action-Kameras im Webcam-Modus."};
   if(a.kind==="hdmi") return {main:`<span>HDMI: kein Signal</span> · <span>${alertWhen(a.t)}</span>`, info:"Kabel prüfen und die Kamera einschalten: Sie muss ein Bild ausgeben."};
+  if(a.kind==="dstate"&&(a.names||[]).length) return {main:a.text||"", info:`<span>Wartet im Kernel:</span> <b translate="no">${esc(a.names.join(", "))}</b>`};     // Name@Wartestelle im Kernel; hilft, die Ursache zu finden
   return {main:a.text||"", info:""};
 }
 const alertText=a=>alertParts(a).main;
 function alertBox(x){                                                                                // Meldung im Block "Status": Zeile, "i" und der Text dazu (zugeklappt)
   const p=alertParts(x);
-  const close=x.kind==="usb"?`<button type="button" class="abtn" data-akind="usb" data-at="${x.t}" aria-label="Schließen" title="Schließen">×</button>`:"";     // USB-Meldungen lassen sich wegklicken
+  const close=(x.kind==="usb"||x.kind==="cam"||x.kind==="hdmi")?`<button type="button" class="abtn" data-akind="${x.kind}" data-at="${x.t}" aria-label="Schließen" title="Schließen">×</button>`:"";     // USB-, Kamera- und HDMI-Meldungen lassen sich wegklicken (zum Beispiel nach einem bewussten Abziehen)
   return `<div class="alert ${x.level}">${close}<span class="atx">${p.main}</span>${p.info?` <button type="button" class="ibtn" aria-expanded="false" aria-label="Hilfe anzeigen" title="Hilfe">i</button><div class="hlp">${p.info}</div>`:""}</div>`;
 }
 function paintHealth(){
@@ -1783,7 +1784,7 @@ setInterval(paintHealth,500);
 document.addEventListener("click",async e=>{
   const b=e.target.closest&&e.target.closest("button.abtn"); if(!b) return;
   const key=b.dataset.akind+":"+b.dataset.at; dismissedAlerts.add(key); paintHealth();
-  try{ await srtlaCall("POST","/api/alerts/dismiss",{t:parseInt(b.dataset.at,10)}); }catch(x){ dismissedAlerts.delete(key); paintHealth(); }          // klappt es nicht, kommt die Meldung zurück
+  try{ await srtlaCall("POST","/api/alerts/dismiss",{kind:b.dataset.akind,t:parseInt(b.dataset.at,10)}); }catch(x){ dismissedAlerts.delete(key); paintHealth(); }          // klappt es nicht, kommt die Meldung zurück
 });
 document.addEventListener("click",e=>{
   const l=e.target.closest&&e.target.closest("a.unsavedlnk"); if(!l) return; e.preventDefault();
