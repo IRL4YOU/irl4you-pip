@@ -34,11 +34,21 @@ main{max-width:980px;margin:0 auto;padding:16px;display:grid;gap:14px;grid-templ
 .card{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
 .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin:0 0 10px}
 .wide{grid-column:1/-1}
-#prev_img{display:block;width:100%;max-width:960px;aspect-ratio:16/9;margin-top:10px;background:#000;border-radius:10px;object-fit:contain}
+#prev_img{display:block;width:100%;max-width:640px;aspect-ratio:16/9;margin-top:10px;background:#000;border-radius:10px;object-fit:contain}
 #prev_box[hidden]{display:none}
 #prev_msg:empty{display:none}
 .prevkeep{display:flex;align-items:flex-start;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);line-height:1.4}
 .prevkeep input{flex:none;margin-top:2px}
+.prevkeep[hidden]{display:none}
+.prevset{padding:2px 8px;line-height:1.3}
+/* Überschriften von Chat und Vorschau ausgeblendet (Optionen): die Kopfzeile wird zu kleinen Knöpfen oben rechts über dem Inhalt */
+html.nohead :is(#c_chat,#c_prev){position:relative}
+html.nohead :is(#c_chat,#c_prev)>summary{position:absolute;top:8px;right:8px;margin:0!important;z-index:3;pointer-events:none;gap:6px}
+html.nohead :is(#c_chat,#c_prev)>summary>.sumh,html.nohead #c_chat>summary>:is(.sig,.camdots){display:none}
+html.nohead :is(#c_chat,#c_prev)>summary :is(button,.prevctl){pointer-events:auto}
+html.nohead #c_prev .prevctl{background:var(--card);border-radius:10px;padding:2px 4px;opacity:.94}
+html.nohead #c_prev{min-height:48px}
+html.nohead #c_prev>:is(.ph,.prevkeep){margin-right:150px}
 .prevctl{display:flex;align-items:center;gap:8px;margin-left:auto}
 .prevctl button.small{padding:2px 12px;line-height:1.3}
 #prev_img{margin-top:0}
@@ -575,8 +585,8 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     </div>
   </section>
 
-  <details class="card wide" id="c_prev"><summary><span class="sumh">Vorschau</span><span class="prevctl"><button type="button" id="prev_btn" class="sec small">Start</button><button type="button" class="helpbtn" id="prev_help_btn" aria-label="Erklärung zeigen" aria-expanded="false">i</button></span></summary>
-    <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Im Heimnetz sind es 30 Bilder pro Sekunde, von unterwegs weniger (das spart Upload). Die Vorschau endet nach 10 Minuten, beim Zuklappen der Karte, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt. Mit dem Häkchen darunter entfällt die Grenze von 10 Minuten: Die Vorschau startet dann in diesem Browser von selbst wieder, sobald die Seite sichtbar ist und die Box sendet.</div>
+  <details class="card wide" id="c_prev"><summary><span class="sumh">Vorschau</span><span class="prevctl"><button type="button" id="prev_set" class="sec small prevset" hidden aria-label="Einstellung zeigen" aria-expanded="false">⚙</button><button type="button" id="prev_btn" class="sec small">Start</button><button type="button" class="helpbtn" id="prev_help_btn" aria-label="Erklärung zeigen" aria-expanded="false">i</button></span></summary>
+    <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Im Heimnetz sind es 30 Bilder pro Sekunde, außerhalb des Heimnetzes weniger Bilder und ein kleineres Bild (das spart Bandbreite). Die Vorschau endet nach 10 Minuten, beim Zuklappen der Karte, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt. Mit dem Häkchen darunter entfällt die Grenze von 10 Minuten: Die Vorschau startet dann in diesem Browser von selbst wieder, sobald die Seite sichtbar ist und die Box sendet.</div>
     <label class="prevkeep"><input type="checkbox" id="prev_always"> Mir ist bewusst, dass die Vorschau Rechenleistung kostet. Ich möchte sie in diesem Browser dauerhaft eingeschaltet lassen.</label>
     <div id="prev_msg" class="ph" role="status"></div>
     <div id="prev_box" hidden><img id="prev_img" alt="Vorschau des Sendebilds"></div>
@@ -3072,6 +3082,13 @@ $("chat_form").addEventListener("submit",async e=>{
              root:"Die Vorschau ist auf dieser Box nicht verfügbar.", capture:"Die Vorschau ist auf dieser Box nicht verfügbar."};
   const store=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem(k); if(v===null) localStorage.removeItem(k); else localStorage.setItem(k,v); }catch(e){} return null; };       // nur in diesem Browser (nicht auf der Box)
   const always=()=>keep.checked;
+  const keepRow=document.querySelector(".prevkeep"), gear=$("prev_set");
+  let gearOpen=false;
+  function syncKeep(){                                                              // mit Haken verschwindet das Feld; das Zahnrad in der Kopfzeile holt es zurück (zum Entfernen des Hakens)
+    gear.hidden=!keep.checked; if(!keep.checked) gearOpen=false;
+    keepRow.hidden=keep.checked&&!gearOpen; gear.setAttribute("aria-expanded",String(gearOpen));
+  }
+  gear.addEventListener("click",e=>{ e.preventDefault(); gearOpen=!gearOpen; syncKeep(); if(gearOpen) card.open=true; });
   const running=()=>always()&&store("pb_prev_run")==="1";                          // "dauerhaft an" gewünscht: nach Seitenwechsel, Sendepause oder Verbindungsabbruch von selbst weiter
   function halt(){
     on=false; gen++; clearTimeout(timer); clearInterval(poll);
@@ -3094,10 +3111,9 @@ $("chat_form").addEventListener("submit",async e=>{
     if(my!==gen) return;
     if(!st.available){ if(running()&&st.why!=="missing") return waiting(); return stop(WHY[st.why]||WHY.missing); }
     on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent="";
-    const home=lan();
-    img.src="/api/preview/stream?fps="+(home?30:10)+"&w="+(home?640:480)+(always()?"&long=1":"")+"&t="+Date.now();
+    const home=(st.home===true||st.home===false)?st.home:lan();                  // der Server kennt die echte Absenderadresse; ohne Angabe gilt der Name in der Adresszeile
+    img.src="/api/preview/stream?fps="+(home?30:5)+"&w="+(home?640:480)+(always()?"&long=1":"")+"&t="+Date.now();
     box.hidden=false;
-    if(!home) msg.textContent="Von unterwegs: 10 Bilder pro Sekunde und kleineres Bild, das spart Upload.";
     if(!always()) timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),Math.max(5,(st.max_seconds||600)-3)*1000);
     clearInterval(poll);
     poll=setInterval(async()=>{                                                    // ein Browser meldet das Ende eines Bildstroms nicht: alle 10 s nachsehen, ob die Box noch sendet
@@ -3115,7 +3131,7 @@ $("chat_form").addEventListener("submit",async e=>{
   function userStop(){ store("pb_prev_run",null); stop(); }                        // Stop-Knopf, Zuklappen, Ausblenden: gilt auch mit Häkchen als "aus"
   btn.addEventListener("click",e=>{ e.preventDefault(); if(on||wait) userStop(); else { if(always()) store("pb_prev_run","1"); start(); } });       // der Knopf sitzt in der Kopfzeile: er klappt die Karte nicht selbst zu
   keep.addEventListener("change",()=>{
-    store("pb_prev_always",keep.checked?"1":null);
+    store("pb_prev_always",keep.checked?"1":null); gearOpen=false; syncKeep();
     if(keep.checked){ if(on){ store("pb_prev_run","1"); start(true); } }           // läuft schon: neu mit "long", der Server begrenzt sonst auf 10 Minuten
     else{ store("pb_prev_run",null); if(wait){ stop(); } else if(on){ clearTimeout(timer); timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),597000); } }
   });
@@ -3128,6 +3144,7 @@ $("chat_form").addEventListener("submit",async e=>{
   });
   addEventListener("pagehide",()=>{ if(on) halt(); });
   try{ keep.checked=store("pb_prev_always")==="1"; }catch(e){}
+  syncKeep();
   if(running()&&!document.hidden) setTimeout(()=>{ if(running()&&!on) start(true); },1500);   // nach Neuladen der Seite: mit Häkchen von selbst weiter
 })();
 
@@ -3155,6 +3172,9 @@ $("chat_form").addEventListener("submit",async e=>{
     document.querySelectorAll("[data-pbhide]").forEach(e=>e.removeAttribute("data-pbhide"));
     st.hidden.forEach(id=>{ const e=document.getElementById(id); if(e&&hideable(id)) e.setAttribute("data-pbhide",""); });
     document.documentElement.classList.toggle("nohelp",st.hidden.includes("hlp_btn"));                  // "hlp_btn": alle Hilfe-Knöpfe "i" (kein eigenes Element)
+    const compact=st.hidden.includes("heads");                                                          // "heads": Überschrift und Kopfzeile von Chat und Vorschau weg (kein eigenes Element)
+    document.documentElement.classList.toggle("nohead",compact);
+    if(compact) ["c_chat","c_prev"].forEach(id=>{ const e=document.getElementById(id); if(e) e.open=true; });          // ohne Kopfzeile lässt sich die Karte nicht zuklappen
     buildOrder();
   }
   function buildList(){
@@ -3169,6 +3189,10 @@ $("chat_form").addEventListener("submit",async e=>{
       box.appendChild(g); });
     { const g=document.createElement("div"); g.className="optgrp"; row(g,"sm_btn","Streammodus",false); box.appendChild(g); }                        // Knopf in der Kopfleiste
     { const g=document.createElement("div"); g.className="optgrp"; row(g,"hlp_btn","Hilfe-Knöpfe (i)",false); box.appendChild(g); }                  // alle "i"
+    { const g=document.createElement("div"); g.className="optgrp"; row(g,"heads","Überschriften von Chat und Vorschau",false);                       // spart je Karte eine Zeile
+      const b=document.createElement("button"); b.type="button"; b.className="helpbtn"; b.textContent="i"; b.setAttribute("aria-label","Erklärung zeigen"); b.setAttribute("aria-expanded","false"); g.firstChild.appendChild(b);
+      const h=document.createElement("div"); h.className="ph"; h.hidden=true; h.textContent="Blendet bei Chat und Vorschau die Überschrift und die Kopfzeile aus, um Platz zu sparen. Die Knöpfe (Einstellungen des Chats, Start und Stop der Vorschau) bleiben als kleine Symbole oben rechts über dem Inhalt. Beide Karten sind dann immer aufgeklappt. Signalanzeige und Kamerapunkte des Chats erscheinen nur noch in der Kopfleiste am Handy während der Sendung."; g.appendChild(h);
+      b.addEventListener("click",ev=>{ ev.preventDefault(); h.hidden=!h.hidden; b.setAttribute("aria-expanded",String(!h.hidden)); }); box.appendChild(g); }
   }
   function buildOrder(focus){
     const box=$("ord_list"), all=movables(); box.textContent="";
