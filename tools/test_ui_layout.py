@@ -156,10 +156,16 @@ class LiveAlwaysReachable(unittest.TestCase):
         self.assertIn("pl.hidden=live||busy; pl.disabled=!d.can_start; pl.title=b.title;", PAGE)
         self.assertIn('$("prev_live").addEventListener("click",liveToggle);', PAGE)
 
-    def test_header_label_is_short_on_phones_and_the_header_does_not_overflow(self):
+    def test_header_label_is_short_on_phones(self):
         self.assertIn('matchMedia("(max-width:620px)").matches?"Live":"Live gehen"', PAGE)
-        self.assertIn("header .hdr #fold_toggle,header .hdr #sm_btn{padding-left:8px;padding-right:8px}", PAGE)
-        self.assertIn("header .hdr{flex-wrap:nowrap;gap:5px;min-width:0}", PAGE)
+
+    def test_phone_header_shows_only_the_logo_and_wide_centred_buttons(self):
+        """Wunsch des Nutzers: am Handy dauerhaft das Logo (kein Wechsel mit dem Text), dafür breite, zentrierte Knöpfe."""
+        self.assertIn("h1.hl{flex:0 0 auto}h1.hl .htxt{display:none}h1.hl .hlogo{animation:none;opacity:1}", PAGE)
+        self.assertIn("display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:34px;padding:3px 10px;line-height:1;text-align:center;white-space:nowrap}", PAGE)
+        self.assertIn("header .hdr select{min-height:34px;text-align:center;text-align-last:center}", PAGE)
+        i = PAGE.index("Knöpfe im Kopf etwas enger, damit auch mit Update-Punkt und Live-Knopf alles passt")   # schmale Handys: enger
+        self.assertIn("min-width:30px;padding:3px 6px", PAGE[i:i + 400])
 
 
 if __name__ == "__main__":
