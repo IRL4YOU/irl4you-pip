@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.9.185 (Beta)
+- **Fußleiste am Handy: je Gerät einstellbar (Wunsch des Nutzers).** Das Ausblenden aus 0.9.183 gilt jetzt nur noch, wenn es etwas zu gewinnen gibt, und lässt sich unter **Optionen → „Fußleiste am Handy“** wählen (gilt nur für dieses Gerät, steht im Browser, nicht auf der Box):
+  - **Automatisch** (Standard): Die Leiste gleitet beim Runterscrollen weg und kommt beim Hochscrollen zurück, **solange Chat oder Vorschau zu sehen sind** (Karte offen und nicht unter Optionen ausgeblendet). Sind beide nicht zu sehen, bleibt die Leiste **immer** da.
+  - **Immer anzeigen**: Die Leiste bleibt stehen.
+  - **Ausblenden**: Die Leiste ist weg, solange Chat oder Vorschau zu sehen sind, und der Platz unten wird frei (unten bleibt kein Rand für die Leiste). Gedacht für die Fahrt, wenn man ohnehin nichts umschaltet. Ohne Chat und Vorschau ist sie wieder da.
+  Dazu ein „i“-Knopf mit der Erklärung. Neue Texte in Deutsch und Englisch (die anderen Sprachen am Schluss).
+- Tests: `tools/test_ui_layout.py` jetzt 14 Tests; im Browser bei 375 px alle Fälle geprüft (automatisch mit Chat/Vorschau offen und zu, nur Vorschau, immer, ausblenden mit und ohne Chat).
+
 ## 0.9.184 (Beta)
 - **Chat: persönliche BTTV-Emotes werden angezeigt (Meldung des Nutzers: „DanceDanceDance“ von Knochi3006 stand nur als Text da).** Solche Emotes (BTTV Pro) stehen in **keiner** öffentlichen Liste. Die BTTV-Erweiterung meldet sie über BTTVs Live-Verbindung (`wss://sockets.betterttv.net/ws`): Sobald ein Zuschauer mit BTTV Pro eine Nachricht schreibt, schickt seine Erweiterung `broadcast_me`, und BTTV verteilt `lookup_user` (`providerId`, `pro`, Liste der Emotes) an alle, die den Kanal (`twitch:<Kanal-Nr>`) abhören. Quelle: der offene Quelltext der Erweiterung (`socket-client.js`, `personal-emotes.js`). Die Box **hört jetzt auch zu**: eine ausgehende TLS-Verbindung über dieselben Wege wie der Chat, `join_channel` für den eigenen Kanal, sonst nichts (nie `broadcast_me`, keine Anmeldung, kein Token). Kommt ein `lookup_user` mit `pro` und gültigen Emotes, setzt die Box das Wort in der Nachricht des Schreibers als Emote (auch nachträglich in die schon gezeigte Zeile, wie in 0.9.182).
 - **Ablauf:** Die Verbindung wird mit der ersten Chat-Nachricht aufgebaut und steht, solange Nachrichten kommen (15 Minuten nach der letzten). Bei Fehlern neuer Versuch mit wachsender Wartezeit (30 s bis 15 min). Geprüft wird alles streng: nur das Ereignis `lookup_user`, Nummern mit höchstens 12 Ziffern, Emote-Kennungen als 24 Hexzeichen, Namen nach dem bekannten Muster, Rahmen höchstens 1 MB, höchstens 300 Zuschauer im Speicher (30 Minuten). Die persönliche Liste wird mit der öffentlichen des Zuschauers zusammengeführt.
