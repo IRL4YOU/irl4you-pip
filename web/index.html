@@ -350,8 +350,8 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
   main{padding:6px 8px 16px;gap:10px}                                               /* schmaler Rand am Handy: kein Platz verschenkt */
   header{margin-top:max(4px,env(safe-area-inset-top));top:4px}                      /* Kopfleiste ganz oben, kaum Luft darüber */
   header h1{font-size:15px;white-space:nowrap}
-  header .hdr{flex-wrap:nowrap;gap:6px;min-width:0}
-  header .hdr button,header .hdr>.badge{min-height:30px;padding:3px 9px;white-space:nowrap}
+  header .hdr{flex-wrap:nowrap;gap:5px;min-width:0}
+  header .hdr button,header .hdr>.badge{min-height:30px;padding:3px 8px;white-space:nowrap}header .hdr #fold_toggle,header .hdr #sm_btn{padding-left:8px;padding-right:8px}
   header .hdr .updbtn{font-size:0;padding:3px 9px}header .hdr .updbtn .dot{margin:0;font-size:13px}    /* nur der gelbe Punkt, Text steht im Tooltip */
   html:not(.mfperm) #hdr_live{display:none!important}                                      /* die Fußleiste hat Live/Stop; ist sie per Einstellung ganz weg (Optionen → Fußleiste), steht der Knopf im Kopf */
   body.streaming:not(.hdr-open) #hdr_sig{display:inline-flex;align-items:center;min-width:0}body.streaming #hdr_more{display:inline-flex}      /* während der Sendung: zugeklappt zeigt der Kopf die Pulsanzeige, aufgeklappt alle Knöpfe wie sonst */
@@ -620,6 +620,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Es sind 30 Bilder pro Sekunde in 640 × 360 als Video, rund 1,7 Mbit/s zum Browser, über das Netz, in dem er angemeldet ist. Die Vorschau endet nach 10 Minuten, beim Zuklappen der Karte, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt. Mit dem Häkchen darunter entfällt die Grenze von 10 Minuten: Die Vorschau startet dann in diesem Browser von selbst wieder, sobald die Seite sichtbar ist und die Box sendet.</div>
     <label class="prevkeep"><input type="checkbox" id="prev_always"> Mir ist bewusst, dass die Vorschau Rechenleistung kostet. Ich möchte sie in diesem Browser dauerhaft eingeschaltet lassen.</label>
     <div id="prev_msg" class="ph" role="status"></div>
+    <div class="actions" style="margin:6px 0 0"><button type="button" id="prev_live" class="livebtn" hidden>Live gehen</button></div>
     <div id="prev_box" hidden><video id="prev_vid" muted playsinline autoplay hidden aria-label="Vorschau des Sendebilds"></video><img id="prev_img" alt="Vorschau des Sendebilds" hidden></div>
   </details>
 
@@ -2442,9 +2443,11 @@ function updHdrLive(d){
   { const on=!!d.active&&d.state!=="stopping"; if(on!==document.body.classList.contains("streaming")){ document.body.classList.toggle("streaming",on); document.body.classList.remove("hdr-open"); $("hdr_more").setAttribute("aria-expanded","false"); placeSig(); } }
   const b=$("hdr_live"), live=!!d.active, busy=d.state==="restarting"||d.state==="starting"||d.state==="stopping";
   b.hidden=false; b.className="livebtn"+(live&&!busy?" on":"")+(busy?" busy":"");
-  b.textContent=busy?(LIVE_LABEL[d.state]==="Wird beendet…"?"Wird beendet…":"Verbinde …"):(live?"● LIVE":"Live gehen");
+  b.textContent=busy?(LIVE_LABEL[d.state]==="Wird beendet…"?"Wird beendet…":"Verbinde …"):(live?"● LIVE":(window.matchMedia&&matchMedia("(max-width:620px)").matches?"Live":"Live gehen"));      // am Handy kurz: der Kopf ist schmal
   b.disabled=busy||(!live&&!d.can_start);
   b.title=busy?(LIVE_LABEL[d.state]||""):(live?"Es wird gesendet. Klicken beendet die Sendung.":(d.can_start?"Nicht live. Klicken startet die Sendung.":"Kann nicht starten: "+((d.reasons||[]).join(" · ")||"Bedingungen nicht erfüllt")));
+  const pl=$("prev_live");                                                   // Karte Vorschau: solange nicht gesendet wird, steht dort ein Knopf zum Live-Gehen (die Vorschau gibt es nur beim Senden)
+  pl.hidden=live||busy; pl.disabled=!d.can_start; pl.title=b.title;
   const f=$("mf_live");                                                      // Fußleiste (nur auf dem Handy sichtbar): "Live" oder "Stop"
   f.className="mf-live"+(live&&!busy?" on":"")+(busy?" busy":"");
   f.textContent=busy?"…":(live?"Stop":"Live"); f.disabled=b.disabled; f.title=b.title;
@@ -2453,6 +2456,7 @@ async function liveToggle(){                                       // Kopfleiste
   if(sendData&&sendData.active) await doLiveStop(); else await doLiveStart();
 }
 $("hdr_live").addEventListener("click",liveToggle);
+$("prev_live").addEventListener("click",liveToggle);
 $("mf_live").addEventListener("click",liveToggle);
 // Fußleiste am Handy: Knöpfe für Kameras und Ton, nur bei der Art "Bild in Bild" (Issue #19)
 //   Kamera:  kurz = kleines Bild aus-/einblenden (blaues Symbol = ausgeblendet), lang = zur Hauptkamera machen (blauer Rahmen = Hauptbild), doppelt = deaktivieren
