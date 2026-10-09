@@ -1017,6 +1017,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
       <div class="ph" style="margin-top:0">Neben der Adresse vom Router (DHCP) bekommt die Box eine feste, zum Beispiel wenn sie am selben Router hängt wie andere Geräte. Die feste Adresse gehört zur MAC-Adresse der gewählten Netzkarte. Voraussetzung ist ein getrennter Adressraum: Sie darf sich nicht mit dem Netz einer anderen Netzkarte überschneiden, kein anderes Gerät darf sie benutzen, und sie sollte außerhalb des DHCP-Bereichs deines Routers liegen. Das gilt für die ganze Box, nicht nur für dieses Gerät.</div>
       <label class="chk"><input type="checkbox" id="na_on"> Feste Zusatzadresse verwenden</label>
       <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap"><select id="na_card" aria-label="Netzkarte"></select><input id="na_addr" type="text" inputmode="decimal" maxlength="15" placeholder="z. B. 192.168.1.50" aria-label="IP-Adresse" autocomplete="off" style="width:11em"><span>/</span><input id="na_prefix" type="number" min="8" max="30" value="24" aria-label="Netzlänge" style="width:4.5em"></div>
+      <label class="chk" id="na_ack_row"><input type="checkbox" id="na_ack"> Ich bin einverstanden, dass die Änderung am Netzwerk der Box auf meine eigene Verantwortung erfolgt.</label>
       <div class="actions"><button type="button" id="na_save">Speichern</button></div>
       <div id="na_info" class="ph" role="status"></div>
       <div id="na_err" class="err"></div>
@@ -3546,7 +3547,7 @@ $("chat_form").addEventListener("submit",async e=>{
 
 // ---- Feste Zusatzadresse (LAN), Issue #65: neben DHCP eine feste Adresse, gebunden an die MAC-Adresse der Netzkarte; der Root-Helfer prüft und setzt sie
 (function(){
-  const on=$("na_on"), card=$("na_card"), addr=$("na_addr"), prefix=$("na_prefix"), info=$("na_info"), err=$("na_err"), save=$("na_save"), box=$("opt_netaddr"); let last=null;
+  const on=$("na_on"), ack=$("na_ack"), ackRow=$("na_ack_row"), card=$("na_card"), addr=$("na_addr"), prefix=$("na_prefix"), info=$("na_info"), err=$("na_err"), save=$("na_save"), box=$("opt_netaddr"); let last=null, ready=false;
   function render(d){
     last=d; err.textContent="";
     card.textContent="";
@@ -3555,17 +3556,20 @@ $("chat_form").addEventListener("submit",async e=>{
     if(d.mac) card.value=d.mac;
     if(document.activeElement!==on) on.checked=!!d.enabled;
     if(d.enabled&&document.activeElement!==addr){ addr.value=d.addr||""; prefix.value=d.prefix||24; }
-    save.disabled=!d.installed||!(d.cards||[]).length;
+    ready=!!d.installed&&(d.cards||[]).length>0; gate();
     info.textContent=!d.installed?"Kommt mit dem nächsten Software-Update.":(!(d.cards||[]).length?"Keine LAN-Netzkarte gefunden.":
       (d.enabled?(d.present?`Aktiv: ${d.addr}/${d.prefix}`:"Eingestellt, aber gerade nicht auf der Karte. Sie wird gesetzt, sobald die Karte hochfährt."):"Aus. Die Box nutzt nur die Adresse vom Router."));
   }
+  function gate(){ ackRow.hidden=!on.checked; save.disabled=!ready||(on.checked&&!ack.checked); }     // Einschalten erst nach dem Haken "auf eigene Verantwortung"
+  on.addEventListener("change",gate); ack.addEventListener("change",gate);
   async function load(){ try{ render(await srtlaCall("GET","/api/netaddr")); }catch(e){} }
   save.addEventListener("click",async()=>{
     err.textContent=""; save.disabled=true;
     try{
-      const body=on.checked?{enable:true,mac:card.value,addr:addr.value.trim(),prefix:parseInt(prefix.value,10)}:{enable:false};
+      const body=on.checked?{enable:true,ack:ack.checked,mac:card.value,addr:addr.value.trim(),prefix:parseInt(prefix.value,10)}:{enable:false};
       render(await srtlaCall("POST","/api/netaddr",body));
-    }catch(x){ err.textContent=x.message; save.disabled=false; }
+      ack.checked=false; gate();
+    }catch(x){ err.textContent=x.message; gate(); }
   });
   box.addEventListener("toggle",()=>{ if(box.open) load(); });
 })();
