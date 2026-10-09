@@ -988,7 +988,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   <details class="card wide" id="c_report"><summary><span class="sumh">Problem melden / Wunsch äußern</span></summary>
     <div class="ph" style="margin-top:0">Bereitet auf GitHub ein fertig ausgefülltes Formular vor (Titel und Beschreibung sind schon eingetragen). Du meldest dich dort mit deinem eigenen GitHub-Konto an und klickst auf „Submit new issue“. Die Box sendet selbst nichts.</div>
     <label class="logopt"><input type="radio" name="rp_kind" value="issue" checked> <b>Problem</b> (ISSUE): Titel ist Pflicht, die Beschreibung ist freiwillig. Du bekommst eine Support-Nummer.</label>
-    <label class="logopt"><input type="radio" name="rp_kind" value="feature"> <b>Wunsch</b> (FEATURE): Titel und Beschreibung sind Pflicht.</label>
+    <label class="logopt"><input type="radio" name="rp_kind" value="feature"> <b>Wunsch</b> (FEATURE): Titel und Beschreibung sind Pflicht. Du bekommst ebenfalls eine Nummer.</label>
     <input id="rp_title" type="text" maxlength="100" placeholder="Titel" aria-label="Titel" autocomplete="off">
     <textarea id="rp_desc" rows="5" maxlength="2000" placeholder="Beschreibung" aria-label="Beschreibung"></textarea>
     <label class="logopt" id="rp_logrow"><input type="checkbox" id="rp_log"> Bereinigtes Protokoll mitnehmen (wird als Datei geladen, die du auf GitHub anhängst; ohne Passwörter, WLAN-Namen, Adressen und Schlüssel)</label>
@@ -3469,6 +3469,7 @@ $("chat_form").addEventListener("submit",async e=>{
     for(const c of cases){
       const r=document.createElement("div"); r.className="rpcase"+(c.done?" done":"");
       const d=document.createElement("span"); d.className="rpd"; d.textContent=when(c.t); r.appendChild(d);
+      const kd=document.createElement("span"); kd.className="rpd"; kd.textContent=c.kind==="feature"?"Wunsch":"Problem"; r.appendChild(kd);
       const id=document.createElement("code"); id.textContent=c.id; id.translate=false; r.appendChild(id);
       const t=document.createElement("span"); t.className="rpt"; t.textContent=c.title; t.translate=false; r.appendChild(t);
       const a=document.createElement("a"); a.href=(issues||"https://github.com/IRL4YOU/irl4you-pip/issues")+"?q="+encodeURIComponent("is:issue "+c.id); a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Auf GitHub suchen"; r.appendChild(a);
@@ -3496,14 +3497,13 @@ $("chat_form").addEventListener("submit",async e=>{
     if(f&&!body0){ msg.textContent="Bei einem Wunsch ist die Beschreibung Pflicht."; return; }
     go.disabled=true;
     try{
-      let ttl, body=body0, id="";
-      if(f){ ttl="[FEATURE] "+t; }
-      else { const c=await srtlaCall("POST","/api/support",{action:"create",title:t}); id=c.id; ttl="[ISSUE] "+c.title+" ("+id+")";
-             body=(body0?body0+"\n\n":"")+"---\nBox-Version: "+(version||"?")+"\nSupport-Nummer: "+id+($("rp_log").checked?"\nProtokoll: als Datei angehängt":""); }
+      const c=await srtlaCall("POST","/api/support",{action:"create",kind:f?"feature":"issue",title:t}), id=c.id;            // Problem und Wunsch bekommen je eine Nummer
+      const ttl=(f?"[FEATURE] ":"[ISSUE] ")+c.title+" ("+id+")";
+      let body=(body0?body0+"\n\n":"")+"---\nBox-Version: "+(version||"?")+"\nSupport-Nummer: "+id+(!f&&$("rp_log").checked?"\nProtokoll: als Datei angehängt":"");
       let url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body), short=false;
       while(url.length>MAXURL&&body.length>200){ body=body.slice(0,Math.floor(body.length*0.8)); short=true; url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body+"\n[gekürzt]"); }
       const p=link(url,short);
-      if(id){ const q=document.createElement("div"); q.appendChild(document.createTextNode("Deine Support-Nummer: ")); const c=document.createElement("code"); c.textContent=id; q.appendChild(c); p.parentNode.appendChild(q); }
+      { const q=document.createElement("div"); q.appendChild(document.createTextNode("Deine Support-Nummer: ")); const c=document.createElement("code"); c.textContent=id; q.appendChild(c); p.parentNode.appendChild(q); }
       if(!f&&$("rp_log").checked){ const lm=document.createElement("div"); lm.className="muted"; out.appendChild(lm); logsDownloadTo(go,lm).then(()=>{ lm.textContent+=" Datei auf GitHub ins Textfeld ziehen."; }); }
       load();
     }catch(x){ msg.textContent="Fehler: "+x.message; }
