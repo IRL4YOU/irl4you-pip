@@ -7729,9 +7729,11 @@ class ExtraAddress:
         return {"installed": self.installed(), "enabled": bool(c), "mac": (c or {}).get("mac", ""), "addr": (c or {}).get("addr", ""), "prefix": (c or {}).get("prefix", 24),
                 "present": present, "error": "", "cards": cards}
 
-    def set(self, enable, mac=None, addr=None, prefix=None):
+    def set(self, enable, mac=None, addr=None, prefix=None, ack=False):
         if not isinstance(enable, bool):
             raise ValueError("Ungültige Anfrage")
+        if enable and ack is not True:
+            raise ValueError("Bitte zuerst bestätigen, dass die Änderung auf eigene Verantwortung erfolgt.")
         if enable:
             addr = self.check(mac, addr, prefix)
         if self.demo:
@@ -8473,7 +8475,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {"ok": bool(self.usbwatch.dismiss(d.get("t")))})
             if path == "/api/netaddr":
                 try:
-                    return self.reply(200, self.netaddr.set(d.get("enable"), d.get("mac"), d.get("addr"), d.get("prefix")))
+                    return self.reply(200, self.netaddr.set(d.get("enable"), d.get("mac"), d.get("addr"), d.get("prefix"), d.get("ack")))
                 except ValueError as e:
                     return self.reply(400, {"error": str(e)})
             if path == "/api/uiaccess":
