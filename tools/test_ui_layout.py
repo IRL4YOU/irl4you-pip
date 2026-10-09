@@ -103,5 +103,35 @@ class FootHides(unittest.TestCase):
         self.assertIn("html.mfperm body{padding-bottom:calc(16px + env(safe-area-inset-bottom))}", PAGE)
 
 
+class HeaderLogo(unittest.TestCase):
+    """Issue #61: Das IRL4YOU-Logo im Kopf, im Wechsel mit dem Text; während der Sendung nur das Logo."""
+
+    def test_logo_and_text_are_both_in_the_header_and_readable_by_screen_readers(self):
+        self.assertIn('<h1 class="hl" aria-label="IRL4YOU BOX"><span class="hlogo"><svg viewBox="0 0 1024 1024"', PAGE)
+        self.assertIn('aria-hidden="true" focusable="false"', PAGE[PAGE.index('class="hlogo"'):PAGE.index('class="hlogo"') + 200])
+        self.assertIn('<span class="htxt">IRL4YOU BOX</span></h1>', PAGE)
+
+    def test_logo_is_a_small_inline_vector_with_the_brand_colours(self):
+        a = PAGE.index('<span class="hlogo">')
+        svg = PAGE[a:PAGE.index("</svg>", a) + 6]
+        self.assertLess(len(svg), 1200)                                                        # klein, nichts wird nachgeladen
+        for colour in ("#12213c", "#1cdaf5", "#f8fafc", "#ffa14f"):                             # Marineblau, Cyan, Weiß, Orange
+            self.assertIn(colour, svg)
+        self.assertNotIn("<image", svg)
+        self.assertNotIn("href=", svg.replace('url(#hl4m)', ""))
+
+    def test_alternates_every_30_seconds_with_a_soft_fade(self):
+        self.assertIn(".hl .hlogo{animation:hlA 60s linear infinite}.hl .htxt{animation:hlB 60s linear infinite}", PAGE)
+        self.assertIn("@keyframes hlA{0%,46%{opacity:1}50%,96%{opacity:0}100%{opacity:1}}", PAGE)
+        self.assertIn("@keyframes hlB{0%,46%{opacity:0}50%,96%{opacity:1}100%{opacity:0}}", PAGE)
+
+    def test_only_the_logo_while_sending(self):
+        self.assertIn("body.streaming .hl .htxt{display:none}body.streaming .hl .hlogo{animation:none;opacity:1}", PAGE)
+
+    def test_no_animation_when_the_device_reduces_motion(self):
+        i = PAGE.index("@media(prefers-reduced-motion:reduce){.hl .hlogo,.hl .htxt{animation:none;opacity:1}")
+        self.assertIn("h1.hl{display:inline-flex;gap:8px}", PAGE[i:i + 250])                  # dann Logo und Text nebeneinander
+
+
 if __name__ == "__main__":
     unittest.main()
