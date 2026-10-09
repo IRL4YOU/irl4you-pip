@@ -129,14 +129,14 @@ Der Punkt vor jeder Kamera (in der Kameraliste und in der Karte **Status**) zeig
 | Rot | Kein Signal. |
 | Grau | Status unbekannt. |
 
-Fällt etwas aus, erscheint im Status eine Meldung mit der Uhrzeit. Ein Klick auf das **i** dahinter zeigt, was du tun kannst. **Hast du eine Kamera oder ein Handy bewusst abgeschaltet oder abgezogen, ist das kein Fehler: Mit dem × an der Meldung (bei Kamera, HDMI und USB) schließt du sie.** Ohne ×-Klick verschwindet sie, sobald die Kamera wieder sendet (die Meldung „Kamera ausgefallen“ spätestens nach 6 Stunden, die USB-Meldung nach 10 Minuten „wieder da“ oder nach 24 Stunden). Ein späterer neuer Ausfall meldet sich wieder:
+Fällt etwas aus, erscheint im Status eine Meldung mit der Uhrzeit. Ein Klick auf das **i** dahinter zeigt, was du tun kannst. **Hast du eine Kamera oder ein Handy bewusst abgeschaltet oder abgezogen, ist das kein Fehler: Mit dem × an der Meldung (bei Kamera, HDMI und USB) schließt du sie.** Ohne ×-Klick verschwindet sie, sobald die Kamera wieder sendet (die Meldung „Kamera ausgefallen“ spätestens nach 6 Stunden, die USB-Meldung 5 Minuten nach „wieder da“ oder nach 24 Stunden). Ein späterer neuer Ausfall meldet sich wieder:
 
 | Meldung | Was sie heißt, was du tust |
 |---|---|
 | DJI-Kamera ausgefallen (mit Name) | Bluetooth getrennt, Akku leer oder Kamera ausgeschaltet. Kamera aufwecken und die Verbindung prüfen. |
 | Kamera ausgefallen (mit Name) | Die Kamera sendet nicht mehr. Akku, WLAN-Verbindung und Kabel prüfen. |
 | HDMI: kein Signal | Kabel prüfen und die Kamera einschalten. |
-| USB-Gerät getrennt (zum Beispiel USB-WLAN-Adapter, USB-Bluetooth-Adapter) | Gerät getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen. Kommt das Gerät von selbst wieder, steht „wieder da“ dabei und die Meldung verschwindet nach 10 Minuten. Sonst schließt du sie mit dem **×**, spätestens nach 24 Stunden ist sie weg. |
+| USB-Gerät getrennt (zum Beispiel USB-WLAN-Adapter, USB-Bluetooth-Adapter) | Gerät getrennt, abgezogen oder ausgefallen. Kabel und Stromversorgung prüfen. Die Meldung nennt den **Namen des Geräts** (aus dem Kernel-Protokoll); hinter dem **i** stehen Anschluss und USB-Kennung. Kommt das Gerät von selbst wieder, steht „wieder da“ dabei und die Meldung verschwindet nach 5 Minuten ohne neue Trennung. Sonst schließt du sie mit dem **×**, spätestens nach 24 Stunden ist sie weg. In den **ersten 2 Minuten nach dem Start der Box** zählen Trennungen nicht (manche Sticks melden sich beim Hochfahren mehrmals neu an), und Meldungen aus der Zeit vor einem Neustart erscheinen danach nicht mehr. |
 | ... mit "Bitte Stromversorgung prüfen" | Der USB-Anschluss wurde abgeschaltet (Störung oder Spannungseinbruch). Netzteil und USB-Hub prüfen, den Adapter möglichst direkt am Board anstecken. |
 
 Fällt eine Kamera aus, schaltet die Box auf die übrigen um. Das dauert etwa 5 Sekunden ohne Bild.
