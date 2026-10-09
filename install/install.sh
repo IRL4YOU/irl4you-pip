@@ -112,6 +112,8 @@ PY
     install -m 644 "$HERE/pipbox_live.py" /opt/pipbox/pipbox_live.py       # Engine "alle Kameras immer bereit" mit Compositor und Kamera-Zweigen (braucht den belacoder mit -sb11)
     install -m 644 "$HERE/pipbox_watch.py" /opt/pipbox/pipbox_watch.py       # Wächter der Sendekette: erkennt Hänger von belacoder, sichert ein Diagnosepaket und startet neu (Issue #51)
     install -m 644 "$HERE/pipbox_preview.py" /opt/pipbox/pipbox_preview.py       # Vorschau des gesendeten Bildes: liest den lokalen SRT-Strom mit und dekodiert ihn (Issue #52)
+    install -m 644 "$HERE/install/pipbox-preview.socket" /etc/systemd/system/pipbox-preview.socket        # Vorschau: Socket, der Dienst startet erst bei Bedarf (nur Recht für rohe Pakete)
+    install -m 644 "$HERE/install/pipbox-preview.service" /etc/systemd/system/pipbox-preview.service
     install -m 644 "$HERE/pipbox_always.py" /opt/pipbox/pipbox_always.py       # Zubringer und Auswahl für "alle Kameras immer bereit" (nicht in der Pflichtliste des Update-Helfers: ein Rückweg auf ältere Versionen muss möglich bleiben)
     install -m 755 "$HERE/install/pipbox_health.py" /opt/pipbox/pipbox_health.py
     install -m 644 "$HERE/VERSION" /opt/pipbox/VERSION
@@ -238,6 +240,8 @@ PY
     if [ "$hdmi_changed" = 1 ] || ! systemctl is-active --quiet pipbox-hdmi.service; then systemctl restart pipbox-hdmi.service; fi
     systemctl restart pipbox-health.service 2>/dev/null || true
     systemctl enable --now pipbox-update.path pipbox-send-ctl.path pipbox-health.service pipbox-swupdate.path pipbox-remote.path pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-logs.path pipbox-ssh.path pipbox-btdriver.timer pipbox-wlandriver.timer
+    systemctl enable --now pipbox-preview.socket
+    systemctl try-restart pipbox-preview.service 2>/dev/null || true       # neuer Programmstand (der Dienst endet sonst nach einer Minute ohne Zuschauer von selbst)
     systemctl restart pipbox.service
     systemctl start --no-block pipbox-btdriver.service pipbox-wlandriver.service 2>/dev/null || true      # steckt schon ein passender Stick, gleich prüfen (sonst tut der Dienst nichts)
     ts_snapshot "nach der Installation"
@@ -248,6 +252,8 @@ PY
     [ -x /opt/pipbox/pipbox-btdriver.py ] && python3 /opt/pipbox/pipbox-btdriver.py uninstall || true     # eingespieltes Bluetooth-Modul entfernen (Standardmodul gilt nach dem nächsten Neustart)
     systemctl disable --now pipbox-btdriver.timer pipbox-wlandriver.timer pipbox-funnel-guard.timer pipbox-send.service pipbox-hdmi.service pipbox-send-ctl.path pipbox-update.path pipbox-swupdate.path pipbox-remote.path pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-logs.path pipbox-ssh.path pipbox-health.service pipbox.service pipbox-dji.service || true
     rm -f /etc/systemd/system/pipbox-send.service /etc/systemd/system/pipbox-send-ctl.service /etc/systemd/system/pipbox-send-ctl.path /etc/systemd/system/pipbox.service /etc/systemd/system/pipbox-dji.service /etc/systemd/system/pipbox-hdmi.service /etc/systemd/system/pipbox-update.service /etc/systemd/system/pipbox-update.path /etc/systemd/system/pipbox-swupdate.service /etc/systemd/system/pipbox-swupdate.path /etc/systemd/system/pipbox-remote.service /etc/systemd/system/pipbox-remote.path /etc/systemd/system/pipbox-wifi.service /etc/systemd/system/pipbox-wifi.path /etc/systemd/system/pipbox-power.service /etc/systemd/system/pipbox-power.path /etc/systemd/system/pipbox-health.service /etc/systemd/system/pipbox-logmode.service /etc/systemd/system/pipbox-logmode.path /etc/systemd/system/pipbox-logs.service /etc/systemd/system/pipbox-logs.path /etc/systemd/system/pipbox-ssh.service /etc/systemd/system/pipbox-ssh.path /etc/systemd/system/pipbox-funnel-guard.service /etc/systemd/system/pipbox-funnel-guard.timer /etc/systemd/system/pipbox-btdriver.service /etc/systemd/system/pipbox-btdriver.timer /etc/udev/rules.d/80-pipbox-btdriver.rules
+    systemctl disable --now pipbox-preview.socket pipbox-preview.service 2>/dev/null || true
+    rm -f /etc/systemd/system/pipbox-preview.socket /etc/systemd/system/pipbox-preview.service
     rm -f /etc/apt/apt.conf.d/99pipbox-nginx
     NGX=/etc/nginx/modules-available/99-belabox-rtmp.conf
     if [ -f "$NGX.vor-pipbox" ]; then
