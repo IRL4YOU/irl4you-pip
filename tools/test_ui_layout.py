@@ -37,5 +37,26 @@ class PerDevice(unittest.TestCase):
         self.assertNotIn('doc["layout"]', SRC)
 
 
+class CompactChat(unittest.TestCase):
+    def test_idle_line_and_gear_go_away_while_the_chat_runs(self):
+        self.assertIn("html.nohead #chat_msg.quiet{display:none}", PAGE)
+        self.assertIn("html.nohead #c_chat.chatok>summary{visibility:hidden;", PAGE)
+        self.assertIn("html.nohead #c_chat.chatok.showctl>summary", PAGE)
+        self.assertIn("#chat_opt[aria-expanded=true])>summary{visibility:visible", PAGE)       # solange die Chat-Einstellungen offen sind
+        self.assertIn('msg.classList.toggle("quiet",d.state==="ok"&&!shown)', PAGE)
+        self.assertIn('card.classList.toggle("chatok",d.state==="ok")', PAGE)
+
+    def test_errors_stay_visible(self):
+        self.assertIn('msg.classList.remove("quiet"); card.classList.remove("chatok")', PAGE)    # keine Verbindung zur Box: Zeile und ⚙ zurück
+        self.assertNotIn("#chat_msg{display:none", PAGE)
+
+    def test_gear_comes_back_on_mouse_move_or_tap(self):
+        i = PAGE.index("// ---- Chat in der kompakten Ansicht")
+        blk = PAGE[i:i + 600]
+        self.assertIn('c.addEventListener("pointermove"', blk)
+        self.assertIn('c.addEventListener("click",show)', blk)
+        self.assertIn("10000", blk)                                                            # zehn Sekunden sichtbar (7 bis 10 s wünschte der Nutzer: 3 s waren zu wenig)
+
+
 if __name__ == "__main__":
     unittest.main()
