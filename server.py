@@ -7579,7 +7579,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self.send._active():
             return self.reply(503, {"error": "off"})
         try:
-            up, head = pv.open((q.get("fps") or [30])[0], (q.get("w") or [640])[0], (q.get("long") or [""])[0] == "1")
+            fmt = (q.get("fmt") or ["mp4"])[0]
+            fmt = fmt if fmt in pipbox_preview.FORMATS else "mp4"
+            up, head = pv.open((q.get("fps") or [30])[0], (q.get("w") or [640])[0], (q.get("long") or [""])[0] == "1", fmt)
         except OSError:
             return self.reply(503, {"error": "missing"})
         if up is None:
@@ -7596,7 +7598,7 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 if not started:
                     self.send_response(200)
-                    self.send_header("Content-Type", "multipart/x-mixed-replace;boundary=" + pipbox_preview.BOUNDARY)
+                    self.send_header("Content-Type", "video/mp4" if fmt == "mp4" else "multipart/x-mixed-replace;boundary=" + pipbox_preview.BOUNDARY)
                     self.send_header("Cache-Control", "no-store")
                     self.send_header("X-Content-Type-Options", "nosniff")
                     self.send_header("X-Frame-Options", "DENY")
@@ -7710,12 +7712,11 @@ class Handler(BaseHTTPRequestHandler):
                         c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
             return self.reply(200, m)
         if path == "/api/preview":
-            home = pipbox_preview.is_home_address(self.ip()) if pipbox_preview else None      # echte Absenderadresse (hinter dem Tailscale-Proxy die weitergereichte)
             if not self.preview:
-                return self.reply(200, {"available": False, "why": "missing", "home": home})
+                return self.reply(200, {"available": False, "why": "missing"})
             if not self.send._active():
-                return self.reply(200, {"available": False, "why": "off", "home": home})            # ohne Sendung gar nicht erst den Dienst wecken
-            return self.reply(200, dict(self.preview.status(), home=home))
+                return self.reply(200, {"available": False, "why": "off"})            # ohne Sendung gar nicht erst den Dienst wecken
+            return self.reply(200, self.preview.status())
         if path == "/api/preview/stream":
             return self.preview_stream()
         if path == "/api/layout":

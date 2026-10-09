@@ -3,13 +3,15 @@
 
 Zeigt das Bild, das wirklich gesendet wird: das fertig gemischte und kodierte Bild, nicht einzelne Kameras. Dazu liest ein kurzlebiger Prozess die
 SRT-Datenpakete mit, die belacoder lokal an srtla_send schickt (127.0.0.1:9100, unverschlüsselt), ordnet sie, entpackt den MPEG-TS-Strom, dekodiert ihn
-mit dem Hardware-Dekoder und schickt kleine JPEG-Bilder als Motion-JPEG (multipart/x-mixed-replace) an den Browser.
+mit dem Hardware-Dekoder, kodiert es klein (640x360) wieder mit dem Hardware-Kodierer als H.264 und schickt es als fragmentiertes MP4 (fMP4) an den Browser, der es per
+Media Source Extensions abspielt: flüssig mit 30 Bildern pro Sekunde bei rund 1,5 Mbit/s. Für Browser ohne diese Technik gibt es als Ausweichlösung Motion-JPEG
+(multipart/x-mixed-replace).
 
 Die Sendekette wird dabei nicht angefasst (kein Abzweig in der Pipeline, kein Eingriff in belacoder): Ein Seitenzweig vor dem Encoder ließ den
 Mischer abbrechen, hier wird nur mitgelesen. Ohne Zuschauer läuft nichts. Eine Vorschau endet, wenn der Browser die Verbindung schließt, nach
 MAX_SECONDS oder wenn der Sender stoppt.
 
-Gemessen auf der Box (Orange Pi 5 Plus, 1080p30 HEVC, 640x360, 30 Bilder/s): rund 18 % eines Kerns, 9 MB Speicher, etwa 3 Mbit/s, die Sendung bleibt unberührt.
+Gemessen auf der Box (Orange Pi 5 Plus, 1080p30 HEVC, 640x360, 30 Bilder/s): H.264 rund 1,7 Mbit/s, Motion-JPEG 3 bis 7 Mbit/s; die Sendung bleibt unberührt.
 
 Rechte: Der Webserver läuft als Benutzer pipbox und darf weder rohe Pakete lesen noch den Hardware-Dekoder benutzen (/dev/mpp_service gehört root). Die Arbeit macht darum ein
 eigener kleiner Dienst (pipbox-preview.service, Aufruf: pipbox_preview.py --serve) nur mit dem Recht CAP_NET_RAW. Er wird von systemd erst gestartet, wenn jemand die Vorschau
@@ -39,6 +41,9 @@ CHECK_EVERY = 3.0                 # so oft wird geprüft, ob der Sender noch lä
 FIRST_FRAME_WAIT = 12.0           # bis zum ersten Bild: Schlüsselbild abwarten (alle 2 s), dann dekodieren
 REORDER_WINDOW = 48               # so viele Pakete warten auf ein verspätetes (SRT wiederholt verlorene Pakete); danach wird die Lücke übersprungen
 BOUNDARY = "pbframe"
+FORMATS = ("mp4", "mjpeg")
+H264_BITRATE = 1_500_000          # Bit/s des Videos zum Browser (640x360, 30 Bilder/s)
+FRAGMENT_FRAMES = 6               # so viele Bilder je Häppchen (6 = 0,2 s): kleine Verzögerung, die Seite spielt am aktuellen Ende ab
 FPS_RANGE = (1, 30)
 WIDTH_RANGE = (160, 1280)
 SO_ATTACH_FILTER = 26
@@ -175,18 +180,143 @@ def little_cpus(big):
     return [c for c in range(n) if c not in set(big)] if big and n else []
 
 
-def gst_argv(codec, fps, width, cpus=None):
-    """Kommandozeile des Dekoders: TS von stdin, Motion-JPEG nach stdout. Der Tonzweig läuft ohne Warten, sonst blockiert er tsdemux, solange das Video
-    noch auf das erste Schlüsselbild wartet. Kleiner machen mit der einfachsten Methode (nearest-neighbour): das ist rund fünfmal billiger als bilinear."""
+def gst_argv(codec, fps, width, cpus=None, fmt="mjpeg"):
+    """Kommandozeile des Dekoders: TS von stdin, nach stdout entweder H.264 als Byte-Strom (fmt "mp4", daraus macht Fmp4 das fragmentierte MP4) oder Motion-JPEG
+    (fmt "mjpeg"). Der Tonzweig läuft ohne Warten, sonst blockiert er tsdemux, solange das Video noch auf das erste Schlüsselbild wartet. Kleiner machen mit
+    der einfachsten Methode (nearest-neighbour): das ist rund fünfmal billiger als bilinear."""
     width = width - width % 2
     height = (width * 9 // 16) - ((width * 9 // 16) % 2)
     pre = ["taskset", "-c", ",".join(map(str, cpus))] if cpus and shutil.which("taskset") else []
+    if fmt == "mp4":
+        out = ["!", "mpph264enc", f"bitrate={H264_BITRATE}", f"gop={fps}", "profile=main", "level=31", "!", "h264parse", "config-interval=-1",
+               "!", "video/x-h264,stream-format=byte-stream,alignment=au", "!", "fdsink", "fd=1"]
+    else:
+        out = ["!", "mppjpegenc", "q-factor=60", "!", "multipartmux", f"boundary={BOUNDARY}", "!", "fdsink", "fd=1"]
     return pre + ["gst-launch-1.0", "-q", "fdsrc", "fd=0", "!", "tsdemux", "name=t",
                   "t.", "!", f"video/x-{codec}", "!", "queue", "!", f"{codec}parse", "!", "mppvideodec",
                   "!", "videorate", "drop-only=true", "!", f"video/x-raw,framerate={fps}/1",
-                  "!", "videoscale", "method=nearest-neighbour", "!", f"video/x-raw,width={width},height={height}",
-                  "!", "mppjpegenc", "q-factor=60", "!", "multipartmux", f"boundary={BOUNDARY}", "!", "fdsink", "fd=1",
-                  "t.", "!", "audio/x-opus", "!", "queue", "leaky=downstream", "!", "fakesink", "sync=false", "async=false"]
+                  "!", "videoscale", "method=nearest-neighbour", "!", f"video/x-raw,width={width},height={height}"] + out + \
+                 ["t.", "!", "audio/x-opus", "!", "queue", "leaky=downstream", "!", "fakesink", "sync=false", "async=false"]
+
+
+# ---- fragmentiertes MP4 aus einem H.264-Byte-Strom (Annex B), ohne GStreamer-Muxer: mp4mux lieferte im Live-Betrieb keine Häppchen
+def _box(typ, *parts):
+    body = b"".join(parts)
+    return struct.pack(">I4s", 8 + len(body), typ) + body
+
+
+def _full(typ, version, flags, *parts):
+    return _box(typ, struct.pack(">I", (version << 24) | flags), *parts)
+
+
+_MATRIX = struct.pack(">9I", 0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000)
+
+
+def init_segment(sps, pps, width, height, timescale=90000):
+    """ftyp + moov für einen H.264-Videostrom (sps und pps ohne Startcode)."""
+    ftyp = _box(b"ftyp", b"isom", struct.pack(">I", 512), b"isomiso6avc1mp41")
+    avcc = _box(b"avcC", bytes([1, sps[1], sps[2], sps[3], 0xFF, 0xE1]), struct.pack(">H", len(sps)), sps, bytes([1]), struct.pack(">H", len(pps)), pps)
+    avc1 = _box(b"avc1", bytes(6), struct.pack(">H", 1), bytes(16), struct.pack(">HH", width, height), struct.pack(">II", 0x00480000, 0x00480000), bytes(4),
+                struct.pack(">H", 1), bytes(32), struct.pack(">Hh", 0x18, -1), avcc)
+    stbl = _box(b"stbl", _full(b"stsd", 0, 0, struct.pack(">I", 1), avc1), _full(b"stts", 0, 0, struct.pack(">I", 0)), _full(b"stsc", 0, 0, struct.pack(">I", 0)),
+                _full(b"stsz", 0, 0, struct.pack(">II", 0, 0)), _full(b"stco", 0, 0, struct.pack(">I", 0)))
+    dinf = _box(b"dinf", _full(b"dref", 0, 0, struct.pack(">I", 1), _full(b"url ", 0, 1)))
+    minf = _box(b"minf", _full(b"vmhd", 0, 1, bytes(8)), dinf, stbl)
+    mdhd = _full(b"mdhd", 0, 0, struct.pack(">IIIIHH", 0, 0, timescale, 0, 0x55C4, 0))
+    hdlr = _full(b"hdlr", 0, 0, struct.pack(">I", 0), b"vide", bytes(12), b"VideoHandler\0")
+    tkhd = _full(b"tkhd", 0, 3, struct.pack(">IIIII", 0, 0, 1, 0, 0), bytes(8), struct.pack(">hhhH", 0, 0, 0, 0), _MATRIX, struct.pack(">II", width << 16, height << 16))
+    trak = _box(b"trak", tkhd, _box(b"mdia", mdhd, hdlr, minf))
+    mvhd = _full(b"mvhd", 0, 0, struct.pack(">IIII", 0, 0, 1000, 0), struct.pack(">IhH", 0x00010000, 0x0100, 0), bytes(8), _MATRIX, bytes(24), struct.pack(">I", 2))
+    mvex = _box(b"mvex", _full(b"trex", 0, 0, struct.pack(">IIIII", 1, 1, 0, 0, 0)))
+    return ftyp + _box(b"moov", mvhd, trak, mvex)
+
+
+def media_segment(seq, decode_time, samples):
+    """moof + mdat; samples: [(Bytes im AVCC-Format, Dauer, Schlüsselbild)]."""
+    trun_rows = b"".join(struct.pack(">III", dur, len(data), 0x02000000 if key else 0x01010000) for data, dur, key in samples)
+    mfhd = _full(b"mfhd", 0, 0, struct.pack(">I", seq))
+    tfhd = _full(b"tfhd", 0, 0x020000, struct.pack(">I", 1))
+    tfdt = _full(b"tfdt", 1, 0, struct.pack(">Q", decode_time))
+
+    def moof(offset):
+        trun = _full(b"trun", 0, 0x701, struct.pack(">Ii", len(samples), offset), trun_rows)
+        return _box(b"moof", mfhd, _box(b"traf", tfhd, tfdt, trun))
+    size = len(moof(0))
+    return moof(size + 8) + _box(b"mdat", b"".join(d for d, _, _ in samples))
+
+
+class Fmp4:
+    """Macht aus dem H.264-Byte-Strom (Annex B, wie ihn der Kodierer liefert) ein fragmentiertes MP4: zuerst Init-Segment, dann alle FRAGMENT_FRAMES Bilder ein
+    Häppchen. Beginnt am ersten Schlüsselbild mit SPS und PPS, die Bilder haben feste Dauer (fps). feed(bytes) gibt die fertigen Stücke zurück."""
+
+    def __init__(self, fps=30, width=640, height=360, frames=FRAGMENT_FRAMES):
+        self.fps, self.width, self.height, self.frames = fps, width, height, frames
+        self.buf = b""
+        self.au, self.au_slice = [], False
+        self.sps = self.pps = None
+        self.started = False
+        self.samples = []
+        self.seq = 0
+        self.t = 0
+        self.dur = 90000 // fps
+
+    def feed(self, data):
+        """Neue Bytes des Byte-Stroms; Rückgabe: Liste fertiger Stücke (Init-Segment, Häppchen). Die letzte NAL-Einheit bleibt liegen, bis die nächste beginnt."""
+        self.buf += data
+        out = []
+        starts = self._starts()
+        if len(starts) >= 2:
+            for a, b in zip(starts, starts[1:]):
+                nal = self.buf[a:b - 3].rstrip(b"\x00")           # b - 3: vor dem Startcode; ein vierter Nullbyte des Startcodes gehört nicht zur Einheit
+                out += self._nal(nal)
+            self.buf = self.buf[starts[-1] - 3:]                        # die unfertige Einheit behält ihren Startcode
+        return out
+
+    def _starts(self):
+        """Stellen direkt hinter den Startcodes (00 00 01)."""
+        i, res = 0, []
+        while True:
+            j = self.buf.find(b"\x00\x00\x01", i)
+            if j < 0:
+                return res
+            res.append(j + 3)
+            i = j + 3
+
+    def _nal(self, nal):
+        if not nal:
+            return []
+        t = nal[0] & 0x1F
+        out = []
+        if t in (6, 7, 8, 9) and self.au_slice:
+            out += self._emit()
+        elif t in (1, 5) and self.au_slice and len(nal) > 1 and nal[1] & 0x80:      # first_mb_in_slice == 0: ein neues Bild beginnt
+            out += self._emit()
+        if t == 7:
+            self.sps = nal
+        elif t == 8:
+            self.pps = nal
+        self.au.append(nal)
+        if t in (1, 5):
+            self.au_slice = True
+        return out
+
+    def _emit(self):
+        nals, self.au, self.au_slice = self.au, [], False
+        key = any((n[0] & 0x1F) == 5 for n in nals)
+        out = []
+        if not self.started:
+            if not (key and self.sps and self.pps):
+                return out
+            self.started = True
+            out.append(init_segment(self.sps, self.pps, self.width, self.height))
+        data = b"".join(struct.pack(">I", len(n)) + n for n in nals if (n[0] & 0x1F) in (1, 5))
+        self.samples.append((data, self.dur, key))
+        if len(self.samples) >= self.frames:
+            self.seq += 1
+            out.append(media_segment(self.seq, self.t, self.samples))
+            self.t += self.dur * len(self.samples)
+            self.samples = []
+        return out
 
 
 class Preview:
@@ -246,14 +376,14 @@ class Preview:
         except (OSError, AttributeError) as e:
             raise Unavailable("capture: %s" % e)
 
-    def spawn(self, fps, width):
+    def spawn(self, fps, width, fmt="mjpeg"):
         try:
-            return subprocess.Popen(gst_argv(self.codec(), fps, width, little_cpus(self.big_cpus())), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            return subprocess.Popen(gst_argv(self.codec(), fps, width, little_cpus(self.big_cpus()), fmt), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, env=dict(os.environ, GST_MPP_NO_RGA="1"), bufsize=0)
         except OSError as e:
             raise Unavailable("gst: %s" % e)
 
-    def stream(self, write, fps, width, still_sending, max_seconds=MAX_SECONDS, ready=None, gone=None):
+    def stream(self, write, fps, width, still_sending, max_seconds=MAX_SECONDS, ready=None, gone=None, fmt="mjpeg"):
         """Läuft, bis der Browser geht (write löst OSError aus), die Zeit um ist oder der Sender stoppt. write(bytes) gibt Daten an den Browser,
         still_sending() sagt, ob der Sender noch läuft, ready() wird einmal aufgerufen, sobald alles gestartet ist, gone() sagt, ob die Gegenseite schon weg ist (auch ohne dass gerade Daten fließen). Rückgabe: Grund des Endes ("client", "zeit", "sender", "kein-bild", "fehler")."""
         fps = clamp(fps, *FPS_RANGE, 30)
@@ -263,7 +393,8 @@ class Preview:
         stop = threading.Event()
         try:
             sock = self.open_capture()
-            proc = self.spawn(fps, width)
+            proc = self.spawn(fps, width, fmt)
+            mux = Fmp4(fps, width - width % 2, (width * 9 // 16) - ((width * 9 // 16) % 2)) if fmt == "mp4" else None
             if ready is not None:
                 ready()                                    # Mitlesen und Dekoder laufen: ab hier kommen Daten (oder "kein-bild")
 
@@ -321,9 +452,10 @@ class Preview:
                 if not data:
                     reason = "fehler" if not first else "client"
                     break
-                first = True
                 try:
-                    write(data)
+                    for chunk in (mux.feed(data) if mux else [data]):
+                        first = True                      # erst wenn etwas für den Browser fertig ist (beim MP4 nach dem ersten Schlüsselbild)
+                        write(chunk)
                 except OSError:
                     reason = "client"
                     break
@@ -390,21 +522,6 @@ def default_route_iface(path="/proc/net/route"):
     except (OSError, ValueError):
         return None
     return best[1] if best else None
-
-
-def is_home_address(ip):
-    """Kommt der Browser aus dem Heimnetz (private, Link-lokale oder lokale Adresse)? True/False, None wenn die Adresse unlesbar ist. Adressen des Tailnets (100.64.0.0/10) und
-    öffentliche Adressen zählen als "außerhalb"."""
-    import ipaddress
-    try:
-        a = ipaddress.ip_address(str(ip).split("%")[0])
-    except ValueError:
-        return None
-    if a.version == 6 and a.ipv4_mapped:
-        a = a.ipv4_mapped
-    if a in ipaddress.ip_network("100.64.0.0/10"):
-        return False
-    return bool(a.is_private or a.is_loopback or a.is_link_local)
 
 
 class Traffic:
@@ -533,7 +650,8 @@ class Service:
         if not st["available"]:
             return self._send(conn, {"error": st["why"]})
         try:
-            self.pv.stream(conn.sendall, req.get("fps"), req.get("w"), self.sending, max_seconds=self.pv.limit(req.get("long") is True), gone=lambda: peer_gone(conn),
+            fmt = req.get("fmt") if req.get("fmt") in FORMATS else "mp4"
+            self.pv.stream(conn.sendall, req.get("fps"), req.get("w"), self.sending, max_seconds=self.pv.limit(req.get("long") is True), gone=lambda: peer_gone(conn), fmt=fmt,
                            ready=lambda: (self._send(conn, {"ok": True}), conn.settimeout(15)))        # Schreibzeit je Stück: ein Browser, der nicht liest, hält den Platz höchstens 15 s
         except Busy:
             self._send(conn, {"error": "busy"})
@@ -569,9 +687,9 @@ class Client:
         except (OSError, ValueError):
             return {"available": False, "why": "missing"}
 
-    def open(self, fps, width, long=False):
+    def open(self, fps, width, long=False, fmt="mp4"):
         """(Socket, Kopfzeile) einer Vorschau; bei einem Fehler des Dienstes (Socket, Kopfzeile mit "error") ist der Socket None. OSError, wenn der Dienst fehlt."""
-        s = self._call({"cmd": "stream", "fps": clamp(fps, *FPS_RANGE, 30), "w": clamp(width, *WIDTH_RANGE, 640), "long": bool(long)})
+        s = self._call({"cmd": "stream", "fps": clamp(fps, *FPS_RANGE, 30), "w": clamp(width, *WIDTH_RANGE, 640), "long": bool(long), "fmt": fmt if fmt in FORMATS else "mp4"})
         try:
             head = json.loads(read_line(s, 4096))
         except ValueError:
