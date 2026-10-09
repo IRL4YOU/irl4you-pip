@@ -34,10 +34,11 @@ def rd(path, default=""):
 
 PROC = "/proc"
 _prev = [None]        # letzter Stand der Rechenzeiten (Kerne, Threads) für die Last seit der vorigen Zeile
+_dthreads = [[]]      # Threads im Kernel-Zustand D beim letzten Durchlauf: [(Name, Pfad)]
 
 
 def _cpu_state():
-    cores, threads = {}, {}
+    cores, threads, dlist = {}, {}, []
     for l in rd(PROC + "/stat").splitlines():
         if l.startswith("cpu") and l[3:4].isdigit():
             try:
@@ -51,9 +52,33 @@ def _cpu_state():
         f = t[i + 2:].split() if i >= 0 else []
         try:
             threads[d] = (t[t.find("(") + 1:i], int(f[11]) + int(f[12]), int(f[36]))
+            if f[0] == "D":
+                dlist.append((t[t.find("(") + 1:i], d))
         except (ValueError, IndexError):
             continue
+    _dthreads[0] = dlist
     return time.monotonic(), cores, threads
+
+
+def dstate_text(limit=6):
+    """"blocked=2 d=usb-storage@usb_sg_wait,kworker/1:2@worker_thread": Threads im Kernel-Zustand D (nicht unterbrechbar) mit der Wartestelle im Kernel (wchan).
+    Nur wenn welche da sind. Zeigt hinterher, WER hinter der Meldung "n Prozess(e) blockiert (D-State)" in der Oberfläche steckte (zum Beispiel ein USB-Modem, das
+    sich zusätzlich als CD-Laufwerk meldet). Gilt für den Durchlauf von cpu_text() davor."""
+    n = 0
+    for l in rd(PROC + "/stat").splitlines():
+        if l.startswith("procs_blocked"):
+            try:
+                n = int(l.split()[1])
+            except (ValueError, IndexError):
+                pass
+    names = _dthreads[0]
+    if not n and not names:
+        return ""
+    parts = []
+    for name, d in names[:limit]:
+        w = rd(d + "/wchan", "") or "?"
+        parts.append("%s@%s" % (name.replace(" ", "_"), "?" if w == "0" else w))
+    return "blocked=" + str(n) + " d=" + (",".join(parts) or "-")
 
 
 def cpu_text(top=2):
@@ -91,11 +116,13 @@ def line():
     temps = [int(t) // 1000 for t in (rd(p, "0") for p in sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp"))) if t.lstrip("-").isdigit()]
     freq = [int(rd(p, "0")) // 1000 for p in sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq"))]
     mem = {k: int(v.split()[0]) for k, v in (l.split(":", 1) for l in rd("/proc/meminfo").splitlines())}
+    cpu = cpu_text()
+    extra = dstate_text()
     return (f"{time.strftime('%H:%M:%S')} load={'/'.join(load)} temp={max(temps) if temps else '?'}C "
             f"mhz={'/'.join(map(str, freq[:8]))} memfree={mem.get('MemAvailable', 0) // 1024}M "
             f"eth1={'ja' if os.path.exists('/sys/class/net/eth1') else 'nein'} "
             f"belacoder={'ja' if 'belacoder' in names else 'nein'} srtla={'ja' if 'srtla_send' in names else 'nein'} "
-            f"bt={len(glob.glob('/sys/class/bluetooth/hci[0-9]'))} {cpu_text()}")
+            f"bt={len(glob.glob('/sys/class/bluetooth/hci[0-9]'))} {cpu}" + (" " + extra if extra else ""))
 
 
 def main():
