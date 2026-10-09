@@ -143,5 +143,13 @@ class DefaultOrder(unittest.TestCase):
         self.assertEqual(ids[:3], ["c_prev", "c_chat", "c_status"])                              # oben unverändert
 
 
+class LiveAlwaysReachable(unittest.TestCase):
+    def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
+        """Am Handy steht Live/Stop in der Fußleiste; war sie per Einstellung ganz weg, fehlte der Knopf zum Live-Gehen (Meldung des Nutzers)."""
+        self.assertIn("html:not(.mfperm) #hdr_live{display:none!important}", PAGE)
+        self.assertNotIn("  #hdr_live{display:none!important}", PAGE)                            # nicht mehr bedingungslos weg
+        self.assertIn('root.classList.toggle("mfperm",mode==="off"||(mode==="hide"&&wide))', PAGE)  # mfperm = Leiste dauerhaft weg (Ausblenden bei Chat/Vorschau, Immer ausblenden)
+
+
 if __name__ == "__main__":
     unittest.main()
