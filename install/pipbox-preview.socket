@@ -1,0 +1,11 @@
+[Unit]
+Description=IRL4YOU BOX Vorschau: Anschluss für den Webserver (der Dienst startet erst bei der ersten Anfrage)
+
+[Socket]
+ListenStream=/run/pipbox-preview.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=pipbox
+
+[Install]
+WantedBy=sockets.target
