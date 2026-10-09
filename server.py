@@ -7546,7 +7546,7 @@ class SupportCases:
     """Issue #13: Probleme und Wünsche aus der Box melden. Die Box sendet selbst nichts (dafür bräuchte sie einen GitHub-Schlüssel mit Schreibrechten, und der
     ließe sich aus der öffentlichen Software auslesen); sie bereitet das Formular auf GitHub vor. Hier steht nur die Liste "Meine Fälle": je Problem und
     je Wunsch eine Nummer (IRL-XXXXXX, ohne Bezug zu Person oder Box), Art, Titel, Zeit und "erledigt" (gilt nur auf der Box). Datei <state>/support-cases.json."""
-    KEEP = 100
+    KEEP = 1000                                                      # Fälle bleiben erhalten (Nachwelt); die Liste wächst erst nach 1000 Einträgen nicht weiter (je Eintrag rund 200 Byte)
     DELETE_WINDOW = 30 * 60.0                                       # Fälle bleiben erhalten (Nachwelt); nur kurz nach dem Anlegen lässt sich ein Eintrag entfernen (Issue #64)
     ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"                 # ohne I, L, O, 0, 1: nicht zu verwechseln
     ID_RE = re.compile(r"^IRL-[A-HJKMNP-Z2-9]{6}$")
@@ -7633,6 +7633,130 @@ class SupportCases:
                     self._save()
                     return dict(c)
         raise KeyError(cid)
+
+
+class ExtraAddress:
+    """Feste Zusatzadresse für ein LAN-Kabel (Issue #65): neben der DHCP-Adresse vom Router eine zweite, feste Adresse, gebunden an die **MAC-Adresse** der
+    Netzkarte. Dieser Dienst hat keine Root-Rechte: Er prüft die Eingabe, legt eine Auslösedatei an (netaddr-request) und wartet auf das Ergebnis des Root-Helfers
+    pipbox-netaddr.py (der prüft alles noch einmal, setzt die Adresse und legt ein Skript in /etc/network/if-up.d ab, das sie bei jedem Hochfahren der Karte
+    wiedersetzt). Voraussetzung: ein getrennter Adressraum, das Netz darf sich nicht mit dem einer anderen Netzkarte überschneiden (prüft der Helfer)."""
+    CONF = "/etc/pipbox/extra-ip.json"
+    STATUS = "/run/pipbox-netaddr/status.json"
+    UNIT = "/etc/systemd/system/pipbox-netaddr.path"
+    SYS_NET = "/sys/class/net"
+    MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+    PRIVATE = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+    SKIP = ("lo", "docker", "veth", "br-", "virbr", "p2p", "tailscale", "tun", "tap", "wg", "zt", "wlan", "wl")
+    WAIT = 15.0
+
+    def __init__(self, state_dir, demo=False, clock=time.time, sleep=time.sleep):
+        self.req = os.path.join(state_dir, "netaddr-request")
+        self.demo, self.clock, self.sleep = demo, clock, sleep
+        self.fake = {"enabled": False, "mac": "aa:bb:cc:00:11:22", "addr": "", "prefix": 24}
+
+    @classmethod
+    def check(cls, mac, addr, prefix):
+        """Eingabe prüfen (der Helfer prüft noch einmal); wirft ValueError mit einem lesbaren Text."""
+        import ipaddress
+        if not isinstance(mac, str) or not cls.MAC_RE.match(mac):
+            raise ValueError("Ungültige MAC-Adresse")
+        if not isinstance(addr, str) or isinstance(prefix, bool) or not isinstance(prefix, int):
+            raise ValueError("Ungültige Anfrage")
+        try:
+            a = ipaddress.IPv4Address(addr)
+        except ValueError:
+            raise ValueError("Ungültige IP-Adresse")
+        if not any(a in ipaddress.ip_network(n) for n in cls.PRIVATE):
+            raise ValueError("Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).")
+        if not 8 <= prefix <= 30:
+            raise ValueError("Die Netzlänge muss zwischen 8 und 30 liegen (üblich: 24).")
+        net = ipaddress.ip_network("%s/%d" % (a, prefix), strict=False)
+        if a == net.network_address or a == net.broadcast_address:
+            raise ValueError("Das ist die Netz- oder Rundrufadresse, nicht die einer Geräteadresse.")
+        return str(a)
+
+    def cards(self):
+        """Verkabelte, echte Netzkarten: [{"name", "mac", "addrs": ["192.168.1.5/24", ...]}]."""
+        out = []
+        try:
+            names = sorted(os.listdir(self.SYS_NET))
+        except OSError:
+            return out
+        addrs = {}
+        try:
+            r = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True, timeout=5)
+            for line in (r.stdout or "").splitlines():
+                m = re.match(r"^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+/\d+)", line)
+                if m:
+                    addrs.setdefault(m.group(1).split("@")[0], []).append(m.group(2))
+        except (OSError, subprocess.SubprocessError):
+            pass
+        for n in names:
+            if n.startswith(self.SKIP):
+                continue
+            base = "%s/%s" % (self.SYS_NET, n)
+            try:
+                if (read(base + "/type", "") or "").strip() != "1" or os.path.isdir(base + "/wireless") or os.path.isdir(base + "/phy80211") \
+                        or os.path.isdir(base + "/bridge") or not os.path.exists(base + "/device"):
+                    continue
+                mac = (read(base + "/address", "") or "").strip().lower()
+            except OSError:
+                continue
+            if self.MAC_RE.match(mac):
+                out.append({"name": n, "mac": mac, "addrs": addrs.get(n, [])})
+        return out
+
+    def installed(self):
+        return os.path.exists(self.UNIT)
+
+    def _conf(self):
+        try:
+            d = json.loads(read(self.CONF, "") or "{}")
+            if isinstance(d, dict) and self.MAC_RE.match(str(d.get("mac"))) and isinstance(d.get("addr"), str) and isinstance(d.get("prefix"), int):
+                return d
+        except ValueError:
+            pass
+        return None
+
+    def status(self):
+        if self.demo:
+            f = self.fake
+            return {"installed": True, "enabled": f["enabled"], "mac": f["mac"], "addr": f["addr"], "prefix": f["prefix"], "present": f["enabled"], "error": "",
+                    "cards": [{"name": "eth0", "mac": "aa:bb:cc:00:11:22", "addrs": ["192.168.1.20/24"]}, {"name": "eth1", "mac": "aa:bb:cc:00:11:33", "addrs": ["192.168.178.195/24"]}]}
+        c = self._conf()
+        cards = self.cards()
+        present = bool(c) and any(x["mac"] == c["mac"] and "%s/%d" % (c["addr"], c["prefix"]) in x["addrs"] for x in cards)
+        return {"installed": self.installed(), "enabled": bool(c), "mac": (c or {}).get("mac", ""), "addr": (c or {}).get("addr", ""), "prefix": (c or {}).get("prefix", 24),
+                "present": present, "error": "", "cards": cards}
+
+    def set(self, enable, mac=None, addr=None, prefix=None):
+        if not isinstance(enable, bool):
+            raise ValueError("Ungültige Anfrage")
+        if enable:
+            addr = self.check(mac, addr, prefix)
+        if self.demo:
+            self.fake.update({"enabled": enable, "mac": mac or self.fake["mac"], "addr": addr or "", "prefix": prefix or 24})
+            return self.status()
+        if not self.installed():
+            raise ValueError("Kommt mit dem nächsten Software-Update.")
+        t0 = int(self.clock())
+        req = {"enable": True, "mac": mac, "addr": addr, "prefix": prefix} if enable else {"enable": False}
+        tmp = self.req + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(req, f)
+        os.replace(tmp, self.req)
+        end = self.clock() + self.WAIT
+        while self.clock() < end:
+            try:
+                st = json.loads(read(self.STATUS, "") or "{}")
+            except ValueError:
+                st = {}
+            if isinstance(st, dict) and isinstance(st.get("time"), int) and st["time"] >= t0:
+                if not st.get("ok"):
+                    raise ValueError(str(st.get("error") or "Fehler")[:200])
+                return self.status()
+            self.sleep(0.4)
+        raise ValueError("Keine Antwort vom Helfer.")
 
 
 class UiAccess:
@@ -8160,6 +8284,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, st)
         if path == "/api/uiaccess":
             return self.reply(200, self.uiaccess.status(self.local_ip()))
+        if path == "/api/netaddr":
+            return self.reply(200, self.netaddr.status())
         if path == "/api/twitch":
             return self.reply(200, self.twitch.status())
         if path == "/api/twitch/login":
@@ -8345,6 +8471,11 @@ class Handler(BaseHTTPRequestHandler):
                 if d.get("kind") in ("cam", "hdmi"):
                     return self.reply(200, {"ok": bool(self.outages.dismiss(d.get("kind"), d.get("t")))})
                 return self.reply(200, {"ok": bool(self.usbwatch.dismiss(d.get("t")))})
+            if path == "/api/netaddr":
+                try:
+                    return self.reply(200, self.netaddr.set(d.get("enable"), d.get("mac"), d.get("addr"), d.get("prefix")))
+                except ValueError as e:
+                    return self.reply(400, {"error": str(e)})
             if path == "/api/uiaccess":
                 return self.reply(200, self.uiaccess.set(d.get("block_client_wifi"), self.local_ip()))
             if path == "/api/twitch/login":
@@ -8517,6 +8648,7 @@ def main():
             time.sleep(3)
     threading.Thread(target=watcher, daemon=True).start()
     Handler.uiaccess = UiAccess(os.path.join(args.state, "ui-access.json"), demo=args.demo)
+    Handler.netaddr = ExtraAddress(args.state, demo=args.demo)
     LimitedHTTPServer.ui_access = Handler.uiaccess
     LimitedHTTPServer.allow_public = args.allow_public
     srv = LimitedHTTPServer((args.host, args.port), Handler)
