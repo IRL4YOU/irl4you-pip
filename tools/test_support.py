@@ -32,6 +32,26 @@ class Cases(unittest.TestCase):
         for i in ids:
             self.assertRegex(i, r"^IRL-[A-HJKMNP-Z2-9]{6}$")                      # keine verwechselbaren Zeichen (I, L, O, 0, 1)
 
+    def test_wishes_get_a_number_too_and_the_kind_is_kept(self):
+        """Issue #62: Auch ein Wunsch (FEATURE) bekommt eine Nummer und steht in "Meine Fälle"."""
+        c, _ = cases()
+        w = c.create("Mehr Emotes", "feature")
+        p = c.create("Vorschau ruckelt")
+        self.assertEqual((w["kind"], p["kind"]), ("feature", "issue"))
+        self.assertRegex(w["id"], r"^IRL-[A-HJKMNP-Z2-9]{6}$")
+        self.assertEqual({x["id"]: x["kind"] for x in c.list()}, {w["id"]: "feature", p["id"]: "issue"})
+        with self.assertRaises(ValueError):
+            c.create("Titel", "bug")
+        with self.assertRaises(ValueError):
+            c.create("Titel", None)
+
+    def test_old_entries_without_kind_are_problems(self):
+        path = tempfile.mktemp()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([{"id": "IRL-ABCDEF", "title": "Alt", "t": 1791500000, "done": False}], f)
+        c, _ = cases(path)
+        self.assertEqual(c.list()[0]["kind"], "issue")
+
     def test_title_is_cleaned_and_limited(self):
         c, _ = cases()
         case = c.create("  Vorschau \n ruckelt\t am   Handy \x07 ")
@@ -92,7 +112,7 @@ class Routes(unittest.TestCase):
     def test_routes_exist_and_need_login(self):
         self.assertIn('if path == "/api/support":', SRC)
         self.assertIn("Handler.support = SupportCases(", SRC)
-        self.assertIn('self.support.create(d.get("title"))', SRC)
+        self.assertIn('self.support.create(d.get("title"), d.get("kind", "issue"))', SRC)
         self.assertIn('self.support.mark(d.get("id"), d.get("done"))', SRC)
 
     def test_box_never_talks_to_github_itself(self):
@@ -110,8 +130,8 @@ class Page(unittest.TestCase):
         self.assertIn('value="feature"', PAGE)
 
     def test_titles_follow_the_requested_form(self):
-        self.assertIn('ttl="[FEATURE] "+t;', BLK)                                   # ohne Support-Nummer
-        self.assertIn('ttl="[ISSUE] "+c.title+" ("+id+")";', BLK)                    # "[ISSUE] Titeltext (Nummer)"
+        self.assertIn('const ttl=(f?"[FEATURE] ":"[ISSUE] ")+c.title+" ("+id+")";', BLK)   # "[ISSUE] Titeltext (Nummer)" und "[FEATURE] Titeltext (Nummer)"
+        self.assertIn('{action:"create",kind:f?"feature":"issue",title:t}', BLK)
         self.assertIn('if(f&&!body0){ msg.textContent="Bei einem Wunsch ist die Beschreibung Pflicht."', BLK)
         self.assertIn("t.length<3", BLK)                                              # Titel immer Pflicht
 
@@ -125,6 +145,9 @@ class Page(unittest.TestCase):
         self.assertIn("logsDownloadTo(go,lm)", BLK)
         self.assertIn("async function logsDownloadTo(btn,msg)", PAGE)
         self.assertIn('const logsDownload=()=>logsDownloadTo($("lg_dl"),$("lg_msg"));', PAGE)
+
+    def test_list_shows_problem_or_wish(self):
+        self.assertIn('kd.textContent=c.kind==="feature"?"Wunsch":"Problem"', BLK)
 
     def test_cases_can_be_searched_on_github_and_marked_done(self):
         self.assertIn('"?q="+encodeURIComponent("is:issue "+c.id)', BLK)
