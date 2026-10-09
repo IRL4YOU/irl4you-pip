@@ -1,5 +1,13 @@
 # Änderungen
 
+## 0.9.196 (Beta)
+- **„Problem melden / Wunsch äußern“: kein veralteter Link, keine Einträge ohne GitHub, Entfernen nur kurz nach dem Anlegen (Issue #64 von Bittersweet1987).**
+  - **Link immer aktuell:** Wer einen zweiten Fall anlegte, öffnete mit „Formular auf GitHub öffnen“ noch den Link mit den alten Daten. Jetzt baut die Seite den Link **beim Klick** aus den aktuellen Feldern neu (Art, Titel, Beschreibung, Haken).
+  - **Kein Eintrag beim Vorbereiten:** „Formular vorbereiten“ legte jedes Mal einen Eintrag in „Meine Fälle“ an, auch wenn nichts auf GitHub abgeschickt wurde. Jetzt zeigt es nur den Link mit der Nummer; **der Eintrag entsteht erst, wenn man „Formular auf GitHub öffnen“ anklickt** (einmal je Nummer). Erneutes Vorbereiten behält die Nummer, solange nichts geöffnet wurde. Ändert man nach dem Öffnen den Titel (oder bereitet neu vor), ist es ein **neuer Fall mit neuer Nummer**. Die Nummer wählt die Seite (`IRL-XXXXXX`), die Box prüft sie (gültig, noch frei) und speichert sie.
+  - **Entfernen, aber nur kurz:** Fälle sollen für die Nachwelt erhalten bleiben. Deshalb gibt es den Knopf **„Entfernen“** nur in den **ersten 30 Minuten nach dem Anlegen** (zum Beispiel, wenn man das Formular nicht abgeschickt hat); danach bleibt der Eintrag erhalten, auch wenn er erledigt ist (die Box lehnt es ab, der Hinweis steht am Knopf). Gilt nur für die Liste auf der Box; ein Issue auf GitHub wird nie angefasst. Server: `SupportCases.delete`, `POST /api/support` mit `action: "delete"`, die Antwort von `GET /api/support` nennt die Uhrzeit der Box und das Zeitfenster.
+  - **„Wieder offen“ heißt jetzt „Wieder öffnen“.** Die Übersetzungen sind übernommen.
+- Tests: `tools/test_support.py` jetzt 25 Tests (Nummer von der Seite, 30-Minuten-Fenster, auch erledigte Fälle bleiben, vorbereiten speichert nichts, Link beim Klick neu, neue Nummer bei anderem Titel, Beschriftung); im Browser alle Abläufe durchgespielt.
+
 ## 0.9.195 (Beta)
 - **Kopf am Handy: dauerhaft das Logo, dafür breite und zentrierte Knöpfe (Vorschlag des Nutzers).** Bis 620 px Breite steht im Kopf nur noch das **Logo** (kein Wechsel mit dem Text „IRL4YOU BOX“; am Rechner bleibt der Wechsel alle 30 Sekunden). Der gewonnene Platz geht an die Knöpfe: Sie sind **mindestens 36 × 34 px** groß, haben gleich viel Polster und ihr Inhalt (Symbol oder Text) ist **mittig** (`inline-flex`, zentriert), auch die Sprachauswahl. Auf schmalen Handys (bis 374 px) etwas enger, damit **auch im ungünstigsten Fall** (gelber Update-Punkt, alle Knöpfe und der Live-Knopf) nichts abgeschnitten wird: Bei 375, 340 und 320 px Breite im Browser geprüft, ohne Überlauf, ohne Überlappung mit dem Logo, ohne seitliches Scrollen.
 - Tests: `tools/test_ui_layout.py` jetzt 25 Tests.
