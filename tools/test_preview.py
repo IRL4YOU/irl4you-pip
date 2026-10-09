@@ -798,6 +798,14 @@ class FullFrameRate(unittest.TestCase):
         self.assertIn("#prev_img,#prev_vid{display:block;width:100%;max-width:640px;", self.html)
         self.assertNotIn("Außerhalb des Heimnetzes: 10 Bilder", self.html)
 
+    def test_compact_mode_hides_the_buttons_over_a_running_picture(self):
+        self.assertIn("html.nohead #c_prev.prevrun>summary{visibility:hidden;", self.html)
+        self.assertIn("html.nohead #c_prev.prevrun.showctl>summary{visibility:visible;", self.html)
+        self.assertIn('card.classList.add("prevrun")', self.html)
+        self.assertIn('card.classList.remove("prevrun","showctl")', self.html)
+        self.assertIn('card.addEventListener("pointermove"', self.html)
+        self.assertIn('box.addEventListener("click"', self.html)
+
     def test_headings_option(self):
         self.assertIn('row(g,"heads","Überschriften von Chat und Vorschau",false)', self.html)
         self.assertIn('document.documentElement.classList.toggle("nohead",compact)', self.html)
