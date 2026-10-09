@@ -194,6 +194,7 @@ class UsbRig:
         self.probe_ok = probe_ok
         self.d = H.Daemon(self.tmp, device=os.path.join(self.tmp, "keine-hdmi"), spawn=self._spawn, publishing=lambda key: self.pub, clock=lambda: self.t[0],
                           sysfs=self.tree.v4l, asound=self.tree.asound, probe=self._probe, sysusb=self.usbdir)
+        self.d._pause = lambda seconds: None                                           # die Pause vor dem zweiten Probelauf entfällt im Test
         self.d.cfg.update(enabled=True, source="usb")
 
     def plug(self, card=True):
@@ -293,7 +294,7 @@ class Supervision(unittest.IsolatedAsyncioTestCase):
     async def test_with_a_camera_it_probes_the_formats_in_order_and_starts_the_first_that_works(self):
         r = UsbRig(probe_ok=("mjpeg", 1280, 720, 30))
         await r.d.tick()
-        self.assertEqual(len(r.probes), 4)                                             # H.264 (1080p, 720p) und MJPEG 1080p scheiterten, MJPEG 720p ging
+        self.assertEqual(len(r.probes), 3)                                             # MJPEG 1080p scheiterte (zweimal probiert), MJPEG 720p ging
         self.assertEqual(r.d.state, "starting")
         argv, _ = r.spawned[0]
         self.assertIn("image/jpeg,width=1280,height=720,framerate=30/1", argv)
@@ -301,6 +302,42 @@ class Supervision(unittest.IsolatedAsyncioTestCase):
         st = r.d.status()
         self.assertEqual((st["usb"]["present"], st["usb"]["format"], st["usb"]["audio"]), (True, "MJPEG 1280x720@30", "plughw:CARD=Action6"))
         self.assertEqual(st["settings"]["source"], "usb")
+
+    async def test_a_format_that_fails_once_but_works_on_the_second_try_is_still_taken(self):
+        r = UsbRig(probe_ok=("mjpeg", 1920, 1080, 30))
+        calls = {"n": 0}
+        real = r._probe
+        def flaky(argv):
+            calls["n"] += 1
+            return False if calls["n"] == 1 else real(argv)                           # der erste Probelauf scheitert, der zweite geht (Kamera war kurz belegt)
+        r.d._probe_run = flaky
+        await r.d.tick()
+        self.assertEqual(r.d.status()["usb"]["format"], "MJPEG 1920x1080@30")         # nicht auf 720p zurückgefallen
+
+    async def test_mjpeg_is_tried_first_so_the_box_encoder_sets_the_bitrate(self):
+        self.assertEqual(H.USB_CANDIDATES[0][0], "mjpeg")
+        r = UsbRig(probe_ok=("mjpeg", 1920, 1080, 30))
+        await r.d.tick()
+        argv, _ = r.spawned[0]
+        self.assertIn("image/jpeg,width=1920,height=1080,framerate=30/1", argv)
+        self.assertIn("mpph264enc", argv)
+
+    async def test_a_format_that_keeps_failing_fast_is_dropped_and_the_next_one_is_taken(self):
+        r = UsbRig(probe_ok=None)
+        r.probe_ok = ("mjpeg", 1920, 1080, 30)
+        ok_all = {("mjpeg", 1920, 1080, 30), ("mjpeg", 1280, 720, 30)}
+        r.d._probe_run = lambda argv: next(p for p in argv if p.startswith("image/jpeg")) in {H.usb_caps(c)[1] for c in ok_all}
+        await r.d.tick()
+        self.assertEqual(r.d.status()["usb"]["format"], "MJPEG 1920x1080@30")
+        for _ in range(H.USB_BAD_AFTER):                                              # die Einspeisung stirbt schnell, mehrfach hintereinander
+            proc = r.spawned[-1][1]
+            proc.returncode = 1
+            r.advance(1)
+            await r.d.tick()
+            r.advance(60)
+            await r.d.tick()
+        self.assertIn(("/dev/video2", ("mjpeg", 1920, 1080, 30)), r.d.usb_bad)
+        self.assertEqual(r.d.status()["usb"]["format"], "MJPEG 1280x720@30")          # das nächste Format läuft
 
     async def test_the_probe_result_is_remembered_for_the_same_device(self):
         r = UsbRig()
@@ -321,7 +358,7 @@ class Supervision(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.d.state, "error")
         self.assertIn("kein Bild", r.d.message)
         self.assertIn("Webcam-Modus", r.d.message)
-        self.assertEqual(len(r.probes), len(H.USB_CANDIDATES))
+        self.assertEqual(len(r.probes), 2 * len(H.USB_CANDIDATES))                    # jedes Format zweimal probiert
         self.assertEqual(r.spawned, [])
 
     async def test_no_sound_card_means_silence_but_the_picture_runs(self):
