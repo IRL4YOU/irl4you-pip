@@ -52,7 +52,9 @@ POWER_STAY = 10.0                                        # Sekunden, die eine DJ
 USB_POWER_TEXT = "Die Kamera meldet sich nur kurz am USB und trennt sich wieder, meist fehlt ihr Strom. Bitte einen USB-Hub mit eigenem Netzteil verwenden."
 PROBE_TIMEOUT = 8.0                                      # Sekunden je Probelauf eines Bildformats
 # Bildformate einer USB-Webcam in der Reihenfolge, in der sie probiert werden: (Art, Breite, Höhe, Bildrate)
-USB_CANDIDATES = (("h264", 1920, 1080, 30), ("h264", 1280, 720, 30), ("mjpeg", 1920, 1080, 30), ("mjpeg", 1280, 720, 30), ("raw", 1280, 720, 30), ("raw", 640, 480, 30))
+USB_CANDIDATES = (("mjpeg", 1920, 1080, 30), ("mjpeg", 1280, 720, 30), ("h264", 1920, 1080, 30), ("h264", 1280, 720, 30), ("raw", 1280, 720, 30), ("raw", 640, 480, 30))      # MJPEG zuerst: Es kodiert die Box mit der eingestellten Bitrate (Action 5 Pro: H.264 aus der Kamera nur 1,3 Mbit/s in 1080p, MJPEG-Bild 52 Mbit/s, nach dem Kodierer der Box ~8 Mbit/s)
+USB_BAD_AFTER = 3                                        # so oft hintereinander schnell gescheitert: dieses Format wird nicht mehr genommen, das nächste kommt dran
+PROBE_RETRY_PAUSE = 1.0                                  # Sekunden vor dem zweiten Probelauf (die Kamera ist direkt nach dem Stoppen der Einspeisung manchmal kurz belegt)
 BITRATE_RANGE = (1000, 20000)                            # kbit/s
 FPS_CHOICES = (25, 30)
 AUDIO_CHOICES = ("hdmi", "none")
@@ -331,6 +333,9 @@ class Daemon:
         self._probe_run = probe or self._probe_process
         self.usb = {"present": False, "name": "", "node": "", "format": "", "audio": "", "power": False}      # Zustand der USB-Webcam (Quelle "usb")
         self.usb_choice = None                                                                  # (Knoten, Bildformat) des letzten gelungenen Probelaufs
+        self.usb_bad = set()                                                                    # (Knoten, Bildformat), die in der Einspeisung wiederholt schnell scheiterten
+        self.usb_cur = None                                                                     # (Knoten, Bildformat) der laufenden Einspeisung
+        self.usb_quick_fails = 0
         self.token = self._load_token()
         self.cfg = self.load()
         self.state, self.message = "off", ""
@@ -427,11 +432,31 @@ class Daemon:
         if self.usb_choice and self.usb_choice[0] == cam["node"]:
             return self.usb_choice[1]
         for cand in USB_CANDIDATES:
-            if self._probe_run(usb_probe_argv(cam["node"], cand)):
+            if (cam["node"], cand) in self.usb_bad:
+                continue
+            argv = usb_probe_argv(cam["node"], cand)
+            if self._probe_run(argv) or (self._pause(PROBE_RETRY_PAUSE) or self._probe_run(argv)):      # ein zweiter Versuch, bevor auf ein schlechteres Format zurückgegriffen wird
                 self.usb_choice = (cam["node"], cand)
                 return cand
         self.usb_choice = None
         return None
+
+    @staticmethod
+    def _pause(seconds):
+        time.sleep(seconds)
+
+    def _usb_note_failure(self):
+        """Die Einspeisung ist schnell gescheitert: nach USB_BAD_AFTER Fehlern hintereinander wird dieses Bildformat übergangen (das nächste kommt dran)."""
+        if self.cfg.get("source") != "usb" or not self.usb_cur or self.clock() - self.started >= STABLE:
+            self.usb_quick_fails = 0
+            return
+        self.usb_quick_fails += 1
+        if self.usb_quick_fails >= USB_BAD_AFTER:
+            self.usb_bad.add(self.usb_cur)
+            if self.usb_choice == self.usb_cur:
+                self.usb_choice = None
+            self.usb_quick_fails = 0
+            log.warning("Das Bildformat %s läuft nicht stabil, die Box nimmt das nächste", usb_caps(self.usb_cur[1])[0])
 
     def _read_status_file(self):
         with open(self.status_file) as f:
@@ -492,6 +517,7 @@ class Daemon:
             argv, cand = await self._usb_argv()
             if argv is None:
                 return
+            self.usb_cur = (self.usb["node"], cand)
             sig = dict(sig, width=cand[1], height=cand[2], fps=float(cand[3]), device=self.usb["node"])     # das gewählte Format ist ab jetzt "das Signal" (sonst Neustart beim nächsten Durchgang)
         else:
             argv = feeder_argv(self.cfg, self.rtmp_port, self.rtmp_app, self.device, self.audio_device)
@@ -560,6 +586,7 @@ class Daemon:
             self.proc, self._reader = None, None
             if self.clock() - self.started >= STABLE:
                 self.fails = 0
+            self._usb_note_failure()
             self._failed(friendly_error(list(self.tail), self.cfg.get("source") == "usb") if rc else "Die Einspeisung wurde beendet")
             self.restarts += 1
             return
