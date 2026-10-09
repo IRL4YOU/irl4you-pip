@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.166 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
+**Version 0.9.167 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
 
 > **Beta heißt:** Es läuft im Alltag, aber noch nicht alles ist über lange Zeit und unterwegs geprüft (siehe "Was noch fehlt oder ungetestet ist"). Neue Versionen gibt es oft; zurück auf eine frühere Version geht in der Oberfläche.
 
@@ -166,9 +166,9 @@ Die eingebauten Bluetooth-Module der Boxen empfangen schlecht, darum ist ein USB
 | ASUS USB-BT500 (`0b05:190e`) | Realtek RTL8761B | **getestet**, läuft auf der Orange Pi 5 Plus (auch ohne Zusatztreiber) |
 | TP-Link UB500 (`2357:0604`) | Realtek RTL8761BUV | der Kernel 5.10 kennt ihn nicht; **die Box richtet den Treiber beim Einstecken selbst ein** (siehe unten). **Noch nicht an der Box mit diesem Stick geprüft** |
 | weitere Realtek-Sticks (`2550:8761`, `2c4e:0115` Mercusys MA530, `0bda:8771`, `0bda:a725`, `2b89:8761`) | Realtek RTL8761B | wie der UB500 (Treiber automatisch), nicht geprüft |
-| UGREEN Bluetooth 5.4 und 6.0 (CM748, `33fa:0010`/`33fa:0012`) | BARROT BR8654/BR8554 | **geht auf dem Kernel 5.10 der BELABOX nicht**: der Chip bleibt bei der Einrichtung hängen, es entsteht kein Adapter. Laut Berichten ist das erst ab Linux 6.18 (und den Langzeitzweigen ab 6.12.58 und 6.6.117) behoben. Die Oberfläche erkennt diesen Stick und sagt es |
+| UGREEN Bluetooth 5.4 und 6.0 (CM748, `33fa:0010`/`33fa:0012`) | BARROT BR8654/BR8554 | der Kernel 5.10 startet den Chip nicht von allein (er schickt ein Zufallsbyte zu viel, danach liegen alle Antworten verschoben); **die Box richtet den Treiber beim Einstecken selbst ein** (siehe unten). **Getestet** mit dem UGREEN BT6.0 (`33fa:0012`) an der Orange Pi 5 Plus, läuft als zweiter Adapter neben dem TP-Link |
 
-**Automatischer Treiber für Realtek-Sticks.** Manche Realtek-Sticks kennt der Kernel 5.10 nicht in seiner Tabelle: Sie starten ohne Firmware, finden keine Kameras und wirken tot. Steckt so ein Stick (Liste oben) beim Einstecken oder beim Start, baut die Box aus den mitgelieferten Original-Quellen des Kernels
+**Automatischer Treiber für Realtek- und Barrot-Sticks.** Manche Realtek-Sticks kennt der Kernel 5.10 nicht in seiner Tabelle: Sie starten ohne Firmware, finden keine Kameras und wirken tot. Barrot-Sticks (UGREEN) brauchen keine Firmware, schicken aber ein Zufallsbyte zu viel; der Treiber enthält dafür die Prüfung des Linux-Kernels (Commit 7722d6fb54) und eine zweite für das einzelne Byte als eigenes USB-Paket. Steckt so ein Stick (Liste oben) beim Einstecken oder beim Start, baut die Box aus den mitgelieferten Original-Quellen des Kernels
 (`bluetooth-src/`, v5.10.160, GPL-2.0, unverändert) das Modul `btusb` neu, mit zusätzlichen Kennungen, spielt es nach `/lib/modules/<Kernel>/updates/` ein und lädt es. Das dauert wenige Minuten. Dabei gilt:
 
 - Gebaut wird nur auf dem passenden Kernel (5.10.160) und mit den vorhandenen Kernel-Headern; die Quellen werden vor dem Bau per SHA-256 geprüft, es wird nichts aus dem Internet geholt.

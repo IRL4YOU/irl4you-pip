@@ -1,5 +1,5 @@
 [Unit]
-Description=IRL4YOU BOX Bluetooth-Treiber für Realtek-Sticks (baut bei Bedarf das Modul btusb neu)
+Description=IRL4YOU BOX Bluetooth-Treiber für Realtek- und Barrot-Sticks (baut bei Bedarf das Modul btusb neu)
 After=local-fs.target
 
 [Service]
@@ -7,3 +7,22 @@ Type=oneshot
 ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-btdriver.py auto
 TimeoutStartSec=25min
 Nice=10
+# Root-Rechte nur für diese eine Aufgabe: Der Dienst nimmt keine Eingaben an (feste Aufrufe "auto" und "uninstall"), darf nur Kernelmodule laden und
+# Kernelmeldungen lesen, schreibt nur in die unten genannten Ordner und kann keine neuen Rechte erlangen.
+CapabilityBoundingSet=CAP_SYS_MODULE CAP_SYSLOG CAP_DAC_OVERRIDE CAP_FOWNER CAP_CHOWN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/lib/modules /run
+StateDirectory=pipbox-btdriver
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native

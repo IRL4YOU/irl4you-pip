@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Root-Helfer: Treiber für Realtek-Bluetooth-Sticks, die der Kernel nicht kennt (zum Beispiel TP-Link UB500).
+"""Root-Helfer: Treiber für Bluetooth-Sticks, die der Kernel 5.10 nicht richtig kennt (Realtek, zum Beispiel TP-Link UB500, und Barrot, zum Beispiel
+UGREEN BT6.0).
 
 Der Kernel 5.10 der BELABOX kennt einige Realtek-Sticks (RTL8761B/BU) nicht in seiner Tabelle. Solche Sticks starten dann ohne
 Firmware, finden keine Kameras und wirken tot. Dieser Helfer baut aus den mitgelieferten, unveränderten Kernelquellen (GPL-2.0,
 Ordner /opt/pipbox/btusb-src, aus dem Kernel v5.10.160) das Modul btusb neu, mit einigen zusätzlichen Kennungen, und spielt es
 nach /lib/modules/<Kernel>/updates/ ein. Das Standardmodul bleibt unberührt auf der Platte; "Rückweg" ist, die eine Datei zu löschen.
+
+Barrot-Sticks (zum Beispiel UGREEN BT6.0, 33fa:0012) schicken nach der Antwort auf "Read Local Extended Features" (genau 16 Byte, so groß wie ein
+USB-Paket) ein einzelnes Zufallsbyte hinterher. Es kommt als eigenes, ein Byte langes Paket vor der nächsten Antwort an; ab dann liegt jede Antwort um ein
+Byte verschoben, der Start des Adapters scheitert und er bleibt auf DOWN (am USB-Mitschnitt gemessen, Kernel 5.10.160, RK3588). Der Kernel hat das mit dem
+Commit 7722d6fb54 ("Bluetooth: btusb: Check for unexpected bytes when defragmenting HCI frames", getestet mit genau diesem Stick) für Überhang im selben
+Paket behoben. Der Helfer übernimmt diese Prüfung und ergänzt die zweite für das einzelne Byte als eigenes Paket (`patch_recv_intr`): Ein neues Ereignis
+beginnt nie mit weniger Bytes als ein Ereigniskopf. Der Stick selbst braucht keine Firmware.
 
 Aufruf (nur durch pipbox-btdriver.service/.timer, keine Eingaben von außen):
   auto       prüft, ob ein Stick steckt, der den Treiber braucht, und richtet ihn dann ein (udev beim Einstecken, Zeitgeber alle 15 min)
@@ -48,9 +56,38 @@ CANDIDATES = {
     "0bda:a725": "Realtek (0bda:a725)",
     "2b89:8761": "Realtek RTL8761B (2b89:8761)",
 }
+# Barrot-Sticks: kein Eintrag in der Tabelle nötig (sie laufen über die Geräteklasse am Standardtreiber), aber die Prüfung der Ereignisse (siehe oben).
+BARROT = {
+    "33fa:0012": "UGREEN BT6.0 Adapter (Barrot)",
+    "33fa:0010": "Barrot Bluetooth-Stick (33fa:0010)",
+}
+CANDIDATES.update(BARROT)
 # Zusätzlich im Treiber eingetragen, löst aber nichts aus: läuft auch ohne (ASUS USB-BT500), bekommt mit dem Treiber die Firmware.
 EXTRA_IDS = {"0b05:190e": "ASUS USB-BT500 (Realtek RTL8761B)"}
 ALL_IDS = {**CANDIDATES, **EXTRA_IDS}
+REALTEK_IDS = {i: n for i, n in ALL_IDS.items() if i not in BARROT}          # nur diese kommen mit BTUSB_REALTEK in die Tabelle des Treibers
+# Stelle in btusb_recv_intr (Kernel 5.10.160): hier ist ein Ereignis vollständig, und es können noch Bytes übrig sein
+# C-Quelltext als ASCII-Bytes (kein Oberflächentext, bleibt aus der Übersetzung heraus)
+RECV_ANCHOR = b"\t\tif (!hci_skb_expect(skb)) {\n\t\t\t/* Complete frame */\n\t\t\tdata->recv_event(data->hdev, skb);\n".decode("ascii")
+COMPLETE_MARK = b"\t\t\t/* Complete frame */\n".decode("ascii")
+IF_NO_SKB = b"\t\tif (!skb) {\n".decode("ascii")
+DONE_MARKS = (b"Unexpected continuation".decode("ascii"), b"Unexpected stray byte".decode("ascii"))     # schon eingebaut, wenn beide im Text stehen
+RECV_START_ANCHOR = b"\t\tif (!skb) {\n\t\t\tskb = bt_skb_alloc(HCI_MAX_EVENT_SIZE, GFP_ATOMIC);\n".decode("ascii")
+RECV_START_GUARD = (
+    b"\t\t\t/* IRL4YOU BOX: a new event always starts with the complete header. A single byte as a packet of its own is a\n"
+    b"\t\t\t * bug of the stick (Barrot appends it after a 16 byte reply): drop it, or every further reply is shifted. */\n"
+    b"\t\t\tif (count < HCI_EVENT_HDR_SIZE) {\n"
+    b"\t\t\t\tbt_dev_warn(data->hdev, \"Unexpected stray byte: %d bytes\", count);\n"
+    b"\t\t\t\tbreak;\n"
+    b"\t\t\t}\n\n").decode("ascii")
+RECV_GUARD = (
+    b"\t\t\t/* IRL4YOU BOX, after Linux 7722d6fb54: every data packet belongs to at least one event. If fewer bytes than an event\n"
+    b"\t\t\t * header are left after a complete event, that is a bug of the stick (Barrot sends one byte too many): drop them,\n"
+    b"\t\t\t * or every further reply is shifted by one byte and the start of the adapter fails. */\n"
+    b"\t\t\tif (count && count < HCI_EVENT_HDR_SIZE) {\n"
+    b"\t\t\t\tbt_dev_warn(data->hdev, \"Unexpected continuation: %d bytes\", count);\n"
+    b"\t\t\t\tcount = 0;\n"
+    b"\t\t\t}\n\n").decode("ascii")
 
 # SHA-256 der mitgelieferten Quellen (unverändert aus dem Kernel v5.10.160, von zwei Servern verglichen)
 SRC_SHA256 = {
@@ -120,9 +157,21 @@ def wanted(present=None):
     return {i: CANDIDATES[i] for i in sorted(CANDIDATES) if i in present}
 
 
+def patch_recv_intr(text):
+    """Baut die Prüfungen auf überzählige Bytes in btusb_recv_intr ein (Barrot-Sticks): Überhang nach einem Ereignis (Linux 7722d6fb54) und ein einzelnes
+    Byte als eigenes Datenpaket am Anfang eines Ereignisses. Schon eingebaut: unverändert."""
+    if all(m in text for m in DONE_MARKS):
+        return text
+    if text.count(RECV_ANCHOR) != 1 or text.count(RECV_START_ANCHOR) != 1:
+        raise RuntimeError("btusb.c hat nicht den erwarteten Aufbau (Ankerpunkt fehlt)")
+    head, tail = RECV_ANCHOR.split(COMPLETE_MARK, 1)
+    text = text.replace(RECV_ANCHOR, head + RECV_GUARD + COMPLETE_MARK + tail, 1)
+    return text.replace(RECV_START_ANCHOR, IF_NO_SKB + RECV_START_GUARD + RECV_START_ANCHOR.split("\n", 1)[1], 1)
+
+
 def patch_source(text, ids=None):
     """Trägt die zusätzlichen Kennungen hinter dem Ankerpunkt in btusb.c ein (schon vorhandene werden übersprungen)."""
-    ids = list(ALL_IDS if ids is None else ids)
+    ids = list(REALTEK_IDS if ids is None else ids)
     if text.count(ANCHOR) != 1:
         raise RuntimeError("btusb.c hat nicht den erwarteten Aufbau (Ankerpunkt fehlt)")
     lines = []
@@ -223,7 +272,7 @@ def build_module(rel=None, ids=None):
         with open(os.path.join(tmp, "btusb.c"), encoding="utf-8", errors="surrogateescape") as f:
             text = f.read()
         with open(os.path.join(tmp, "btusb.c"), "w", encoding="utf-8", errors="surrogateescape") as f:
-            f.write(patch_source(text, ids))
+            f.write(patch_recv_intr(patch_source(text, ids)))
         with open(os.path.join(tmp, "Kbuild"), "w") as f:
             f.write("obj-m := btusb.o\n")
         r = run(["make", "-C", f"{LIB_MODULES}/{rel}/build", f"M={tmp}", "modules"], timeout=BUILD_TIMEOUT)
@@ -261,6 +310,50 @@ def loaded_srcversion():
             return f.read().strip()
     except OSError:
         return ""
+
+
+def hci_for_usb(ident, bt_root="/sys/class/bluetooth", resolve=os.path.realpath):
+    """Name des Adapters (hciN), der zum USB-Gerät mit dieser Kennung gehört (über den Pfad in /sys), sonst ''."""
+    try:
+        names = sorted(n for n in os.listdir(bt_root) if re.fullmatch(r"hci\d+", n))
+    except OSError:
+        return ""
+    for n in names:
+        p = resolve(os.path.join(bt_root, n))
+        while p and p != os.path.dirname(p):
+            try:
+                with open(os.path.join(p, "idVendor")) as f:
+                    v = f.read().strip().lower()
+                with open(os.path.join(p, "idProduct")) as f:
+                    pr = f.read().strip().lower()
+            except OSError:
+                p = os.path.dirname(p)
+                continue
+            if f"{v}:{pr}" == ident:
+                return n
+            break
+    return ""
+
+
+def barrot_errors(ids, timeout=20, hci=hci_for_usb, sleep=time.sleep, lines=None):
+    """Läuft jeder Barrot-Stick nach dem Laden des Treibers? Wartet, bis sein Adapter da ist, und sucht in den Kernelmeldungen nach Zeitüberschreitungen
+    beim Start (genau das ist der Fehler ohne die Prüfung). lines: liefert die neuen Kernelmeldungen. Gibt Fehlertexte zurück, leer = in Ordnung."""
+    bad = []
+    for i in ids:
+        end, name = time.time() + timeout, ""
+        while True:
+            name = hci(i)
+            if name or time.time() >= end:
+                break
+            sleep(1)
+        if not name:
+            bad.append(f"{i}: es gibt keinen Adapter")
+            continue
+        sleep(6)                                                        # der Start braucht ein paar Sekunden (je Befehl zwei Sekunden Zeitüberschreitung)
+        hit = [x.strip()[:160] for x in lines() if re.search(rf"{name}: .*(tx timeout|Opcode .* failed|hardware error)", x)]
+        if hit:
+            bad.append(f"{i}: {hit[-1]}")
+    return bad
 
 
 def firmware_errors(text):
@@ -346,7 +439,7 @@ def do_auto():
     status(state="working", ids=sorted(need), message=f"Treiber für {names} wird gebaut und eingerichtet (einige Minuten) …")
     backup, tmpdir, done = None, None, False
     try:
-        ko = build_module(rel, list(ALL_IDS))
+        ko = build_module(rel, list(REALTEK_IDS))
         tmpdir = os.path.dirname(ko)
         want_src = run(["modinfo", "-F", "srcversion", ko]).stdout.strip()
         before = len(dmesg_lines())
@@ -356,11 +449,17 @@ def do_auto():
         if want_src and loaded_srcversion() != want_src:
             raise RuntimeError("Das neue Modul wurde nicht geladen (das alte läuft noch)")
         new = dmesg_lines()[before:]
-        bad = firmware_errors("\n".join(new))
-        if bad:
-            raise RuntimeError("Firmware des Sticks ließ sich nicht laden: " + bad[-1])
-        if not any("RTL" in x for x in new):
-            raise RuntimeError("Der Treiber hat keine Firmware für den Stick geladen (keine Meldung des Realtek-Teils)")
+        if any(i not in BARROT for i in need):
+            bad = firmware_errors("\n".join(new))
+            if bad:
+                raise RuntimeError("Firmware des Sticks ließ sich nicht laden: " + bad[-1])
+            if not any("RTL" in x for x in new):
+                raise RuntimeError("Der Treiber hat keine Firmware für den Stick geladen (keine Meldung des Realtek-Teils)")
+        barrot = [i for i in need if i in BARROT]
+        if barrot:
+            bad = barrot_errors(barrot, lines=lambda: dmesg_lines()[before:])
+            if bad:
+                raise RuntimeError("Der Barrot-Stick startet auch mit dem neuen Treiber nicht: " + bad[-1])
         write_json(marker("installed.json"), {"kernel": rel, "ids": sorted(ALL_IDS), "time": int(time.time())})
         if os.path.exists(marker("failed.json")):
             os.remove(marker("failed.json"))

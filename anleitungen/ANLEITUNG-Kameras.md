@@ -75,7 +75,7 @@ Die eingebauten Bluetooth-Module der Boxen empfangen schlecht, ein USB-Stick ist
 | ASUS USB-BT500 | getestet, läuft an der Orange Pi 5 Plus |
 | TP-Link UB500 | Box richtet den Treiber beim Einstecken selbst ein (dauert wenige Minuten); mit diesem Stick noch nicht an der Box geprüft |
 | weitere Realtek-Sticks (zum Beispiel Mercusys MA530) | wie der UB500, nicht geprüft |
-| UGREEN Bluetooth 5.4 und 6.0 | geht auf dem Kernel der BELABOX nicht; die Oberfläche erkennt ihn und sagt es |
+| UGREEN Bluetooth 5.4 und 6.0 | Box richtet den Treiber beim Einstecken selbst ein (dauert wenige Minuten); getestet mit dem UGREEN BT6.0 an der Orange Pi 5 Plus |
 
 Der Treiber wird nie während einer Übertragung eingerichtet. Nach einem Wechsel des Sticks fragt die Kamera eventuell einmal
 erneut nach der Kopplung.

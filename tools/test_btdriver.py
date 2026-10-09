@@ -1,4 +1,4 @@
-"""Tests für den Treiber-Helfer für Realtek-Bluetooth-Sticks (install/pipbox-btdriver.py). Ohne Hardware, ohne Bau, ohne Laden von Modulen."""
+"""Tests für den Treiber-Helfer für Bluetooth-Sticks (Realtek und Barrot, install/pipbox-btdriver.py). Ohne Hardware, ohne Bau, ohne Laden von Modulen."""
 import hashlib
 import importlib.util
 import json
@@ -53,7 +53,7 @@ class Patch(unittest.TestCase):
 
     def test_adds_every_id_exactly_once_after_the_anchor(self):
         new = bt.patch_source(self.text)
-        for i in bt.ALL_IDS:
+        for i in bt.REALTEK_IDS:
             v, p = i.split(":")
             self.assertEqual(new.lower().count(f"usb_device(0x{v}, 0x{p})"), 1, i)
         self.assertLess(new.index(bt.ANCHOR), new.index("USB_DEVICE(0x2357, 0x0604)"))
@@ -105,10 +105,10 @@ class Detection(unittest.TestCase):
         return root
 
     def test_only_candidates_count(self):
-        root = self.sysfs([UB500, "0b05:190e", "1d6b:0002", "33fa:0010"])
+        root = self.sysfs([UB500, "0b05:190e", "1d6b:0002", "8087:0a2b"])
         present = bt.usb_ids_present(root)
         self.assertIn("0b05:190e", present)
-        self.assertEqual(list(bt.wanted(present)), [UB500])                    # ASUS (läuft schon) und Barrot lösen nichts aus
+        self.assertEqual(list(bt.wanted(present)), [UB500])                    # ASUS (läuft schon) und ein Intel-Stick lösen nichts aus
 
     def test_asus_alone_triggers_nothing(self):
         self.assertEqual(bt.wanted(bt.usb_ids_present(self.sysfs(["0b05:190e"]))), {})
@@ -358,6 +358,153 @@ class Uninstall(unittest.TestCase):
             self.assertFalse(os.path.exists(bt.marker("installed.json")))
 
 
+class Barrot(unittest.TestCase):
+    """UGREEN BT6.0 (Barrot 33fa:0012): ein Byte zu viel in einer Antwort verschiebt alle folgenden; der Kernel-Fix 7722d6fb54 kommt in das neue Modul."""
+    UGREEN = "33fa:0012"
+
+    def setUp(self):
+        self.text = rd(os.path.join(ROOT, "bluetooth-src", "btusb.c"))
+
+    def test_the_sticks_are_candidates_and_trigger_the_build(self):
+        self.assertIn(self.UGREEN, bt.CANDIDATES)
+        self.assertIn("33fa:0010", bt.CANDIDATES)
+        self.assertEqual(bt.wanted({self.UGREEN, "8087:0a2b"}), {self.UGREEN: bt.CANDIDATES[self.UGREEN]})
+
+    def test_barrot_sticks_never_get_the_realtek_table_entry(self):
+        new = bt.patch_recv_intr(bt.patch_source(self.text))
+        self.assertNotIn("usb_device(0x33fa", new.lower())                       # sie laufen über die Geräteklasse am Standardtreiber
+        self.assertNotIn(self.UGREEN, bt.REALTEK_IDS)
+        self.assertEqual(set(bt.REALTEK_IDS) | set(bt.BARROT), set(bt.ALL_IDS))
+
+    def test_guard_is_inserted_once_before_the_frame_is_handed_over(self):
+        new = bt.patch_recv_intr(self.text)
+        self.assertEqual(new.count("Unexpected continuation"), 1)
+        i = new.index("Unexpected continuation")
+        self.assertLess(new.index("if (!hci_skb_expect(skb)) {", i - 900), i)
+        self.assertLess(i, new.index("data->recv_event(data->hdev, skb);", i))             # vor der Übergabe des Ereignisses
+        self.assertIn("count && count < HCI_EVENT_HDR_SIZE", new)
+        self.assertIn("count = 0;", new[i:i + 160])
+
+    def test_a_single_byte_packet_at_the_start_of_an_event_is_dropped(self):
+        """Am USB-Mitschnitt des UGREEN: nach der 16-Byte-Antwort kommt ein einzelnes Byte (0x0c) als eigenes Paket, dann die echte Antwort."""
+        new = bt.patch_recv_intr(self.text)
+        self.assertEqual(new.count("Unexpected stray byte"), 1)
+        i = new.index("Unexpected stray byte")
+        self.assertLess(new.index("if (!skb) {", i - 700), i)
+        self.assertLess(i, new.index("skb = bt_skb_alloc(HCI_MAX_EVENT_SIZE, GFP_ATOMIC);", i))              # vor dem Anlegen des Ereignisses
+        self.assertIn("count < HCI_EVENT_HDR_SIZE", new[i - 200:i])
+        self.assertIn("break;", new[i:i + 120])
+        self.assertEqual(new.count("static int btusb_recv_intr"), 1)
+        self.assertGreater(new.index("static int btusb_recv_bulk"), i)                                       # nur in btusb_recv_intr, nicht im Bulk-Zweig
+
+    def test_only_lines_are_added_to_the_original(self):
+        new = bt.patch_recv_intr(self.text)
+        a, b = self.text.splitlines(), new.splitlines()
+        self.assertEqual([x for x in a if x not in set(b)], [])                            # nichts entfernt oder geändert
+        self.assertEqual(len(b) - len(a), 15)
+
+    def test_is_idempotent_and_refuses_an_unknown_layout(self):
+        once = bt.patch_recv_intr(self.text)
+        self.assertEqual(bt.patch_recv_intr(once), once)
+        with self.assertRaises(RuntimeError):
+            bt.patch_recv_intr("nichts davon")
+        with self.assertRaises(RuntimeError):
+            bt.patch_recv_intr(self.text.replace(bt.RECV_ANCHOR, "x"))
+
+    def test_the_build_applies_both_patches(self):
+        src = os.path.join(ROOT, "install", "pipbox-btdriver.py")
+        code = rd(src)
+        self.assertIn("patch_recv_intr(patch_source(text, ids))", code)
+        self.assertIn("build_module(rel, list(REALTEK_IDS))", code)
+
+    def test_adapter_is_found_by_usb_id_through_the_sysfs_path(self):
+        root = tempfile.mkdtemp()
+        usb = os.path.join(root, "usb", "5-1.3")
+        os.makedirs(os.path.join(usb, "5-1.3_1.0", "bluetooth", "hci1"))
+        with open(os.path.join(usb, "idVendor"), "w") as f:
+            f.write("33fa\n")
+        with open(os.path.join(usb, "idProduct"), "w") as f:
+            f.write("0012\n")
+        other = os.path.join(root, "usb", "4-1")
+        os.makedirs(os.path.join(other, "bluetooth", "hci0"))
+        with open(os.path.join(other, "idVendor"), "w") as f:
+            f.write("2357\n")
+        with open(os.path.join(other, "idProduct"), "w") as f:
+            f.write("0604\n")
+        bt_root = os.path.join(root, "bt")
+        for n in ("hci0", "hci1", "hci0_16"):                                                # (hci0:16 ist kein Adapter: der Name passt nicht)
+            os.makedirs(os.path.join(bt_root, n))
+        where = {"hci1": os.path.join(usb, "5-1.3_1.0", "bluetooth", "hci1"), "hci0": os.path.join(other, "bluetooth", "hci0")}
+        res = lambda path: where.get(os.path.basename(path), path)
+        self.assertEqual(bt.hci_for_usb(self.UGREEN, bt_root, res), "hci1")
+        self.assertEqual(bt.hci_for_usb("2357:0604", bt_root, res), "hci0")
+        self.assertEqual(bt.hci_for_usb("0bda:8771", bt_root, res), "")
+        self.assertEqual(bt.hci_for_usb(self.UGREEN, os.path.join(root, "gibtsnicht"), res), "")
+
+    def test_check_after_loading_the_driver(self):
+        sleeps = []
+        ok = bt.barrot_errors([self.UGREEN], hci=lambda i: "hci1", sleep=sleeps.append, lines=lambda: ["Bluetooth: hci0: irgendwas"])
+        self.assertEqual(ok, [])
+        bad = bt.barrot_errors([self.UGREEN], hci=lambda i: "hci1", sleep=sleeps.append,
+                               lines=lambda: ["Bluetooth: hci1: command 0x0c01 tx timeout", "Bluetooth: hci0: command 0x0c01 tx timeout"])
+        self.assertEqual(len(bad), 1)
+        self.assertIn("hci1", bad[0])
+        self.assertEqual(bt.barrot_errors([self.UGREEN], timeout=0, hci=lambda i: "", sleep=sleeps.append, lines=lambda: []),
+                         [self.UGREEN + ": es gibt keinen Adapter"])
+        self.assertIn(6, sleeps)                                                             # der Start des Adapters bekommt Zeit
+
+    def test_udev_rule_exists_for_both_ids(self):
+        rules = rd(os.path.join(ROOT, "install", "80-pipbox-btdriver.rules"))
+        for pid in ("0012", "0010"):
+            self.assertIn(f'ATTR{{idVendor}}=="33fa", ATTR{{idProduct}}=="{pid}"', rules)
+
+
+class BarrotFlow(Flow):
+    """Ablauf mit einem Barrot-Stick: keine Realtek-Firmware nötig, dafür muss der Adapter nach dem Laden laufen."""
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.object(bt, "wanted", lambda present=None: {"33fa:0012": bt.CANDIDATES["33fa:0012"]})
+        p.start()
+        self.addCleanup(p.stop)
+        self.new_dmesg = []                                                                   # keine Realtek-Meldung
+        self.barrot = []
+        p2 = mock.patch.object(bt, "barrot_errors", lambda ids, **kw: self.barrot)
+        p2.start()
+        self.addCleanup(p2.stop)
+
+    def test_success_needs_no_realtek_firmware_message(self):
+        bt.do_auto()
+        self.assertEqual(self.calls, ["build", "install", "reload"])
+        self.assertEqual(self.status["state"], "ok")
+        with open(os.path.join(bt.PERSIST, "installed.json")) as rf:
+            self.assertIn("33fa:0012", json.load(rf)["ids"])
+
+    def test_a_stick_that_still_fails_rolls_back_and_is_not_retried(self):
+        self.barrot = ["33fa:0012: Bluetooth: hci1: command 0x0c01 tx timeout"]
+        bt.do_auto()
+        self.assertEqual(self.calls[-1], "rollback")
+        self.assertEqual(self.status["state"], "failed")
+        self.assertIn("Barrot", self.status["message"])
+        self.calls.clear()
+        bt.do_auto()
+        self.assertEqual(self.calls, [])
+
+    def test_the_old_realtek_installation_is_rebuilt_once_the_new_ids_are_known(self):
+        os.makedirs(bt.PERSIST, exist_ok=True)
+        os.makedirs(os.path.dirname(bt.module_path(self.rel)), exist_ok=True)
+        with open(bt.module_path(self.rel), "wb") as f:
+            f.write(b"ELF")
+        with open(os.path.join(bt.PERSIST, "installed.json"), "w") as f:
+            json.dump({"kernel": self.rel, "ids": ["2357:0604", "0b05:190e"]}, f)
+        bt.do_auto()
+        self.assertEqual(self.calls[:2], ["build", "install"])
+
+
+for _n in [m for m in dir(Flow) if m.startswith("test_") and m not in BarrotFlow.__dict__]:
+    setattr(BarrotFlow, _n, None)                                                         # die Tests für den Realtek-Ablauf laufen nur in Flow
+
+
 class Wiring(unittest.TestCase):
     def test_udev_rules_match_the_candidates(self):
         rules = rd(os.path.join(ROOT, "install", "80-pipbox-btdriver.rules"))
@@ -383,6 +530,21 @@ class Wiring(unittest.TestCase):
         self.assertIn("OnBootSec=", rd(os.path.join(ROOT, "install", "pipbox-btdriver.timer")))
         r = subprocess.run(["sh", "-n", os.path.join(ROOT, "install", "install.sh")], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_service_runs_with_root_rights_only_for_this_task(self):
+        """Der Helfer ist die einzige Stelle mit Root-Rechten für die Treiber: eingeschränkt auf Module laden und Kernelmeldungen lesen, Schreiben nur in
+        wenigen Ordnern, keine neuen Rechte, keine Eingaben von außen."""
+        unit = rd(os.path.join(ROOT, "install", "pipbox-btdriver.service"))
+        want = {"NoNewPrivileges": "yes", "ProtectSystem": "strict", "ProtectHome": "yes", "PrivateTmp": "yes", "RestrictSUIDSGID": "yes",
+                "ProtectKernelTunables": "yes", "RestrictNamespaces": "yes", "LockPersonality": "yes"}
+        got = dict(x.split("=", 1) for x in unit.splitlines() if "=" in x and not x.startswith("#"))
+        for k, v in want.items():
+            self.assertEqual(got.get(k), v, k)
+        self.assertEqual(set(got["CapabilityBoundingSet"].split()), {"CAP_SYS_MODULE", "CAP_SYSLOG", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_CHOWN"})
+        self.assertEqual(got["ReadWritePaths"].split(), ["/lib/modules", "/run"])
+        self.assertEqual(got["StateDirectory"], "pipbox-btdriver")                         # legt /var/lib/pipbox-btdriver an (Merkzettel des Helfers)
+        self.assertNotIn("User=", unit)                                                    # Root bleibt nötig (Module laden), aber nur mit diesen Einschränkungen
+        self.assertEqual(got["ExecStart"].split()[-1], "auto")                             # fester Aufruf, keine Eingabe
 
     def test_mode_words_are_fixed(self):
         with mock.patch.object(sys, "argv", ["x", "rm -rf /"]), mock.patch.object(bt, "log", lambda m: None), \
