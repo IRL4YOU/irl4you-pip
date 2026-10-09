@@ -822,5 +822,71 @@ class TailscaleSections(unittest.TestCase):
         self.assertNotIn("magicsock", j)
 
 
+
+class NetworkSection(unittest.TestCase):
+    """Abschnitt "Netzwerk beim Start": zeigt, ob eine feste Adresse nach einem Neustart fehlt (Issue #65): Adressen mit Art, Netzdateien, Meldungen von ifupdown/ifplugd/DHCP."""
+
+    IP_J = json.dumps([
+        {"ifname": "lo", "operstate": "UNKNOWN", "addr_info": [{"family": "inet", "local": "127.0.0.1", "prefixlen": 8, "label": "lo", "valid_life_time": 4294967295}]},
+        {"ifname": "eth0", "operstate": "UP", "addr_info": [
+            {"family": "inet", "local": "192.168.80.132", "prefixlen": 24, "dynamic": True, "label": "eth0", "valid_life_time": 27547},
+            {"family": "inet", "local": "192.168.80.50", "prefixlen": 24, "label": "eth0:pb", "valid_life_time": 4294967295},
+            {"family": "inet6", "local": "fe80::1", "prefixlen": 64}]},
+        {"ifname": "eth1", "operstate": "DOWN", "addr_info": []}])
+
+    def test_addresses_show_kind_lifetime_and_label(self):
+        def fake_run(cmd, timeout=15, limit=400_000):
+            return self.IP_J if cmd[:3] == ["ip", "-j", "-d"] else ""
+        with mock.patch.object(H, "run", side_effect=fake_run), mock.patch.object(H, "read_small", lambda p, limit=200: "1" if "eth0" in p else "0"):
+            out = H.net_addresses()
+        self.assertIn("eth0: Zustand UP, Kabel/Träger ja, 2 IPv4-Adresse(n)", out)
+        self.assertIn("192.168.80.132/24 [dynamisch, per DHCP (Rest 27547 s), Label eth0]", out)
+        self.assertIn("192.168.80.50/24 [fest (forever), Label eth0:pb]", out)                  # die feste Adresse ist zu erkennen
+        self.assertIn("eth1: Zustand DOWN, Kabel/Träger nein, 0 IPv4-Adresse(n)", out)
+        self.assertNotIn("lo:", out)
+        self.assertNotIn("fe80", out)
+
+    def test_broken_ip_output_does_not_stop_the_bundle(self):
+        with mock.patch.object(H, "run", lambda cmd, timeout=15, limit=400_000: "kein json"):
+            self.assertIn("nicht lesbar", H.net_addresses())
+
+    def test_journal_is_filtered_trimmed_and_asks_without_n(self):
+        calls = []
+        lines = ["2026-10-09T04:26:%02d+0000 belabox ifplugd[1]: eth0: link beat detected %d" % (i % 60, i) for i in range(300)]
+        lines.insert(5, "2026-10-09T04:26:05+0000 belabox tailscaled[515]: LinkChange: major, rebinding: eth0")
+        lines.insert(6, "2026-10-09T04:26:06+0000 belabox pipbox-extra-ip: gesetzt auf eth0 (start post-up dhcp)")
+
+        def fake_run(cmd, timeout=15, limit=400_000):
+            calls.append(cmd)
+            return "\n".join(lines)
+        with mock.patch.object(H, "run", side_effect=fake_run):
+            out = H.net_journal(0, 140, 60)
+        self.assertNotIn("-n", calls[0])                                                         # mit -n würde zuerst gekürzt und dann gesucht (nichts gefunden)
+        self.assertIn("-g", calls[0])
+        self.assertNotIn("tailscaled", out)
+        self.assertIn("pipbox-extra-ip: gesetzt auf eth0", out)                                   # das Skript der Zusatzadresse steht im Anfang
+        self.assertIn("Zeilen ausgelassen", out)
+
+    def test_section_is_in_the_bundle_and_scrubbed(self):
+        def fake_run(cmd, timeout=15, limit=400_000):
+            if cmd[:3] == ["ip", "-j", "-d"]:
+                return self.IP_J
+            if cmd[0] == "journalctl" and "-g" in cmd:
+                return "2026-10-09T04:26:12+0000 belabox dhclient[7]: DHCPACK of 192.168.80.132 from 192.168.80.1\n"
+            return ""
+        with mock.patch.object(H, "run", side_effect=fake_run):
+            secs = dict(H.sections())
+        title = [t for t in secs if t.startswith("Netzwerk beim Start")]
+        self.assertEqual(len(title), 1)
+        body = secs[title[0]]
+        self.assertIn("DHCPACK", body)
+        self.assertIn("192.168.80.50/24", body)                                                   # noch unbereinigt: build() ersetzt die Adressen
+        with mock.patch.object(H, "run", side_effect=fake_run):
+            text = H.build()
+        self.assertNotIn("192.168.80.132", text)
+        self.assertNotIn("192.168.80.50", text)
+        self.assertIn("<IP-", text)
+
+
 if __name__ == "__main__":
     unittest.main()

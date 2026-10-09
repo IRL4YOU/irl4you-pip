@@ -292,6 +292,14 @@ class Server(unittest.TestCase):
         self.assertFalse(os.path.exists(ea.req))
         self.assertFalse(server.ExtraAddress(tempfile.mkdtemp(), demo=True).set(False)["enabled"])    # Ausschalten braucht keinen Haken
 
+    def test_hook_is_valid_shell_labels_the_address_and_logs(self):
+        import subprocess
+        hook = load_helper().hook_text(MAC0, "192.168.1.50", 24)
+        self.assertEqual(subprocess.run(["sh", "-n"], input=hook, text=True, capture_output=True).returncode, 0)     # Syntax in Ordnung
+        self.assertIn('LB="label $IFACE:pb"', hook)                           # gleiche Beschriftung wie beim Setzen aus der Oberfläche: dhclient räumt nur "eth0" ab
+        self.assertIn("logger -t pipbox-extra-ip", hook)                       # das Skript schreibt ins Journal (Fehlersuche nach einem Neustart)
+        self.assertIn("FEHLER", hook)
+
     def test_demo_mode(self):
         ea = server.ExtraAddress(tempfile.mkdtemp(), demo=True)
         st = ea.set(True, "aa:bb:cc:00:11:22", "192.168.1.50", 24, True)
