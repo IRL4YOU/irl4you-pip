@@ -112,11 +112,25 @@ class Settings(unittest.TestCase):
     def test_defaults_and_valid_changes(self):
         self.assertEqual(H.clean_settings({}), H.DEFAULTS)
         got = H.clean_settings({"enabled": True, "key": "hdmi2", "bitrate": 6000, "fps": 25, "audio": "none"})
-        self.assertEqual(got, {"enabled": True, "key": "hdmi2", "bitrate": 6000, "fps": 25, "audio": "none", "source": "hdmi"})
+        self.assertEqual(got, {"enabled": True, "key": "hdmi2", "bitrate": 6000, "fps": 25, "audio": "none", "source": "hdmi", "usb_format": "auto"})
 
     def test_unknown_keys_are_ignored_and_the_old_values_stay(self):
-        cur = {"enabled": True, "key": "a", "bitrate": 5000, "fps": 25, "audio": "none", "source": "hdmi"}
+        cur = {"enabled": True, "key": "a", "bitrate": 5000, "fps": 25, "audio": "none", "source": "hdmi", "usb_format": "auto"}
         self.assertEqual(H.clean_settings({"bitrate": 7000, "unsinn": 1}, cur), dict(cur, bitrate=7000))
+
+    def test_the_usb_picture_format_is_checked_and_decides_which_format_is_tried_first(self):
+        for fmt in ("auto", "mjpeg", "h264"):
+            self.assertEqual(H.clean_settings({"usb_format": fmt})["usb_format"], fmt)
+        for bad in ("raw", "", None, 1, True):
+            with self.assertRaises(ValueError) as cm:
+                H.clean_settings({"usb_format": bad})
+            self.assertIn("Bildformat", str(cm.exception))
+        kinds = lambda fmt: [c[0] for c in H.usb_candidates(fmt)]
+        self.assertEqual(kinds("auto")[:2], ["mjpeg", "mjpeg"])
+        self.assertEqual(kinds("h264")[:2], ["h264", "h264"])                       # H.264 zuerst, MJPEG bleibt Rückfall
+        self.assertIn("mjpeg", kinds("h264"))
+        self.assertEqual([c for c in H.usb_candidates("h264") if c[0] == "h264"], [c for c in H.USB_CANDIDATES if c[0] == "h264"])   # 1080p vor 720p bleibt
+        self.assertEqual(H.usb_candidates(None), H.USB_CANDIDATES)
 
     def test_bad_values_are_refused_with_a_short_text(self):
         bad = [{"enabled": 1}, {"enabled": "ja"}, {"key": ""}, {"key": "A"}, {"key": "a b"}, {"key": "a" * 33}, {"key": "-x"}, {"key": 5},

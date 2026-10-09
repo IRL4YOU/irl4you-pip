@@ -322,6 +322,26 @@ class Supervision(unittest.IsolatedAsyncioTestCase):
         self.assertIn("image/jpeg,width=1920,height=1080,framerate=30/1", argv)
         self.assertIn("mpph264enc", argv)
 
+    async def test_the_format_setting_h264_tries_h264_first_and_keeps_mjpeg_as_the_fallback(self):
+        r = UsbRig(probe_ok=("h264", 1920, 1080, 30))
+        r.d.cfg["usb_format"] = "h264"
+        await r.d.tick()
+        self.assertEqual(r.d.status()["usb"]["format"], "H.264 1920x1080@30")
+        self.assertIn("video/x-h264,width=1920,height=1080,framerate=30/1", r.spawned[0][0])
+        r2 = UsbRig(probe_ok=("mjpeg", 1920, 1080, 30))
+        r2.d.cfg["usb_format"] = "h264"                                              # die Kamera hat kein H.264: MJPEG springt ein
+        await r2.d.tick()
+        self.assertEqual(r2.d.status()["usb"]["format"], "MJPEG 1920x1080@30")
+
+    async def test_changing_the_format_setting_forgets_the_earlier_choice(self):
+        r = UsbRig(probe_ok=("mjpeg", 1920, 1080, 30))
+        await r.d.tick()
+        self.assertEqual(r.d.usb_choice[1][0], "mjpeg")
+        r.d.usb_bad.add(("/dev/video2", ("h264", 1920, 1080, 30)))
+        await r.d.handle({"cmd": "set", "settings": {"usb_format": "h264"}})
+        self.assertIsNone(r.d.usb_choice)
+        self.assertEqual(r.d.usb_bad, set())
+
     async def test_a_format_that_keeps_failing_fast_is_dropped_and_the_next_one_is_taken(self):
         r = UsbRig(probe_ok=None)
         r.probe_ok = ("mjpeg", 1920, 1080, 30)

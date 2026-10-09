@@ -73,7 +73,7 @@ class Talking(Case):
         s = self.svc.status()
         self.assertTrue(s["service"])
         self.assertEqual((s["state"], s["available"]), ("off", True))
-        self.assertEqual(s["settings"], {"enabled": False, "bitrate": 8000, "fps": 30, "audio": "hdmi", "source": "hdmi"})        # ohne den festen Schlüssel
+        self.assertEqual(s["settings"], {"enabled": False, "bitrate": 8000, "fps": 30, "audio": "hdmi", "source": "hdmi", "usb_format": "auto"})        # ohne den festen Schlüssel
         self.assertEqual((s["signal"]["width"], s["signal"]["height"], s["signal"]["locked"]), (1920, 1080, True))
         self.assertFalse(s["listed"])
 
@@ -293,7 +293,7 @@ class Markup(unittest.TestCase):
     def test_the_fields_and_their_order(self):
         sec = PAGE[PAGE.index('id="hdmicard"'):PAGE.index('id="hdmi_err"')]
         ids = re.findall(r'id="(hdmi_\w+)"', sec)
-        self.assertEqual(ids, ["hdmi_cam", "hdmi_name", "hdmi_state", "hdmi_source", "hdmi_signal", "hdmi_on", "hdmi_vsec", "hdmi_vsum", "hdmi_fps", "hdmi_br", "hdmi_audio", "hdmi_save"])
+        self.assertEqual(ids, ["hdmi_cam", "hdmi_name", "hdmi_state", "hdmi_source", "hdmi_signal", "hdmi_on", "hdmi_vsec", "hdmi_vsum", "hdmi_fps", "hdmi_br", "hdmi_audio", "hdmi_fmtrow", "hdmi_fmt", "hdmi_save"])
         self.assertIn('<select id="hdmi_source"><option value="hdmi">HDMI-Eingang</option><option value="usb">USB-Webcam</option></select>', sec)
         self.assertIn('<option value="hdmi">HDMI-Ton</option><option value="none">ohne Ton</option>', sec)
         self.assertIn('<option value="30">30 fps</option><option value="25">25 fps</option>', sec)
@@ -317,7 +317,7 @@ class Script(unittest.TestCase):
 
     def test_the_switch_applies_at_once_and_the_button_saves_the_picture_and_sound_values(self):
         self.assertIn('$("hdmi_on").addEventListener("change",()=>hdmiPost({enabled:$("hdmi_on").checked}));', self.BLOCK)
-        self.assertIn("hdmiPost({bitrate:Math.round(parseFloat($(\"hdmi_br\").value)*1000),fps:parseInt($(\"hdmi_fps\").value,10),audio:$(\"hdmi_audio\").value},\"Gespeichert.\")", self.BLOCK)
+        self.assertIn("hdmiPost({bitrate:Math.round(parseFloat($(\"hdmi_br\").value)*1000),fps:parseInt($(\"hdmi_fps\").value,10),audio:$(\"hdmi_audio\").value,usb_format:$(\"hdmi_fmt\").value},\"Gespeichert.\")", self.BLOCK)
         self.assertIn('due("hdmi","c_cams",20000)', self.BLOCK)
 
     def test_the_page_script_still_compiles(self):
