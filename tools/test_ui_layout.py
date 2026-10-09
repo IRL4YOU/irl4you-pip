@@ -84,19 +84,23 @@ class FootHides(unittest.TestCase):
 
     def test_only_hides_while_chat_or_preview_is_shown(self):
         self.assertIn('["c_chat","c_prev"].some(id=>{ const e=$(id); return !!e&&e.open&&e.offsetParent!==null; })', self.BLK)
-        self.assertIn('const wide=shown(), h=mode!=="always"&&wide&&(mode==="hide"||scrollHid);', self.BLK)
+        self.assertIn('h=mode==="off"||(mode!=="always"&&wide&&(mode==="hide"||scrollHid))', self.BLK)   # automatisch und "hide" nur mit Chat oder Vorschau
 
     def test_three_modes_kept_per_device_only(self):
         self.assertIn('KEY="pb_foot"', self.BLK)
         self.assertIn('localStorage.setItem(KEY,mode)', self.BLK)
-        self.assertIn('v==="always"||v==="hide"', self.BLK)                                          # Standard: automatisch
+        self.assertIn('v==="always"||v==="hide"||v==="off"', self.BLK)                               # Standard: automatisch
         self.assertNotIn("srtlaCall", self.BLK)                                                      # nichts geht an die Box
-        self.assertIn('for(const [v,txt] of [["auto","Automatisch"],["always","Immer anzeigen"],["hide","Ausblenden"]])', PAGE)
+        self.assertIn('[["auto","Automatisch"],["always","Immer anzeigen"],["hide","Ausblenden bei Chat oder Vorschau"],["off","Immer ausblenden"]]', PAGE)
         self.assertIn('window.pbFootMode(sel.value)', PAGE)
+
+    def test_always_hide_works_without_chat_and_preview(self):
+        """Issue #56: Wer Chat und Vorschau nicht nutzt, wählte "Ausblenden" und die Leiste blieb."""
+        self.assertIn('h=mode==="off"||(mode!=="always"&&wide&&(mode==="hide"||scrollHid))', self.BLK)
+        self.assertIn('root.classList.toggle("mfperm",mode==="off"||(mode==="hide"&&wide))', self.BLK)
 
     def test_no_space_kept_when_footer_is_gone_for_good(self):
         self.assertIn("html.mfperm body{padding-bottom:calc(16px + env(safe-area-inset-bottom))}", PAGE)
-        self.assertIn('root.classList.toggle("mfperm",mode==="hide"&&wide)', self.BLK)
 
 
 if __name__ == "__main__":

@@ -2063,6 +2063,81 @@ class UpdateNotes(unittest.TestCase):
         n = server.SwUpdate._sections_since(log, "0.9.1", max_sections=3)
         self.assertEqual(len([l for l in n.splitlines() if l.startswith("## ")]), 3)
 
+    def test_all_sixteen_versions_of_a_long_jump_are_shown(self):
+        """Issue #57: Von 0.9.169 auf 0.9.183 zeigte die Box nur die neuesten 6 Versionen."""
+        log = "# Änderungen\n\n" + "\n".join("## 0.9.%d (Beta)\n- **Neu:** Punkt %d.\n" % (i, i) for i in range(183, 160, -1))
+        n = server.SwUpdate._sections_since(log, "0.9.169")
+        heads = [l for l in n.splitlines() if l.startswith("## ")]
+        self.assertEqual(len(heads), 14)
+        self.assertEqual((heads[0], heads[-1]), ("## 0.9.183 (Beta)", "## 0.9.170 (Beta)"))
+
+    def test_limits_are_generous_but_finite(self):
+        log = "\n".join("## 0.9.%d (Beta)\n- x\n" % i for i in range(500, 0, -1))
+        n = server.SwUpdate._sections_since(log, "0.0.1")
+        self.assertEqual(len([l for l in n.splitlines() if l.startswith("## ")]), 100)
+        big = "## 1.0.0\n" + ("- " + "y" * 900 + "\n") * 1000
+        self.assertLessEqual(len(server.SwUpdate._sections_since(big, "0.9.0")), 201_000)
+
+    def test_whole_changelog_file_is_read(self):
+        self.assertGreaterEqual(server.SwUpdate.CHANGELOG_MAX, 400_000)                 # die Datei hat heute rund 130 KB; 60 KB schnitten ältere Versionen ab
+
+
+class UpdateHistory(unittest.TestCase):
+    """Issue #57: der ganze Änderungsverlauf mit Suche."""
+
+    def sw(self, sending=False, demo=False):
+        sw = server.SwUpdate(tempfile.mkdtemp(), demo, mock.Mock(_active=lambda: sending))
+        return sw
+
+    def test_loads_the_whole_file_once_and_keeps_it(self):
+        sw = self.sw()
+        calls = []
+
+        def get(name, limit):
+            calls.append((name, limit))
+            return "## 0.9.2\n- b\n\n## 0.9.1\n- a\n"
+        with mock.patch.object(sw, "_get", get):
+            a = sw.history()
+            b = sw.history()
+        self.assertEqual(a, {"text": "## 0.9.2\n- b\n\n## 0.9.1\n- a\n", "error": ""})
+        self.assertEqual(b, a)
+        self.assertEqual(calls, [("CHANGELOG.md", server.SwUpdate.CHANGELOG_MAX)])        # genau eine Abfrage
+
+    def test_nothing_is_loaded_while_sending(self):
+        sw = self.sw(sending=True)
+        with mock.patch.object(sw, "_get", side_effect=AssertionError("kein Zugriff")):
+            r = sw.history()
+        self.assertEqual(r["text"], "")
+        self.assertIn("Übertragung", r["error"])
+
+    def test_error_is_readable_and_not_cached(self):
+        sw = self.sw()
+        with mock.patch.object(sw, "_get", side_effect=OSError("kein Netz")):
+            r = sw.history()
+        self.assertEqual((r["text"], r["error"]), ("", "GitHub ist nicht erreichbar."))
+        with mock.patch.object(sw, "_get", return_value="## 0.9.1\n- a\n"):
+            self.assertEqual(sw.history()["error"], "")                                    # der nächste Versuch klappt
+
+    def test_stale_copy_is_kept_when_github_fails_later(self):
+        sw = self.sw()
+        with mock.patch.object(sw, "_get", return_value="## 0.9.1\n- a\n"):
+            sw.history()
+        sw.hist_t -= 3600
+        with mock.patch.object(sw, "_get", side_effect=OSError("weg")):
+            self.assertEqual(sw.history()["text"], "## 0.9.1\n- a\n")
+
+    def test_page_search_filters_words_marks_hits_and_never_uses_html(self):
+        h = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
+        self.assertIn('fetch("/api/swupdate/history")', h)
+        self.assertIn("toks.every(w=>t.includes(w))", h)                                    # alle Wörter müssen vorkommen
+        self.assertIn("const k=document.createElement(\"mark\"); k.textContent=m[0];", h)     # Treffer als Textknoten, nie als HTML
+        self.assertIn("res.innerHTML=fmtNotes(out)", h)                                    # fmtNotes maskiert den Text
+        self.assertIn('id="sw_histbtn"', h)
+
+    def test_route_exists(self):
+        src = open(os.path.join(os.path.dirname(HERE), "server.py"), encoding="utf-8").read()
+        self.assertIn('if path == "/api/swupdate/history":', src)
+
     def test_update_card_formats_the_notes_and_reloads_by_itself(self):
         h = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
         self.assertIn("function fmtNotes(", h)
