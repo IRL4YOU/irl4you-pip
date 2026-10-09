@@ -1,5 +1,14 @@
 # Änderungen
 
+## 0.9.188 (Beta)
+- **Neu: Karte „Problem melden / Wunsch äußern“ (Issue #13 von Bittersweet1987).** Die Box bereitet auf GitHub ein **fertig ausgefülltes Formular** vor; abschicken kann man es nur mit einem eigenen **GitHub-Konto** (kostenlos) und „Submit new issue“. Die Box sendet selbst nichts: Dafür bräuchte sie einen GitHub-Schlüssel mit Schreibrechten, und der ließe sich aus der öffentlichen Software auslesen und missbrauchen. Ein Token in der Software scheidet deshalb aus.
+  - **Problem (ISSUE):** Titel Pflicht, Beschreibung freiwillig. Die Box erzeugt eine **Support-Nummer** (`IRL-XXXXXX`, ohne Bezug zu Person oder Box, ohne verwechselbare Zeichen); der Titel lautet `[ISSUE] Titeltext (Nummer)`, in der Beschreibung stehen Box-Version und Nummer. Mit dem Haken „Bereinigtes Protokoll mitnehmen“ lädt die Box das bereinigte Protokoll als Datei, die man auf GitHub anhängt (ein Protokoll passt nicht in einen Link).
+  - **Wunsch (FEATURE):** Titel und Beschreibung sind Pflicht, der Titel lautet `[FEATURE] Titeltext`, ohne Support-Nummer. Unten steht ein Link zu allen Issues auf GitHub.
+  - **Meine Fälle:** Die Support-Nummern mit Datum und Titel, je Fall „Auf GitHub suchen“ (Suche nach der Nummer) und „Erledigt“/„Wieder offen“. **Erledigt gilt nur auf der Box**; das Issue schließt man auf GitHub selbst (oder der Entwickler anhand der Nummer). Gespeichert in `support-cases.json` (höchstens 100 Fälle).
+  - Der Link zum Formular öffnet in einem neuen Tab; ist die Beschreibung für einen Link zu lang (über 7000 Zeichen), wird sie gekürzt und darauf hingewiesen. Server: `SupportCases`, `GET/POST /api/support`.
+- **Übersetzungen nachgetragen:** Die neuen Texte der Versionen 0.9.185 bis 0.9.188 (Fußleiste, Änderungsverlauf mit Suche, Melden) in allen 12 weiteren Sprachen (maschinell, wie bisher nicht von Muttersprachlern geprüft). Spanisch, Französisch, Italienisch, Portugiesisch, Niederländisch, Polnisch, Türkisch, Russisch, Chinesisch, Japanisch, Koreanisch, Thai.
+- Tests: neue Datei `tools/test_support.py` (15 Tests: Nummern, Titel, Liste, Erledigt, Neustart, Grenzen, keine Verbindung ins Netz, Seite); `tools/test_i18n.py` grün.
+
 ## 0.9.187 (Beta)
 - **Meldung „USB-Gerät getrennt“: Gerät benannt, nach dem Start ruhig, räumt sich auf (Issue #58 von Bittersweet1987).** Sein WLAN-Stick (UGREEN AX900, Chip AIC 8800D80) meldet sich beim Hochfahren dreimal neu an (25 s und 29 s nach dem Start, `a69c:8d80` → `a69c:8d81`, jeweils „USB disconnect“); der Wächter zählte das als Ausfall, die Meldung stand sofort nach dem Start da. Das Verhalten des Sticks gehört in den Treiber; die Box zeigt es künftig nicht mehr als Fehler:
   - **Schonzeit:** In den ersten **120 Sekunden nach dem Start der Box** zählen Trennungen nicht. Meldungen aus der Zeit **vor** einem Neustart (zum Beispiel Trennungen beim Herunterfahren) erscheinen danach nicht mehr. Ein Neustart nur des Dienstes (Update) behält die Ereignisse.
