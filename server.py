@@ -376,12 +376,38 @@ class OutageWatch:
 class Sampler:
     """Berechnet Raten aus Zählerdifferenzen zwischen zwei Abfragen."""
 
+    # Meldung "n Prozess(e) blockiert (D-State)" (Issue #51): Gezählt wird nicht jede kurze Wartezeit. Beim Start schreibt die Box viel auf die Speicherkarte
+    # (apt-get, Journal), dann warten kurz Threads des Dateisystems; das hat mit der Sendung nichts zu tun. Darum: (1) erst GRACE Sekunden nach dem Start, (2) erst
+    # wenn SUSTAIN Sekunden am Stück etwas blockiert ist (Messungen mit mehr als GAP Sekunden Abstand zählen nicht als am Stück), (3) ohne Threads, die auf die
+    # Speicherkarte oder den CPU-Regler warten. Unbekanntes (zum Beispiel usb-storage, ein Decoder-Treiber) meldet weiter; das Zustandsprotokoll behält alle Namen.
+    D_GRACE, D_SUSTAIN, D_GAP = 120.0, 15.0, 6.0
+    D_BENIGN_NAME = re.compile(r"^(kworker|jbd2|sugov|apt-get|apt|dpkg|mmcqd|kswapd\d*|flush-|ext4|systemd-journal)")
+    D_BENIGN_WCHAN = re.compile(r"(__wait_on_buffer|wait_on_page|io_schedule|mmc_blk|jbd2|generic_file_buffered_read|bit_wait|blk_)")
+
     def __init__(self, demo):
         self.demo = demo
         self.prev_cpu = None
         self.prev_net = None
         self.prev_t = None
         self._lock = threading.Lock()
+        self._d_since, self._d_last = None, 0.0
+
+    @classmethod
+    def d_relevant(cls, names):
+        """Aus den Namen blockierter Threads ("Name@Wartestelle") die, die nicht nur auf Speicherkarte oder CPU-Regler warten."""
+        return [n for n in (names or []) if not (cls.D_BENIGN_NAME.match(n) or cls.D_BENIGN_WCHAN.search(n.partition("@")[2]))]
+
+    def _d_alert(self, rel, now, uptime):
+        """Anzahl der Threads für die Meldung: 0 in der Schonzeit nach dem Start und solange nichts lange genug am Stück blockiert war."""
+        if not rel:
+            self._d_since = None
+            return 0
+        if self._d_since is None or now - self._d_last > self.D_GAP:
+            self._d_since = now
+        self._d_last = now
+        if uptime is not None and uptime < self.D_GRACE:
+            return 0
+        return len(rel) if now - self._d_since >= self.D_SUSTAIN else 0
 
     def cpu_times(self):
         out = []
@@ -407,7 +433,7 @@ class Sampler:
         return None
 
     @staticmethod
-    def blocked_threads(proc="/proc", limit=6):
+    def blocked_threads(proc="/proc", limit=20):
         """Threads im Kernel-Zustand D (nicht unterbrechbar) mit Wartestelle im Kernel: ["usb-storage@usb_sg_wait", ...]. Zeigt, WER hinter der Meldung
         "n Prozess(e) blockiert" steckt (oft ein USB-Modem, das sich zusätzlich als CD-Laufwerk meldet, oder der Treiber eines Geräts)."""
         out = []
@@ -521,7 +547,7 @@ class Sampler:
                      "drop_total": 0, "sent_total": 90210, "retrans_pct": 0.46, "loss_pct": 0.04}}
         return out
 
-    def finish(self, cores, freqs, temp, total_kb, avail_kb, rates, blocked, fan_pwm=None, blocked_names=None):
+    def finish(self, cores, freqs, temp, total_kb, avail_kb, rates, blocked, fan_pwm=None, blocked_names=None, now=None, uptime=None):
         cpu_avg = round(sum(cores) / len(cores), 1) if cores else None
         cpu_max = max(cores) if cores else None
         mem_used = round(100.0 * (1 - avail_kb / total_kb), 1) if total_kb else None
@@ -536,8 +562,16 @@ class Sampler:
             alerts.append({"level": "warn", "text": f"Ein CPU-Kern ist fast voll ({cpu_max:.0f} %)"})
         if mem_used is not None and mem_used >= LIMITS["mem_warn"]:
             alerts.append({"level": "warn", "text": f"RAM {mem_used:.0f} % belegt"})
-        if blocked > 0:
-            alerts.append({"level": "warn", "text": f"{blocked} Prozess(e) blockiert (D-State)", "kind": "dstate", "names": list(blocked_names or [])})
+        rel = self.d_relevant(blocked_names) if blocked > 0 else []
+        up = uptime
+        if up is None and not self.demo:
+            try:
+                up = float((read("/proc/uptime", "") or "").split()[0])
+            except (ValueError, IndexError):
+                up = None
+        n = self._d_alert(rel, time.monotonic() if now is None else now, up)
+        if n > 0:
+            alerts.append({"level": "warn", "text": f"{n} Prozess(e) blockiert (D-State)", "kind": "dstate", "names": rel[:6]})
         return {"time": int(time.time()), "demo": self.demo,
                 "cpu": {"cores": cores, "avg": cpu_avg, "max": cpu_max, "freq_mhz": freqs},
                 "temp_c": None if temp is None else round(temp, 1),
