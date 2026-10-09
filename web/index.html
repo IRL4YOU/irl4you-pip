@@ -34,7 +34,7 @@ main{max-width:980px;margin:0 auto;padding:16px;display:grid;gap:14px;grid-templ
 .card{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
 .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin:0 0 10px}
 .wide{grid-column:1/-1}
-#prev_img{display:block;width:100%;max-width:640px;aspect-ratio:16/9;margin-top:10px;background:#000;border-radius:10px;object-fit:contain}
+#prev_img,#prev_vid{display:block;width:100%;max-width:640px;aspect-ratio:16/9;margin-top:10px;background:#000;border-radius:10px;object-fit:contain}
 #prev_box[hidden]{display:none}
 #prev_msg:empty{display:none}
 .prevkeep{display:flex;align-items:flex-start;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);line-height:1.4}
@@ -51,7 +51,7 @@ html.nohead #c_prev{min-height:48px}
 html.nohead #c_prev>:is(.ph,.prevkeep){margin-right:150px}
 .prevctl{display:flex;align-items:center;gap:8px;margin-left:auto}
 .prevctl button.small{padding:2px 12px;line-height:1.3}
-#prev_img{margin-top:0}
+#prev_img,#prev_vid{margin-top:0}
 details.card#c_prev[open]>summary{margin-bottom:8px}
 .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0}
 .big{font-size:26px;font-weight:600}
@@ -586,10 +586,10 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </section>
 
   <details class="card wide" id="c_prev"><summary><span class="sumh">Vorschau</span><span class="prevctl"><button type="button" id="prev_set" class="sec small prevset" hidden aria-label="Einstellung zeigen" aria-expanded="false">⚙</button><button type="button" id="prev_btn" class="sec small">Start</button><button type="button" class="helpbtn" id="prev_help_btn" aria-label="Erklärung zeigen" aria-expanded="false">i</button></span></summary>
-    <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Im Heimnetz sind es 30 Bilder pro Sekunde, außerhalb des Heimnetzes weniger Bilder und ein kleineres Bild (das spart Bandbreite). Die Vorschau endet nach 10 Minuten, beim Zuklappen der Karte, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt. Mit dem Häkchen darunter entfällt die Grenze von 10 Minuten: Die Vorschau startet dann in diesem Browser von selbst wieder, sobald die Seite sichtbar ist und die Box sendet.</div>
+    <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Es sind 30 Bilder pro Sekunde in 640 × 360 als Video, rund 1,7 Mbit/s zum Browser, über das Netz, in dem er angemeldet ist. Die Vorschau endet nach 10 Minuten, beim Zuklappen der Karte, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt. Mit dem Häkchen darunter entfällt die Grenze von 10 Minuten: Die Vorschau startet dann in diesem Browser von selbst wieder, sobald die Seite sichtbar ist und die Box sendet.</div>
     <label class="prevkeep"><input type="checkbox" id="prev_always"> Mir ist bewusst, dass die Vorschau Rechenleistung kostet. Ich möchte sie in diesem Browser dauerhaft eingeschaltet lassen.</label>
     <div id="prev_msg" class="ph" role="status"></div>
-    <div id="prev_box" hidden><img id="prev_img" alt="Vorschau des Sendebilds"></div>
+    <div id="prev_box" hidden><video id="prev_vid" muted playsinline autoplay hidden aria-label="Vorschau des Sendebilds"></video><img id="prev_img" alt="Vorschau des Sendebilds" hidden></div>
   </details>
 
   <details class="card wide" id="c_chat" open><summary><span class="sumh">Chat</span><span id="net_sig" class="sig" role="img" aria-label="Verbindung: keine Messung" title="Verbindung: keine Messung"><i class="sigdot"></i><span class="sgs" aria-hidden="true"><span id="sg_max">10</span><span id="sg_mid">5,5</span><span id="sg_min">1</span></span><svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H80M0 10H80M0 19H80"></path><polyline id="net_line" points=""></polyline></svg><span id="sg_val" class="sgv"></span></span><span id="cam_dots" class="camdots" role="img"></span><button type="button" id="chat_opt" class="sec small chatoptbtn" aria-expanded="false" title="Konto und Ansicht des Chats" aria-label="Konto und Ansicht des Chats">⚙</button></summary>
@@ -3071,12 +3071,10 @@ $("chat_form").addEventListener("submit",async e=>{
   document.addEventListener("click",()=>{ if(on&&!lock&&!vid) acquire(); },{once:false});                // ein Fingertipp genügt, falls der Browser den Start ohne Geste verweigert hat
 })();
 
-// ---- Vorschau des Sendebilds (Issue #52): Motion-JPEG vom Server, nur solange die Vorschau läuft und die Seite sichtbar ist; höchstens 10 Minuten, außer mit dem Häkchen (nur in diesem Browser) ----
+// ---- Vorschau des Sendebilds (Issue #52): H.264-Video (fragmentiertes MP4 über Media Source Extensions), sonst Motion-JPEG; nur solange die Vorschau läuft und die Seite sichtbar ist; höchstens 10 Minuten, außer mit dem Häkchen (nur in diesem Browser) ----
 (function(){
-  const card=$("c_prev"), btn=$("prev_btn"), img=$("prev_img"), msg=$("prev_msg"), box=$("prev_box"), keep=$("prev_always");
-  let on=false, timer=0, wait=0, gen=0, poll=0;
-  const LAN=/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|.+\.local$)/i;
-  const lan=()=>LAN.test(location.hostname);                                       // Heimnetz: volle Bildrate; von unterwegs (auch Tailscale): weniger Bilder, kleineres Bild
+  const card=$("c_prev"), btn=$("prev_btn"), img=$("prev_img"), vid=$("prev_vid"), msg=$("prev_msg"), box=$("prev_box"), keep=$("prev_always");
+  let on=false, timer=0, wait=0, gen=0, poll=0, abortCtl=null, urlObj="", keepTimer=0, dogTimer=0, mode="";
   const WHY={off:"Die Vorschau gibt es nur, während die Box sendet.", busy:"Es laufen schon so viele Vorschauen, wie die Box zugleich zeigen kann.",
              "kein-bild":"Es kommt kein Bild. Läuft die Sendung?", missing:"Die Vorschau ist auf dieser Box nicht verfügbar.", gst:"Die Vorschau ist auf dieser Box nicht verfügbar.",
              root:"Die Vorschau ist auf dieser Box nicht verfügbar.", capture:"Die Vorschau ist auf dieser Box nicht verfügbar."};
@@ -3090,9 +3088,16 @@ $("chat_form").addEventListener("submit",async e=>{
   }
   gear.addEventListener("click",e=>{ e.preventDefault(); gearOpen=!gearOpen; syncKeep(); if(gearOpen) card.open=true; });
   const running=()=>always()&&store("pb_prev_run")==="1";                          // "dauerhaft an" gewünscht: nach Seitenwechsel, Sendepause oder Verbindungsabbruch von selbst weiter
+  function closeVideo(){                                                            // schließt die Verbindung für das Video (der Server beendet die Vorschau sofort)
+    clearInterval(keepTimer); clearTimeout(dogTimer);
+    if(abortCtl){ try{ abortCtl.abort(); }catch(e){} abortCtl=null; }
+    try{ vid.pause(); }catch(e){} vid.removeAttribute("src"); try{ vid.srcObject=null; }catch(e){} try{ vid.load(); }catch(e){}
+    if(urlObj){ try{ URL.revokeObjectURL(urlObj); }catch(e){} urlObj=""; }
+    vid.hidden=true;
+  }
   function halt(){
-    on=false; gen++; clearTimeout(timer); clearInterval(poll);
-    img.removeAttribute("src"); box.hidden=true;                                   // schließt die Verbindung: der Server beendet die Vorschau sofort
+    on=false; gen++; clearTimeout(timer); clearInterval(poll); mode="";
+    closeVideo(); img.removeAttribute("src"); img.hidden=true; box.hidden=true;    // schließt die Verbindung: der Server beendet die Vorschau sofort
   }
   function stop(text,more){
     halt(); clearTimeout(wait); wait=0;
@@ -3111,9 +3116,7 @@ $("chat_form").addEventListener("submit",async e=>{
     if(my!==gen) return;
     if(!st.available){ if(running()&&st.why!=="missing") return waiting(); return stop(WHY[st.why]||WHY.missing); }
     on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent="";
-    const home=(st.home===true||st.home===false)?st.home:lan();                  // der Server kennt die echte Absenderadresse; ohne Angabe gilt der Name in der Adresszeile
-    img.src="/api/preview/stream?fps="+(home?30:5)+"&w="+(home?640:480)+(always()?"&long=1":"")+"&t="+Date.now();
-    box.hidden=false;
+    playStream(my);                                                                // immer volle 30 Bilder pro Sekunde in 640 × 360: auf dem Handy wie am Rechner gleich
     if(!always()) timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),Math.max(5,(st.max_seconds||600)-3)*1000);
     clearInterval(poll);
     poll=setInterval(async()=>{                                                    // ein Browser meldet das Ende eines Bildstroms nicht: alle 10 s nachsehen, ob die Box noch sendet
@@ -3122,12 +3125,69 @@ $("chat_form").addEventListener("submit",async e=>{
       if(running()) waiting(); else stop(WHY.off);
     },10000);
   }
-  img.addEventListener("error",async()=>{
-    if(!on) return; const my=gen; let why="kein-bild";
-    try{ const st=await (await fetch("/api/preview")).json(); if(!st.available) why=st.why; }catch(e){ why="missing"; }
+  async function ended(why0){                                                        // der Strom ist zu Ende oder nicht zustande gekommen: nachsehen, warum
+    if(!on) return; const my=gen; let why=why0||"kein-bild";
+    if(!why0){ try{ const st=await (await fetch("/api/preview")).json(); if(!st.available) why=st.why; }catch(e){ why="missing"; } }
     if(my!==gen||!on) return;
     if(running()) waiting(); else stop(WHY[why]||WHY["kein-bild"]);
-  });
+  }
+  img.addEventListener("error",()=>ended());
+  // ---- Wiedergabe: Video über Media Source Extensions (flüssig, wenig Daten), sonst Einzelbilder
+  const MSC=window.ManagedMediaSource||window.MediaSource;
+  const canMse=()=>!!(MSC&&typeof MSC.isTypeSupported==="function"&&MSC.isTypeSupported('video/mp4; codecs="avc1.4d401f"')&&window.fetch&&window.ReadableStream&&window.AbortController);
+  const u32=(b,i)=>((b[i]<<24)|(b[i+1]<<16)|(b[i+2]<<8)|b[i+3])>>>0;
+  const join=(a,b)=>{ const o=new Uint8Array(a.length+b.length); o.set(a,0); o.set(b,a.length); return o; };
+  const codecOf=moov=>{                                                             // "avc1.PPCCLL" aus der avcC-Kiste im Init-Segment
+    for(let i=0;i+8<moov.length;i++){ if(moov[i]===0x61&&moov[i+1]===0x76&&moov[i+2]===0x63&&moov[i+3]===0x43){ const h=n=>("0"+n.toString(16)).slice(-2); return "avc1."+h(moov[i+5])+h(moov[i+6])+h(moov[i+7]); } }
+    return "avc1.4d401f";
+  };
+  const query=()=>"&fps=30&w=640"+(always()?"&long=1":"")+"&t="+Date.now();
+  function playMjpeg(){
+    mode="mjpeg"; closeVideo(); vid.hidden=true; img.hidden=false; box.hidden=false;
+    img.src="/api/preview/stream?fmt=mjpeg"+query();
+  }
+  async function playMp4(my){
+    mode="mp4"; img.hidden=true; vid.hidden=false; box.hidden=false;
+    const ctl=new AbortController(); abortCtl=ctl;
+    const ms=new MSC(); let sb=null, moof=null, got=false, buf=new Uint8Array(0); const init=[], queue=[];
+    vid.muted=true; vid.playsInline=true; vid.disableRemotePlayback=true;
+    if(window.ManagedMediaSource&&MSC===window.ManagedMediaSource) vid.srcObject=ms; else { urlObj=URL.createObjectURL(ms); vid.src=urlObj; }
+    await new Promise((ok,no)=>{ ms.addEventListener("sourceopen",ok,{once:true}); setTimeout(()=>no(new Error("sourceopen")),4000); });
+    if(my!==gen) return;
+    const res=await fetch("/api/preview/stream?fmt=mp4"+query(),{signal:ctl.signal,cache:"no-store"});
+    if(!res.ok||!res.body){ const j=await res.json().catch(()=>({})); const e=new Error(j.error||"http"); e.why=j.error; throw e; }
+    const pump=()=>{ if(!sb||sb.updating||!queue.length) return; try{ sb.appendBuffer(queue.shift()); }catch(e){ ctl.abort(); } };
+    keepTimer=setInterval(()=>{                                                      // am aktuellen Ende bleiben, Altes wegwerfen
+      try{ if(vid.buffered.length){ const end=vid.buffered.end(vid.buffered.length-1); if(end-vid.currentTime>0.8) vid.currentTime=end-0.2; if(vid.paused&&got) vid.play().catch(()=>{});
+             if(sb&&!sb.updating){ const s0=vid.buffered.start(0); if(vid.currentTime-s0>8) sb.remove(s0,vid.currentTime-4); } } }catch(e){}
+    },500);
+    dogTimer=setTimeout(()=>{ if(my===gen&&on&&mode==="mp4"&&!(vid.currentTime>0)){ closeVideo(); playMjpeg(); } },8000);   // läuft das Video nicht an: Einzelbilder
+    vid.addEventListener("error",()=>{ if(my===gen&&on&&mode==="mp4"){ closeVideo(); playMjpeg(); } },{once:true});
+    const reader=res.body.getReader();
+    for(;;){
+      const r=await reader.read(); if(r.done) break; if(my!==gen) return;
+      buf=join(buf,r.value);
+      while(buf.length>=8){
+        const size=u32(buf,0); if(size<8||buf.length<size) break;
+        const t=String.fromCharCode(buf[4],buf[5],buf[6],buf[7]), part=buf.slice(0,size); buf=buf.slice(size);
+        if(t==="ftyp"||t==="moov"){ init.push(part);
+          if(t==="moov"){ sb=ms.addSourceBuffer('video/mp4; codecs="'+codecOf(part)+'"'); sb.addEventListener("updateend",pump); queue.push(init.reduce(join)); pump(); } }
+        else if(t==="moof") moof=part;
+        else if(t==="mdat"&&moof){ queue.push(join(moof,part)); moof=null; pump(); if(!got){ got=true; vid.play().catch(()=>{}); } }
+      }
+    }
+  }
+  async function playStream(my){
+    if(!canMse()) return playMjpeg();
+    try{ await playMp4(my); }
+    catch(e){
+      if(my!==gen||!on||(e&&e.code===20&&mode!=="mp4")) return;
+      if(e&&e.why) return ended(e.why);                                            // der Server hat abgelehnt (Sendung aus, zu viele Vorschauen …)
+      if(mode==="mp4"&&!(vid.currentTime>0)){ closeVideo(); return playMjpeg(); }  // Video ging nicht: Einzelbilder
+      return ended();
+    }
+    if(my===gen&&on&&mode==="mp4") ended();                                        // der Strom hat aufgehört
+  }
   function userStop(){ store("pb_prev_run",null); stop(); }                        // Stop-Knopf, Zuklappen, Ausblenden: gilt auch mit Häkchen als "aus"
   btn.addEventListener("click",e=>{ e.preventDefault(); if(on||wait) userStop(); else { if(always()) store("pb_prev_run","1"); start(); } });       // der Knopf sitzt in der Kopfzeile: er klappt die Karte nicht selbst zu
   keep.addEventListener("change",()=>{
