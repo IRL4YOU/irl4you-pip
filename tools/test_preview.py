@@ -1,10 +1,12 @@
 """Tests für die Vorschau des Sendebilds (pipbox_preview.py, Issue #52): der Kernel-Filter (mit einem kleinen BPF-Interpreter geprüft, damit die Sprünge stimmen),
 das Lesen der SRT-Datenpakete, die Ordnung der Pakete (Wiederholungen, Lücken, Zählerumlauf), die Kommandozeile des Dekoders, die Grenzen (Bildrate, Breite, Zuschauer)
 und der ganze Ablauf mit einem nachgebauten Mitlese-Socket und einem Ersatz für den Dekoder (Ende durch Browser, Zeit, Sender, fehlendes Bild)."""
+import json
 import os
 import socket
 import struct
 import sys
+import threading
 import time
 import unittest
 from unittest import mock
@@ -194,6 +196,12 @@ class Command(unittest.TestCase):
             self.assertEqual(P.little_cpus([4, 5, 6, 7]), [0, 1, 2, 3])
             self.assertEqual(P.little_cpus([]), [])
 
+    def test_time_limit_short_and_long(self):
+        self.assertEqual(P.Preview.limit(), P.MAX_SECONDS)
+        self.assertEqual(P.Preview.limit(False), 600)
+        self.assertEqual(P.Preview.limit(True), P.LONG_SECONDS)
+        self.assertGreater(P.LONG_SECONDS, P.MAX_SECONDS)
+
     def test_limits(self):
         self.assertEqual(P.clamp(99, *P.FPS_RANGE, 30), 30)
         self.assertEqual(P.clamp(0, *P.FPS_RANGE, 30), 1)
@@ -316,6 +324,231 @@ class Flow(unittest.TestCase):
             st = self.pv.status(True)
         self.assertEqual(st["max_seconds"], P.MAX_SECONDS)
         self.assertEqual(st["codec"], "h264")
+
+
+class Helper(unittest.TestCase):
+    """Der Dienst hinter dem Unix-Socket und der Client des Webservers, mit einer echten Socket-Datei und dem nachgebauten Dekoder."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "p.sock")
+        self.a, self.b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.pv = FakePreview(self.a, self.b)
+        self.limits = []
+        orig = P.Preview.limit
+
+        def limit(long=False):
+            self.limits.append(long)
+            return orig(long)
+        self.pv.limit = limit
+        self.sending = [True]
+        self.svc = P.Service(self.pv, sending=lambda: self.sending[0], idle=60)
+        self.ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.ls.bind(self.path)
+        self.ls.listen(4)
+        self.t = threading.Thread(target=self.svc.serve, args=(self.ls,), daemon=True)
+        self.t.start()
+        self.patches = [mock.patch.object(P.shutil, "which", return_value="/usr/bin/x"), mock.patch.object(P.os, "geteuid", return_value=0)]
+        for m in self.patches:
+            m.start()
+        self.client = P.Client(self.path, timeout=5)
+
+    def tearDown(self):
+        for m in self.patches:
+            m.stop()
+        for x in (self.a, self.b, self.ls):
+            try:
+                x.close()
+            except OSError:
+                pass
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def wait_viewers(self, n, secs=5):
+        end = time.monotonic() + secs
+        while time.monotonic() < end:
+            if self.pv.viewers == n:
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_status(self):
+        st = self.client.status()
+        self.assertTrue(st["available"])
+        self.assertEqual(st["max_seconds"], P.MAX_SECONDS)
+
+    def test_status_when_not_sending(self):
+        self.sending[0] = False
+        st = self.client.status()
+        self.assertFalse(st["available"])
+        self.assertEqual(st["why"], "off")
+
+    def test_stream_delivers_the_decoder_output(self):
+        s, head = self.client.open(30, 640)
+        self.assertEqual(head, {"ok": True})
+        self.a.send(udp(9100, srt(5, b"Q" * 188)))
+        s.settimeout(5)
+        self.assertEqual(s.recv(188), b"Q" * 188)
+        s.close()
+        self.assertTrue(self.wait_viewers(0), "Platz wird nach dem Schließen frei")
+
+    def test_long_flag_reaches_the_limit(self):
+        s, _ = self.client.open(30, 640, long=True)
+        s.close()
+        self.assertTrue(self.wait_viewers(0))
+        self.a, self.b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)        # der nachgebaute Mitlese-Socket wird je Vorschau geschlossen
+        self.pv.a, self.pv.b = self.a, self.b
+        s, _ = self.client.open(30, 640)
+        s.close()
+        self.assertTrue(self.wait_viewers(0))
+        self.assertEqual(self.limits, [True, False])
+
+    def test_not_sending_is_refused(self):
+        self.sending[0] = False
+        s, head = self.client.open(30, 640)
+        self.assertIsNone(s)
+        self.assertEqual(head["error"], "off")
+
+    def test_busy(self):
+        for _ in range(P.MAX_VIEWERS):
+            self.pv._acquire()
+        s, head = self.client.open(30, 640)
+        self.assertIsNone(s)
+        self.assertEqual(head["error"], "busy")
+
+    def test_garbage_request(self):
+        for raw in (b"kein json\n", b"[1,2]\n", b'{"cmd": "etwas"}\n', b'{"cmd": 5}\n'):
+            c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            c.settimeout(5)
+            c.connect(self.path)
+            c.sendall(raw)
+            self.assertEqual(json.loads(P.read_line(c)), {"error": "anfrage"}, raw)
+            c.close()
+
+    def test_oversized_request_is_dropped(self):
+        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        c.settimeout(5)
+        c.connect(self.path)
+        c.sendall(b"x" * 2000)
+        self.assertEqual(json.loads(P.read_line(c)), {"error": "anfrage"})        # kurz abgewiesen, nichts gepuffert
+        c.close()
+        self.assertTrue(self.client.status()["available"], "der Dienst läuft weiter")
+
+    def test_service_survives_a_client_that_hangs_up(self):
+        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        c.connect(self.path)
+        c.close()
+        self.assertTrue(self.client.status()["available"])
+
+    def test_client_without_service(self):
+        c = P.Client(os.path.join(self.tmp, "gibt-es-nicht.sock"))
+        self.assertEqual(c.status(), {"available": False, "why": "missing"})
+        with self.assertRaises(OSError):
+            c.open(30, 640)
+
+    def test_client_limits_are_clamped(self):
+        got = []
+        orig = self.pv.stream
+
+        def spy(write, fps, width, *a, **k):
+            got.append((fps, width))
+            return orig(write, fps, width, *a, **k)
+        self.pv.stream = spy
+        s, _ = self.client.open(999, 5000)
+        s.close()
+        self.assertTrue(self.wait_viewers(0))
+        self.assertEqual(got, [(30, 1280)])
+
+    def test_service_ends_after_idle_time(self):
+        a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+        pv = FakePreview(a, b)
+        path = os.path.join(self.tmp, "idle.sock")
+        ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        ls.bind(path)
+        ls.listen(1)
+        svc = P.Service(pv, sending=lambda: True, idle=1)
+        done = []
+        t = threading.Thread(target=lambda: (svc.serve(ls), done.append(1)), daemon=True)
+        t0 = time.monotonic()
+        t.start()
+        t.join(6)
+        self.assertEqual(done, [1])
+        self.assertLess(time.monotonic() - t0, 5)
+        ls.close()
+        a.close()
+        b.close()
+
+
+class Environment(unittest.TestCase):
+    def test_sender_status(self):
+        import tempfile
+        p = os.path.join(tempfile.mkdtemp(), "status.json")
+        self.assertFalse(P.sending_now(p), "Datei fehlt")
+        def put(**kw):
+            with open(p, "w") as f:
+                json.dump(kw, f)
+        put(state="running", time=1000)
+        self.assertTrue(P.sending_now(p, now=lambda: 1005))
+        self.assertFalse(P.sending_now(p, now=lambda: 1016), "älter als 15 s")
+        put(state="stopping", time=1000)
+        self.assertFalse(P.sending_now(p, now=lambda: 1001))
+        put(state="refused", time=1000)
+        self.assertFalse(P.sending_now(p, now=lambda: 1001))
+        with open(p, "w") as f:
+            f.write("kaputt")
+        self.assertFalse(P.sending_now(p))
+
+    def test_big_cpus(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        for n, c in enumerate([512, 512, 512, 512, 1024, 1024, 1024, 1024]):
+            os.makedirs("%s/cpu%d" % (d, n))
+            with open("%s/cpu%d/cpu_capacity" % (d, n), "w") as f:
+                f.write(str(c))
+        self.assertEqual(P.big_cpus(d), [4, 5, 6, 7])
+        self.assertEqual(P.big_cpus(d + "/gibt-es-nicht"), [])
+
+    def test_read_line_limit(self):
+        a, b = socket.socketpair()
+        a.sendall(b"abc\nrest")
+        self.assertEqual(P.read_line(b), b"abc")
+        self.assertEqual(b.recv(4), b"rest")            # Nutzdaten nach der Zeile bleiben unberührt
+        a.sendall(b"x" * 600)
+        with self.assertRaises(ValueError):
+            P.read_line(b)
+        a.close()
+        with self.assertRaises(ValueError):
+            P.read_line(b)
+        b.close()
+
+    def test_unit_files_give_only_the_raw_packet_right(self):
+        root = os.path.dirname(HERE)
+        svc = open(os.path.join(root, "install", "pipbox-preview.service"), encoding="utf-8").read()
+        sock = open(os.path.join(root, "install", "pipbox-preview.socket"), encoding="utf-8").read()
+        self.assertIn("CapabilityBoundingSet=CAP_NET_RAW\n", svc)
+        self.assertIn("NoNewPrivileges=yes", svc)
+        self.assertIn("RestrictAddressFamilies=AF_UNIX AF_PACKET", svc)
+        self.assertIn("ProtectSystem=strict", svc)
+        self.assertIn("--serve", svc)
+        self.assertIn("SocketMode=0660", sock)
+        self.assertIn("SocketGroup=pipbox", sock)
+        self.assertIn("ListenStream=/run/pipbox-preview.sock", sock)
+        self.assertEqual(P.SOCKET, "/run/pipbox-preview.sock")
+
+    def test_installer_sets_up_the_service(self):
+        root = os.path.dirname(HERE)
+        sh = open(os.path.join(root, "install", "install.sh"), encoding="utf-8").read()
+        for needle in ("pipbox_preview.py", "pipbox-preview.socket", "pipbox-preview.service", "enable --now pipbox-preview.socket"):
+            self.assertIn(needle, sh)
+        self.assertEqual(sh.count("pipbox-preview.socket /etc/systemd/system/"), 1)
+
+    def test_web_server_only_passes_the_stream_through(self):
+        src = open(os.path.join(os.path.dirname(HERE), "server.py"), encoding="utf-8").read()
+        self.assertIn("pipbox_preview.Client()", src)
+        self.assertIn('"/api/preview/stream"', src)
+        self.assertNotIn("AF_PACKET", src)               # der Webserver braucht das Recht nicht und bekommt es nicht
+        self.assertIn('(q.get("long") or [""])[0] == "1"', src)
 
 
 if __name__ == "__main__":
