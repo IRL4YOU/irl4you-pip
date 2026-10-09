@@ -418,6 +418,11 @@ dialog#rdlg{background:var(--card);color:var(--text);border:1px solid var(--warn
 .dsw{display:flex;flex:none;margin-top:2px;border:1px solid var(--line);border-radius:8px;overflow:hidden}.dsw i{display:block;width:14px;height:34px}
 .optlist{margin:8px 0}.optgrp{margin:0 0 2px}
 .ordrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0}.ordrow.off{color:var(--muted)}.ordrow .mvs{display:inline-flex;gap:4px;flex:none}
+details.card[hidden]{display:none!important}
+.ctlhd{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:14px 0 4px}.ctlhd b{font-size:15px}
+.ctlrow{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;margin-top:6px;transition:background .15s,border-color .15s}
+.ctlrow .ctlkey{flex:1 1 40%;font-weight:600}.ctlrow select{flex:1 1 55%;min-width:0}
+.ctlrow.hit{background:color-mix(in srgb,var(--accent) 22%,transparent);border-color:var(--accent)}
 .optrow{display:flex;align-items:center;gap:8px;padding:5px 0;line-height:1.35;cursor:pointer}.optrow.sub{padding-left:26px}.optrow input{flex:none}
 .optrow.fixed{opacity:.6;cursor:default}
 #pb_awake[aria-pressed=true]{background:var(--accent);color:#0f172a;border-color:var(--accent)}
@@ -632,9 +637,20 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div id="wifisaved" class="ph"></div>
   </div></div>
     </details>
-    <details class="subsec" id="net_bt"><summary>Bluetooth (für DJI-Kameras)</summary>
+    <details class="subsec" id="net_bt"><summary>Bluetooth</summary>
     <div class="ph" style="margin-top:0">Die Bluetooth-Sticks dieser Box. Steht ein Stick als nicht nutzbar da, fehlt ihm der Treiber oder er wird nicht unterstützt.</div>
     <div id="btcard"><div class="ph">Wird geladen …</div></div>
+    <div class="sech">Handyverbindungen</div>
+    <div class="ph" data-hlp>Zeigt den Akkustand gekoppelter Handys. Die Box fragt alle 10 Minuten kurz nach und trennt danach wieder, es gibt keine Dauerverbindung. Android meldet den Akku in Schritten von 20 %, ein iPhone in Schritten von etwa 10 %. Das Handy muss in der Nähe sein und Bluetooth an haben.</div>
+    <div id="phonecard"></div>
+    <div class="actions"><button id="ph_pair" type="button">Handy koppeln</button></div>
+    <div id="ph_msg" class="ph"></div>
+    <div class="sech">Controller</div>
+    <div class="ph" data-hlp>Bluetooth-Controller mit Tasten, zum Beispiel ein Mini-Tastenfeld oder ein Gamepad. Controller einschalten, in den Kopplungsmodus bringen, nah an die Box legen und suchen. Funktionen für die Tasten folgen später.</div>
+    <div id="ctrlcard"></div>
+    <div class="actions"><button id="ct_scan" type="button">Nach Controllern suchen</button> <label class="chk"><input type="checkbox" id="ct_all"> Alle Geräte zeigen</label></div>
+    <div id="ctrlfound"></div>
+    <div id="ct_msg" class="ph"></div>
     </details>
     <details class="subsec" id="net_ua"><summary>Zugriff auf diese Oberfläche</summary>
     <label class="chk"><input type="checkbox" id="ua_block"> Über fremde WLANs sperren</label>
@@ -809,6 +825,12 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div id="pipeerr" class="err"></div>
     <div id="pipeinfo" class="ph"></div>
     <details class="sens"><summary class="muted">Technische Beschreibung ansehen (für die Fehlersuche)</summary><pre id="pipeprev"></pre></details>
+  </details>
+
+  <details class="card wide" id="c_ctl" hidden><summary><span class="sumh">Controller-Tasten</span></summary>
+    <div class="ph" style="margin-top:0" data-hlp>Hier legen Sie fest, was die Tasten eines gekoppelten Controllers tun. Drücken Sie eine Taste am Controller, dann wird sie in der Liste markiert. Die vier Bild-Funktionen tauschen immer das Hauptbild: Die Kamera im gewählten kleinen Bild wird zum Hauptbild, die bisherige Hauptkamera nimmt ihren Platz ein, ein zweiter Druck tauscht zurück. „Hauptbild“ holt die Hauptkamera aus der Kameraliste zurück.</div>
+    <div id="ctl_list"></div>
+    <div id="ctl_err" class="err"></div>
   </details>
 
   <details class="card wide" id="rcard">
@@ -1406,8 +1428,53 @@ function btRender(d){
   }
   setHtml(el,h);
 }
+// Handyverbindungen (Verbindungen, Bluetooth): gekoppelte Handys mit Akkustand; während der Kopplung zählt die Zeit herunter
+function phoneAge(s){ return s==null?"":s<90?"gerade eben":s<5400?`vor ${Math.round(s/60)} Min.`:`vor ${Math.round(s/3600)} Std.`; }
+function phoneRender(d){
+  const el=$("phonecard"); if(!el) return;
+  const list=d.available?(d.phones||[]):[], pr=d.phone_pairing||{};
+  setHtml(el,list.length?list.map(p=>{
+    const lvl=p.percent==null?"":p.percent>75?" ok":p.percent<25?" bad":"";
+    const val=p.percent==null?(p.reading?"wird gelesen …":"noch kein Wert"):`${p.percent} %`;
+    return `<div class="wstat${lvl}" data-addr="${esc(p.addr)}"><span class="wdot"></span><span class="wgrow"><b>${esc(p.name)}</b> · ${esc(val)}${p.age!=null?` <span class="muted">· ${esc(phoneAge(p.age))}</span>`:""}`+
+      `${p.error?`<div class="muted" style="margin-top:3px;color:var(--crit)">${esc(p.error)}</div>`:""}</span>`+
+      `<button type="button" class="ph-read"${p.reading?" disabled":""}>Jetzt lesen</button> <button type="button" class="ph-del">Entfernen</button></div>`; }).join(""):
+    '<div class="muted" style="margin:6px 0">Noch kein Handy gekoppelt.</div>');
+  const b=$("ph_pair"); b.disabled=!d.available;
+  b.textContent=pr.active?"Abbrechen":"Handy koppeln";
+  const m=$("ph_msg");
+  m.textContent=pr.active?`Die Box ist jetzt noch ${pr.left} Sekunden sichtbar. Am Handy in den Bluetooth-Einstellungen nach neuen Geräten suchen und „belabox“ auswählen.`:(pr.message||"");
+}
+$("ph_pair").onclick=async()=>{ const on=(djiData.phone_pairing||{}).active; if(await djiCmd({cmd:on?"phone_pair_stop":"phone_pair"})) djiLoad(); };
+$("phonecard").addEventListener("click",async e=>{
+  const b=e.target.closest("button"), row=e.target.closest("[data-addr]"); if(!b||!row) return;
+  const addr=row.dataset.addr;
+  if(b.classList.contains("ph-read")){ if(await djiCmd({cmd:"phone_read",addr})) djiLoad(); }
+  else if(b.classList.contains("ph-del")){ if(confirm("Dieses Handy entfernen? Die Kopplung wird aufgehoben, zum erneuten Abfragen muss es neu gekoppelt werden.")&&await djiCmd({cmd:"phone_remove",addr})) djiLoad(); }
+});
+// Controller (Verbindungen, Bluetooth): gekoppelte Controller mit Zustand, Suche in der Nähe und Auswahl aus der Liste
+function ctrlRender(d){
+  const el=$("ctrlcard"); if(!el) return;
+  const ok=d.available, list=ok?(d.controllers||[]):[], sc=d.ctrl_scan||{};
+  setHtml(el,list.length?list.map(c=>`<div class="wstat${c.connected?" ok":""}" data-addr="${esc(c.addr)}"><span class="wdot"></span><span class="wgrow"><b>${esc(c.name)}</b> · ${c.pairing?"Koppeln …":c.connected?"verbunden":"getrennt"}`+
+    `${c.battery!=null?` <span class="muted">· Akku ${esc(c.battery)} %</span>`:""}</span><button type="button" class="ct-del">Entfernen</button></div>`).join(""):
+    '<div class="muted" style="margin:6px 0">Noch kein Controller gekoppelt.</div>');
+  const all=$("ct_all").checked, found=(d.ctrl_found||[]).filter(r=>all||r.input);
+  const f=$("ctrlfound");
+  setHtml(f,found.map(r=>`<div class="dscan" data-addr="${esc(r.addr)}"><div>${esc(r.name||"(ohne Name)")} <span class="muted">${esc(r.addr)} · ${esc(r.rssi)} dBm</span></div><button type="button" class="ct-pair"${(d.controllers||[]).some(c=>c.pairing)?" disabled":""}>Koppeln</button></div>`).join(""));
+  const b=$("ct_scan"); b.disabled=!ok||!!sc.active; b.textContent=sc.active?"Suche läuft …":"Nach Controllern suchen";
+  const m=$("ct_msg");
+  m.textContent=d.ctrl_message||sc.message||(!sc.active&&(d.ctrl_found||[]).length&&!found.length?"Kein Controller erkannt. Mit „Alle Geräte zeigen“ siehst du alle Geräte in der Nähe.":"");
+  m.style.color=d.ctrl_message?"var(--crit)":"";
+}
+$("ct_scan").onclick=async()=>{ if(await djiCmd({cmd:"ctrl_scan"})) djiLoad(); };
+$("ct_all").onchange=()=>ctrlRender(djiData);
+$("ctrlcard").addEventListener("click",async e=>{ const b=e.target.closest(".ct-del"), row=e.target.closest("[data-addr]"); if(!b||!row) return;
+  if(confirm("Diesen Controller entfernen? Die Kopplung wird aufgehoben.")&&await djiCmd({cmd:"ctrl_remove",addr:row.dataset.addr})) djiLoad(); });
+$("ctrlfound").addEventListener("click",async e=>{ const b=e.target.closest(".ct-pair"), row=e.target.closest("[data-addr]"); if(!b||!row) return;
+  if(await djiCmd({cmd:"ctrl_pair",addr:row.dataset.addr})) djiLoad(); });
 function djiRender(d){
-  djiData=d; djiRecv=Date.now(); btRender(d);
+  djiData=d; djiRecv=Date.now(); btRender(d); phoneRender(d); ctrlRender(d);
   const note=$("djinote"), box=$("djicams");
   if(!d.available){ note.textContent=d.reason||"Bluetooth nicht verfügbar"; note.style.color="var(--crit)"; $("d_scan").disabled=true; box.innerHTML=""; djiStruct=""; $("djiscan").innerHTML=""; $("djiadapt").textContent=""; return; }
   note.textContent=d.bleak===false?"Die Bluetooth-Bibliothek (bleak) ist nicht installiert. install.sh erneut ausführen (braucht Internet).":(d.scan_error||"");
@@ -1442,7 +1509,7 @@ function djiUpdate(addr,ch){          // Änderungen kurz sammeln und gemeinsam 
   p.t=setTimeout(async()=>{ const c=p.ch; delete djiPend[addr]; if(await djiCmd(Object.assign({cmd:"update",addr},c))) tick(); djiLoad(); },400);
 }
 setInterval(()=>{ if(!document.hidden) djiDynamic(); },1000);
-(function djiFastLoop(){ const busy=djiData.available&&((djiData.scanning)||(djiData.cameras||[]).some(c=>DJI_BUSY.includes(c.state)));   // während des Verbindens jede Sekunde nachsehen
+(function djiFastLoop(){ const busy=djiData.available&&((djiData.scanning)||(djiData.phone_pairing||{}).active||(djiData.phones||[]).some(p=>p.reading)||(djiData.ctrl_scan||{}).active||(djiData.controllers||[]).some(c=>c.pairing)||(djiData.cameras||[]).some(c=>DJI_BUSY.includes(c.state)));   // während des Verbindens jede Sekunde nachsehen
   Promise.resolve(busy&&!document.hidden?djiLoad():null).finally(()=>setTimeout(djiFastLoop,1000)); })();
 $("djicams").addEventListener("toggle",e=>{ const d=e.target, card=d.closest&&d.closest(".dcam"); if(!card||!d.dataset||!d.dataset.sec) return;
   (djiOpen[card.dataset.addr]=djiOpen[card.dataset.addr]||{})[d.dataset.sec]=d.open;
@@ -2982,8 +3049,9 @@ $("chat_form").addEventListener("submit",async e=>{
   let pushT=0;
   function push(){ clearTimeout(pushT); pushT=setTimeout(()=>{ srtlaCall("POST","/api/layout",{order:st.order,hidden:st.hidden}).catch(()=>{}); },400); }       // auf der Box ablegen: gilt für alle Geräte
   const save=()=>{ try{ localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} push(); };
-  const movables=()=>[...main.children].filter(el=>el.matches("details.card[id]"));
-  const DEFAULT=movables().map(e=>e.id);                                   // Standardreihenfolge
+  const allCards=()=>[...main.children].filter(el=>el.matches("details.card[id]"));
+  const movables=()=>allCards().filter(el=>!el.hidden);                    // eine versteckte Karte (Controller-Tasten ohne Controller) steht nicht in den Listen
+  const DEFAULT=allCards().map(e=>e.id);                                   // Standardreihenfolge
   const hideable=id=>id!=="c_layout"&&id!=="livecard";                      // "Optionen" selbst bleibt immer sichtbar
   const label=el=>{ const s=el.querySelector(":scope>summary"); if(!s) return el.id; const h=s.querySelector(".sumh"); if(h) return h.textContent.trim();
                     let t=""; s.childNodes.forEach(n=>{ if(n.nodeType===3) t+=n.textContent; }); return t.trim()||el.id; };
@@ -3047,7 +3115,43 @@ $("chat_form").addEventListener("submit",async e=>{
     else if(st.order.length||st.hidden.length) push();
   }
   document.addEventListener("visibilitychange",()=>{ if(!document.hidden) pull(); });
+  document.addEventListener("pb-menus-changed",()=>{ applyOrder(); applyHidden(); buildList(); });
   applyOrder(); applyHidden(); buildList(); pull();
+})();
+
+// ---- Controller-Tasten: erscheint, sobald ein Controller gekoppelt ist; je Taste eine Funktion wählen ----
+(function(){
+  const card=$("c_ctl"), list=$("ctl_list"); let sig="", data=null, busy=false;
+  function build(d){
+    const fnOpts='<option value="">–</option>'+d.functions.map(f=>`<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("");
+    list.innerHTML=d.controllers.map(c=>`<div class="ctlhd" data-addr="${esc(c.addr)}"><b>${esc(c.name)}</b><span class="muted ctlst"></span></div>`+
+      (c.assumed&&c.keys.length?'<div class="ph" style="margin:0 0 4px">Der Controller war noch nicht verbunden. Gezeigt wird die übliche Gamepad-Belegung. Sobald er verbunden ist, erscheinen seine echten Tasten, Ihre Auswahl bleibt erhalten.</div>':"")+
+      (c.keys.length?c.keys.map(k=>`<div class="ctlrow" data-addr="${esc(c.addr)}" data-code="${k.code}"><span class="ctlkey">${esc(k.name)}</span><select aria-label="${esc(k.name)}">${fnOpts}</select></div>`).join(""):
+       '<div class="muted" style="margin:6px 0">Noch keine Tasten bekannt. Controller einschalten und eine Taste drücken, dann erscheint die Liste.</div>')).join("");
+  }
+  function paint(d){
+    d.controllers.forEach(c=>{
+      const hd=list.querySelector(`.ctlhd[data-addr="${c.addr}"] .ctlst`); if(hd) hd.textContent=c.present?"verbunden":"getrennt";
+      c.keys.forEach(k=>{ const row=list.querySelector(`.ctlrow[data-addr="${c.addr}"][data-code="${k.code}"]`); if(!row) return;
+        const sel=row.querySelector("select"), v=c.map[String(k.code)]||""; if(sel.value!==v&&document.activeElement!==sel) sel.value=v; }); });
+    const l=d.last||{}; list.querySelectorAll(".ctlrow.hit").forEach(r=>r.classList.remove("hit"));
+    if(l.age!=null&&l.age<2){ const r=list.querySelector(`.ctlrow[data-addr="${l.addr}"][data-code="${l.code}"]`); if(r) r.classList.add("hit"); }
+    $("ctl_err").textContent=d.error||"";
+  }
+  async function poll(){
+    if(busy||document.hidden) return; busy=true;
+    try{ const d=await srtlaCall("GET","/api/controller-keys"); data=d;
+      const show=d.controllers.length>0;
+      if(card.hidden===show){ card.hidden=!show; document.dispatchEvent(new Event("pb-menus-changed")); }       // das Menü erscheint erst mit dem ersten Controller
+      const s=JSON.stringify([d.functions.map(f=>f.id),d.controllers.map(c=>[c.addr,c.name,c.assumed,c.keys.map(k=>k.code)])]);
+      if(s!==sig&&!list.contains(document.activeElement)){ sig=s; build(d); }
+      if(s===sig) paint(d);
+    }catch(e){} busy=false;
+  }
+  list.addEventListener("change",async e=>{ const sel=e.target.closest("select"), row=e.target.closest(".ctlrow"); if(!sel||!row) return;
+    try{ await srtlaCall("POST","/api/controller-keys",{addr:row.dataset.addr,code:+row.dataset.code,fn:sel.value}); $("ctl_err").textContent=""; }
+    catch(err){ $("ctl_err").textContent=err.message||"Fehler"; } poll(); });
+  let n=0; poll(); setInterval(()=>{ n++; if(!card.hidden&&card.open||n%7===0) poll(); },700);
 })();
 
 // ---- Karten zuklappen: Zustand wird im Browser gemerkt ----
