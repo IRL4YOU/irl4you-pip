@@ -363,8 +363,10 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
   #mfoot{display:flex;position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));z-index:60;gap:6px;padding:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 0 0 8px var(--bg),0 env(safe-area-inset-bottom) 0 8px var(--bg),0 -12px 12px -4px var(--shade)}
   #mfoot{transition:transform .22s ease,visibility 0s}
   html.mfhide #mfoot{transform:translateY(calc(100% + 32px + env(safe-area-inset-bottom)));visibility:hidden;transition:transform .22s ease,visibility 0s .22s}      /* beim Runterscrollen weg (Platz für Chat und Vorschau), beim Hochscrollen wieder da */
+  html.mfperm body{padding-bottom:calc(16px + env(safe-area-inset-bottom))}                  /* Leiste ganz weg: unten kein Platz freihalten */
   body{padding-bottom:calc(var(--mfh,72px) + 20px + env(safe-area-inset-bottom))}    /* --mfh: Höhe der Fußleiste, setzt die Seite (mit Knopfreihe höher) */
   .toast{bottom:calc(var(--mfh,72px) + 28px + env(safe-area-inset-bottom))}
+  html.mfhide .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 }
 @media(max-width:374px){.mf-live{min-width:60px}.mf-t{min-width:38px}}                /* schmale Handys: die fünf Knöpfe müssen noch in die Leiste passen */
 @media(max-width:339px){
@@ -2446,18 +2448,30 @@ function fitMsg(m){                                                         // I
   m.style.fontSize=""; let fs=parseFloat(getComputedStyle(m).fontSize)||14;
   while(m.scrollWidth>m.clientWidth+1&&fs>9){ fs-=.5; m.style.fontSize=fs+"px"; }
 }
-// Fußleiste am Handy: beim Runterscrollen ausblenden, beim Hochscrollen (und ganz oben, ganz unten, beim Fokus) wieder einblenden
+// Fußleiste am Handy, Einstellung je Gerät (Optionen): "auto" = beim Runterscrollen weg, beim Hochscrollen (und ganz oben, ganz unten, beim Fokus) wieder da, aber nur solange
+// Chat oder Vorschau zu sehen sind (sonst gibt es nichts zu gewinnen: die Leiste bleibt); "always" = bleibt immer; "hide" = weg, solange Chat oder Vorschau zu sehen sind.
 (function(){
-  const f=$("mfoot"), root=document.documentElement; let y=Math.max(0,window.scrollY), run=0, hid=false;
-  const set=h=>{ if(h!==hid){ hid=h; root.classList.toggle("mfhide",h); } };
+  const f=$("mfoot"), root=document.documentElement, KEY="pb_foot"; let y=Math.max(0,window.scrollY), run=0, scrollHid=false, mode="auto";
+  try{ const v=localStorage.getItem(KEY); if(v==="always"||v==="hide") mode=v; }catch(e){}
+  const shown=()=>["c_chat","c_prev"].some(id=>{ const e=$(id); return !!e&&e.open&&e.offsetParent!==null; });                 // Karte offen und nicht unter Optionen ausgeblendet
+  const apply=()=>{ const wide=shown(), h=mode!=="always"&&wide&&(mode==="hide"||scrollHid);
+                    root.classList.toggle("mfhide",h); root.classList.toggle("mfperm",mode==="hide"&&wide); };
+  window.pbFootMode=m=>{ mode=(m==="always"||m==="hide")?m:"auto"; try{ localStorage.setItem(KEY,mode); }catch(e){} scrollHid=false; apply(); };
+  window.pbFootGet=()=>mode;
   window.addEventListener("scroll",()=>{
-    if(getComputedStyle(f).display==="none"){ run=0; set(false); return; }                                // nur dort, wo die Leiste überhaupt steht (Handy)
+    if(getComputedStyle(f).display==="none"){ run=0; scrollHid=false; apply(); return; }                // nur dort, wo die Leiste überhaupt steht (Handy)
     const ny=Math.max(0,window.scrollY), d=ny-y; y=ny;
     run=(d>0)===(run>0)?run+d:d;                                                                          // Richtungswechsel zählt neu (kleines Wackeln löst nichts aus)
     const bottom=window.innerHeight+ny>=document.documentElement.scrollHeight-8;
-    if(ny<24||bottom||run<-8) set(false); else if(run>8) set(true);
+    if(ny<24||bottom||run<-8) scrollHid=false; else if(run>8) scrollHid=true;
+    apply();
   },{passive:true});
-  f.addEventListener("focusin",()=>set(false));
+  f.addEventListener("focusin",()=>{ scrollHid=false; apply(); });
+  ["c_chat","c_prev"].forEach(id=>{ const e=$(id); if(e) e.addEventListener("toggle",apply); });
+  window.addEventListener("resize",apply);
+  document.addEventListener("pb-menus-changed",apply);
+  new MutationObserver(apply).observe(document.querySelector("main"),{attributes:true,subtree:true,attributeFilter:["data-pbhide"]});            // Karte unter Optionen ein- oder ausgeblendet
+  apply();
 })();
 function sizeFoot(){ const h=$("mfoot").offsetHeight; if(h) document.documentElement.style.setProperty("--mfh",h+"px"); else document.documentElement.style.removeProperty("--mfh"); }
 window.addEventListener("resize",sizeFoot);
@@ -3321,6 +3335,13 @@ $("chat_form").addEventListener("submit",async e=>{
       const b=document.createElement("button"); b.type="button"; b.className="helpbtn"; b.textContent="i"; b.setAttribute("aria-label","Erklärung zeigen"); b.setAttribute("aria-expanded","false"); g.firstChild.appendChild(b);
       const h=document.createElement("div"); h.className="ph"; h.hidden=true; h.textContent="Blendet bei Chat und Vorschau die Überschrift und die Kopfzeile aus, um Platz zu sparen. Die Knöpfe (Einstellungen des Chats, Start und Stop der Vorschau) bleiben als kleine Symbole oben rechts über dem Inhalt. Beide Karten sind dann immer aufgeklappt. Signalanzeige und Kamerapunkte des Chats erscheinen nur noch in der Kopfleiste am Handy während der Sendung."; g.appendChild(h);
       b.addEventListener("click",ev=>{ ev.preventDefault(); h.hidden=!h.hidden; b.setAttribute("aria-expanded",String(!h.hidden)); }); box.appendChild(g); }
+    { const g=document.createElement("div"); g.className="optgrp"; const l=document.createElement("label"); l.className="optrow"; const t=document.createElement("span"); t.textContent="Fußleiste am Handy"; l.appendChild(t);
+      const sel=document.createElement("select"); sel.id="foot_mode"; sel.style.marginLeft="8px";
+      for(const [v,txt] of [["auto","Automatisch"],["always","Immer anzeigen"],["hide","Ausblenden"]]){ const o=document.createElement("option"); o.value=v; o.textContent=txt; sel.appendChild(o); }
+      sel.value=window.pbFootGet?window.pbFootGet():"auto"; sel.addEventListener("change",()=>window.pbFootMode&&window.pbFootMode(sel.value)); l.appendChild(sel); g.appendChild(l);
+      const b=document.createElement("button"); b.type="button"; b.className="helpbtn"; b.textContent="i"; b.setAttribute("aria-label","Erklärung zeigen"); b.setAttribute("aria-expanded","false"); l.appendChild(b);
+      const h=document.createElement("div"); h.className="ph"; h.hidden=true; h.textContent="Die Knöpfe unten am Handy (Live/Stop, Kameras, Ton). Automatisch: Sie gleiten beim Runterscrollen weg und kommen beim Hochscrollen zurück, solange Chat oder Vorschau zu sehen sind; ohne beide bleiben sie immer da. Immer anzeigen: Die Leiste bleibt stehen. Ausblenden: Sie ist weg, solange Chat oder Vorschau zu sehen sind (mehr Platz, zum Beispiel auf dem Motorrad). Gilt nur für dieses Gerät.";
+      g.appendChild(h); b.addEventListener("click",ev=>{ ev.preventDefault(); h.hidden=!h.hidden; b.setAttribute("aria-expanded",String(!h.hidden)); }); box.appendChild(g); }
   }
   function buildOrder(focus){
     const box=$("ord_list"), all=movables(); box.textContent="";
