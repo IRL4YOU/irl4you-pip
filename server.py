@@ -7547,6 +7547,7 @@ class SupportCases:
     ließe sich aus der öffentlichen Software auslesen); sie bereitet das Formular auf GitHub vor. Hier steht nur die Liste "Meine Fälle": je Problem und
     je Wunsch eine Nummer (IRL-XXXXXX, ohne Bezug zu Person oder Box), Art, Titel, Zeit und "erledigt" (gilt nur auf der Box). Datei <state>/support-cases.json."""
     KEEP = 100
+    DELETE_WINDOW = 30 * 60.0                                       # Fälle bleiben erhalten (Nachwelt); nur kurz nach dem Anlegen lässt sich ein Eintrag entfernen (Issue #64)
     ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"                 # ohne I, L, O, 0, 1: nicht zu verwechseln
     ID_RE = re.compile(r"^IRL-[A-HJKMNP-Z2-9]{6}$")
     TITLE_MAX = 100
@@ -7587,20 +7588,40 @@ class SupportCases:
         with self.lock:
             return [dict(c, kind="feature" if c.get("kind") == "feature" else "issue") for c in reversed(self.cases)]       # ältere Einträge ohne Art sind Probleme
 
-    def create(self, title, kind="issue"):
+    def create(self, title, kind="issue", cid=None):
+        """Neuen Fall anlegen. Mit cid legt die Oberfläche die Nummer selbst fest (sie steht schon im Link zu GitHub); sie muss gültig und frei sein."""
         if kind not in ("issue", "feature"):
             raise ValueError("Ungültige Anfrage")
         t = self.clean_title(title)
         with self.lock:
             used = {c["id"] for c in self.cases}
-            while True:
-                cid = "IRL-" + "".join(secrets.choice(self.ALPHABET) for _ in range(6))
-                if cid not in used:
-                    break
+            if cid is not None:
+                if not isinstance(cid, str) or not self.ID_RE.match(cid) or cid in used:
+                    raise ValueError("Ungültige Anfrage")
+            else:
+                while True:
+                    cid = "IRL-" + "".join(secrets.choice(self.ALPHABET) for _ in range(6))
+                    if cid not in used:
+                        break
             case = {"id": cid, "title": t, "t": int(self.clock()), "done": False, "kind": kind}
             self.cases = (self.cases + [case])[-self.KEEP:]
             self._save()
             return dict(case)
+
+    def delete(self, cid):
+        """Einen Eintrag nur aus der Liste nehmen, und nur in den ersten DELETE_WINDOW Sekunden nach dem Anlegen (zum Beispiel, wenn man das Formular nicht abgeschickt hat).
+        Ein Issue auf GitHub wird nie angefasst."""
+        if not isinstance(cid, str) or not self.ID_RE.match(cid):
+            raise ValueError("Ungültige Anfrage")
+        with self.lock:
+            for i, c in enumerate(self.cases):
+                if c["id"] == cid:
+                    if self.clock() - c["t"] > self.DELETE_WINDOW:
+                        raise ValueError("Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.")
+                    del self.cases[i]
+                    self._save()
+                    return {"ok": True}
+        raise KeyError(cid)
 
     def mark(self, cid, done):
         if not isinstance(cid, str) or not self.ID_RE.match(cid) or not isinstance(done, bool):
@@ -8126,7 +8147,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/swupdate/history":
             return self.reply(200, self.swupdate.history())
         if path == "/api/support":
-            return self.reply(200, {"cases": self.support.list(), "version": self.swupdate.version, "issues": "https://github.com/IRL4YOU/irl4you-pip/issues"})
+            return self.reply(200, {"cases": self.support.list(), "version": self.swupdate.version, "issues": "https://github.com/IRL4YOU/irl4you-pip/issues",
+                                    "now": int(time.time()), "delete_window": int(self.support.DELETE_WINDOW)})
         if path == "/api/update":
             try:
                 self.updates.auto_check(present=True)       # Wer die Seite öffnet, soll gleich wissen, ob es Updates gibt (einmal je Start, still)
@@ -8309,9 +8331,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/support":
                 try:
                     if d.get("action") == "create":
-                        return self.reply(200, self.support.create(d.get("title"), d.get("kind", "issue")))
+                        return self.reply(200, self.support.create(d.get("title"), d.get("kind", "issue"), d.get("id")))
                     if d.get("action") == "done":
                         return self.reply(200, self.support.mark(d.get("id"), d.get("done")))
+                    if d.get("action") == "delete":
+                        return self.reply(200, self.support.delete(d.get("id")))
                 except ValueError as e:
                     return self.reply(400, {"error": str(e)})
                 except KeyError:
