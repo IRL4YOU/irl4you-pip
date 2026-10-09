@@ -7508,6 +7508,76 @@ def client_wifi_list():
     return out
 
 
+class SupportCases:
+    """Issue #13: Probleme und Wünsche aus der Box melden. Die Box sendet selbst nichts (dafür bräuchte sie einen GitHub-Schlüssel mit Schreibrechten, und der
+    ließe sich aus der öffentlichen Software auslesen); sie bereitet das Formular auf GitHub vor. Hier steht nur die Liste "Meine Fälle": je Problem eine
+    Support-Nummer (IRL-XXXXXX, ohne Bezug zu Person oder Box), Titel, Zeit und "erledigt" (gilt nur auf der Box). Datei <state>/support-cases.json."""
+    KEEP = 100
+    ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"                 # ohne I, L, O, 0, 1: nicht zu verwechseln
+    ID_RE = re.compile(r"^IRL-[A-HJKMNP-Z2-9]{6}$")
+    TITLE_MAX = 100
+
+    def __init__(self, path, clock=time.time):
+        self.path, self.clock = path, clock
+        self.lock = threading.Lock()
+        self.cases = []
+        try:
+            with open(path, encoding="utf-8") as f:
+                saved = json.load(f)
+            if isinstance(saved, list):
+                self.cases = [c for c in saved if isinstance(c, dict) and self.ID_RE.match(str(c.get("id"))) and isinstance(c.get("title"), str)
+                              and isinstance(c.get("t"), (int, float))][-self.KEEP:]
+        except (OSError, ValueError):
+            pass
+
+    @classmethod
+    def clean_title(cls, title):
+        if not isinstance(title, str):
+            raise ValueError("Bitte einen Titel eintragen.")
+        t = " ".join("".join(ch if ch.isprintable() else " " for ch in title).split())[:cls.TITLE_MAX]
+        if len(t) < 3:
+            raise ValueError("Der Titel ist zu kurz (mindestens 3 Zeichen).")
+        return t
+
+    def _save(self):
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.cases, f, ensure_ascii=False)
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+    def list(self):
+        with self.lock:
+            return [dict(c) for c in reversed(self.cases)]
+
+    def create(self, title):
+        t = self.clean_title(title)
+        with self.lock:
+            used = {c["id"] for c in self.cases}
+            while True:
+                cid = "IRL-" + "".join(secrets.choice(self.ALPHABET) for _ in range(6))
+                if cid not in used:
+                    break
+            case = {"id": cid, "title": t, "t": int(self.clock()), "done": False}
+            self.cases = (self.cases + [case])[-self.KEEP:]
+            self._save()
+            return dict(case)
+
+    def mark(self, cid, done):
+        if not isinstance(cid, str) or not self.ID_RE.match(cid) or not isinstance(done, bool):
+            raise ValueError("Ungültige Anfrage")
+        with self.lock:
+            for c in self.cases:
+                if c["id"] == cid:
+                    c["done"] = done
+                    self._save()
+                    return dict(c)
+        raise KeyError(cid)
+
+
 class UiAccess:
     """Schalter "Oberfläche über fremde WLANs sperren" (Issue #25): Die Oberfläche läuft unverschlüsselt (HTTP). In einem WLAN, in dem die Box nur
     Gast ist, liest dort jeder mit. Ist der Schalter an, werden Verbindungen auf der Adresse eines solchen WLANs ohne Antwort getrennt. Ethernet,
@@ -8019,6 +8089,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.swupdate.status(force="check=1" in q, fresh="fresh=1" in q))
         if path == "/api/swupdate/history":
             return self.reply(200, self.swupdate.history())
+        if path == "/api/support":
+            return self.reply(200, {"cases": self.support.list(), "version": self.swupdate.version, "issues": "https://github.com/IRL4YOU/irl4you-pip/issues"})
         if path == "/api/update":
             try:
                 self.updates.auto_check(present=True)       # Wer die Seite öffnet, soll gleich wissen, ob es Updates gibt (einmal je Start, still)
@@ -8198,6 +8270,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(404, {"error": "nicht gefunden"})
             if path == "/api/dji/cmd":
                 return self.reply(200, self.djisvc.command(d))
+            if path == "/api/support":
+                try:
+                    if d.get("action") == "create":
+                        return self.reply(200, self.support.create(d.get("title")))
+                    if d.get("action") == "done":
+                        return self.reply(200, self.support.mark(d.get("id"), d.get("done")))
+                except ValueError as e:
+                    return self.reply(400, {"error": str(e)})
+                except KeyError:
+                    return self.reply(404, {"error": "nicht gefunden"})
+                return self.reply(400, {"error": "Ungültige Anfrage"})
             if path == "/api/alerts/dismiss":
                 if d.get("kind") in ("cam", "hdmi"):
                     return self.reply(200, {"ok": bool(self.outages.dismiss(d.get("kind"), d.get("t")))})
@@ -8311,6 +8394,7 @@ def main():
     Handler.cams = CameraStore(os.path.join(args.state, "cameras.json"), args.rtmp_app, args.rtmp_stat_url, args.demo)
     Handler.outages = OutageWatch()
     Handler.usbwatch = UsbWatch(os.path.join(args.state, "usb-events.json"), demo=args.demo)
+    Handler.support = SupportCases(os.path.join(args.state, "support-cases.json"))
     Handler.sampler = Sampler(args.demo)
     Handler.sampler.sample()  # Startwerte für Ratenberechnung
     Handler.srtla = SrtlaStore(os.path.join(args.state, "srtla.json"))
