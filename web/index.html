@@ -353,7 +353,7 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
   header .hdr{flex-wrap:nowrap;gap:6px;min-width:0}
   header .hdr button,header .hdr>.badge{min-height:30px;padding:3px 9px;white-space:nowrap}
   header .hdr .updbtn{font-size:0;padding:3px 9px}header .hdr .updbtn .dot{margin:0;font-size:13px}    /* nur der gelbe Punkt, Text steht im Tooltip */
-  #hdr_live{display:none!important}
+  html:not(.mfperm) #hdr_live{display:none!important}                                      /* die Fußleiste hat Live/Stop; ist sie per Einstellung ganz weg (Optionen → Fußleiste), steht der Knopf im Kopf */
   body.streaming:not(.hdr-open) #hdr_sig{display:inline-flex;align-items:center;min-width:0}body.streaming #hdr_more{display:inline-flex}      /* während der Sendung: zugeklappt zeigt der Kopf die Pulsanzeige, aufgeklappt alle Knöpfe wie sonst */
   body.streaming:not(.hdr-open) header .hdr>*:not(#hdr_sig):not(#hdr_more){display:none!important}
   body.streaming #hdr_sig .sig .sgs{display:flex}                                                                    /* die Skala (Zahlen links vom Verlauf) bleibt im Kopf immer sichtbar, auch auf schmalen Handys */
