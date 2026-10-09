@@ -58,5 +58,18 @@ class CompactChat(unittest.TestCase):
         self.assertIn("10000", blk)                                                            # zehn Sekunden sichtbar (7 bis 10 s wünschte der Nutzer: 3 s waren zu wenig)
 
 
+class PhoneChat(unittest.TestCase):
+    def test_phone_rules_are_tight(self):
+        i = PAGE.index("@media(max-width:620px){\n  .chatbox{")
+        blk = PAGE[i:PAGE.index("\n}", i)]
+        self.assertIn("font-size:15px;line-height:1.15", blk)
+        self.assertIn(".chatbox .cm{padding:0 2px;", blk)                                   # 0 px statt 9 px zwischen den Nachrichten
+        self.assertIn("img.em{height:1.3em;", blk)
+
+    def test_desktop_rules_unchanged(self):
+        self.assertIn("line-height:1.45;display:flex;flex-direction:column", PAGE)
+        self.assertIn(".chatbox .cm{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px;padding:7px 2px;", PAGE)
+
+
 if __name__ == "__main__":
     unittest.main()
