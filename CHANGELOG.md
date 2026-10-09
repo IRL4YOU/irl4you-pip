@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.9.163 (Beta)
+- **USB-Webcam: deutlich mehr Bitrate.** Gemeldet am 9. Oktober 2026: Mit der Action 5 Pro kamen nur 0,7 Mbit/s an. Gemessen an der Kamera: Ihr H.264-Strom über USB hat nur **1,3 Mbit/s in 1080p** (0,5 Mbit/s in 720p), und die Box reichte ihn unverändert durch, die eingestellte Bitrate (8000 kbit/s) galt dafür nicht. Das MJPEG-Bild derselben Kamera hat 52 Mbit/s und wird mit dem Encoder der Box auf die eingestellte Bitrate kodiert (**7,8 Mbit/s** gemessen). Darum probiert die Box jetzt **zuerst MJPEG** (1080p, dann 720p), danach erst H.264 (1080p, 720p) und Rohbild. Bei der Action 4 war MJPEG schon vorher der Weg (kein brauchbares H.264 über den Kameratreiber).
+- **Kein vorschneller Rückfall auf 720p:** Scheitert ein Probelauf, wird er nach einer Sekunde ein zweites Mal versucht (die Kamera ist direkt nach dem Stoppen der Einspeisung manchmal kurz belegt; so landete die Action 5 Pro beim Neustart des Dienstes in 720p).
+- **Ein Format, das nicht stabil läuft, wird übergangen:** Stirbt die Einspeisung dreimal hintereinander schnell, nimmt die Box beim nächsten Versuch das nächste Format (Meldung im Protokoll).
+- Tests: `tools/test_usbcam.py` jetzt 36 Tests (MJPEG zuerst, zweiter Probelauf, Format wird nach Fehlern übergangen).
+
 ## 0.9.162 (Beta)
 - **Bildaufbau: Eine Kamera aus einem kleinen Bild zum Hauptbild zu machen tauscht jetzt die Plätze.** Bisher flog die bisherige Hauptkamera aus dem Aufbau, wenn man zum Beispiel die USB-Kamera (kleines Bild 3) als Hauptbild wählte; danach fehlte sie in allen Auswahlfeldern und man musste sie wieder einsetzen. Jetzt rückt die bisherige Hauptkamera auf den frei gewordenen Platz, alle Kameras bleiben im Aufbau (auch RTMP-Kameras, die gerade nicht senden). Gemeldet am 9. Oktober 2026: Nutzer wollte die angeschlossene USB-Kamera als Hauptkamera, ohne die RTMP-Kameras zu verlieren.
 - Im selben Zug gefunden: ein Fehler in der ersten Fassung dieser Änderung (nicht veröffentlicht) lag an einer nicht vorhandenen Variablen im Änderungs-Ereignis. Die Auswahl in der Demo-Oberfläche mit der echten Kameraliste der Box wurde nachgeprüft (vier Wechsel hintereinander, jedes Mal sind alle vier Kameras noch im Aufbau).
