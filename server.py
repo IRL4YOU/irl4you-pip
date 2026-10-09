@@ -7569,35 +7569,47 @@ class Handler(BaseHTTPRequestHandler):
         return buf
 
     def preview_stream(self):
-        """Motion-JPEG des gesendeten Bildes (Issue #52): multipart/x-mixed-replace, bis der Browser geht, die Zeit um ist oder die Sendung endet."""
+        """Motion-JPEG des gesendeten Bildes (Issue #52): multipart/x-mixed-replace, durchgereicht vom Vorschau-Dienst, bis der Browser geht, die Zeit um ist oder die Sendung endet."""
         pv = self.preview
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        st = pv.status(self.send._active()) if pv else {"available": False, "why": "missing"}
-        if not st["available"]:
-            return self.reply(503 if st["why"] != "busy" else 429, {"error": st["why"]})
-        started = []
-
-        def write(data):
-            if not started:
-                self.send_response(200)
-                self.send_header("Content-Type", "multipart/x-mixed-replace;boundary=" + pipbox_preview.BOUNDARY)
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.send_header("X-Frame-Options", "DENY")
-                self.end_headers()
-                started.append(1)
-            self.wfile.write(data)
-            self.wfile.flush()
-
+        if not pv:
+            return self.reply(503, {"error": "missing"})
+        if not self.send._active():
+            return self.reply(503, {"error": "off"})
+        try:
+            up, head = pv.open((q.get("fps") or [30])[0], (q.get("w") or [640])[0], (q.get("long") or [""])[0] == "1")
+        except OSError:
+            return self.reply(503, {"error": "missing"})
+        if up is None:
+            why = head.get("error", "capture")
+            return self.reply(429 if why == "busy" else 503, {"error": why})
+        started = False
         self.close_connection = True
         try:
-            why = pv.stream(write, (q.get("fps") or [30])[0], (q.get("w") or [640])[0], self.send._active)
-        except pipbox_preview.Unavailable as e:
-            why = "busy" if isinstance(e, pipbox_preview.Busy) else "capture"
+            up.settimeout(20)
+            while True:
+                data = up.recv(65536)
+                if not data:
+                    break
+                if not started:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "multipart/x-mixed-replace;boundary=" + pipbox_preview.BOUNDARY)
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("X-Frame-Options", "DENY")
+                    self.end_headers()
+                    started = True
+                self.wfile.write(data)
+                self.wfile.flush()
         except OSError:
-            why = "client"
+            pass                                       # Browser weg oder Dienst still: Verbindung zum Dienst schließen beendet die Vorschau dort
+        finally:
+            try:
+                up.close()
+            except OSError:
+                pass
         if not started:
-            self.reply(429 if why == "busy" else 503, {"error": why})
+            self.reply(503, {"error": "kein-bild"})
 
     def send_bytes(self, code, body, ctype, cookie=None, headers=None):
         self.send_response(code)
@@ -7694,7 +7706,11 @@ class Handler(BaseHTTPRequestHandler):
                         c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
             return self.reply(200, m)
         if path == "/api/preview":
-            return self.reply(200, self.preview.status(self.send._active()) if self.preview else {"available": False, "why": "missing"})
+            if not self.preview:
+                return self.reply(200, {"available": False, "why": "missing"})
+            if not self.send._active():
+                return self.reply(200, {"available": False, "why": "off"})            # ohne Sendung gar nicht erst den Dienst wecken
+            return self.reply(200, self.preview.status())
         if path == "/api/preview/stream":
             return self.preview_stream()
         if path == "/api/layout":
@@ -8035,7 +8051,7 @@ def main():
     Handler.srtla = SrtlaStore(os.path.join(args.state, "srtla.json"))
     Handler.pipeline = PipelineStore(os.path.join(args.state, "pipeline.json"))
     Handler.send = SendControl(args.state, Handler.srtla, Handler.pipeline, Handler.cams, args.demo)
-    Handler.preview = pipbox_preview.Preview(pipeline_path="/var/tmp/pipbox/pipeline", big_cpus=pipbox_live.big_cpus) if pipbox_preview and not args.demo else None
+    Handler.preview = pipbox_preview.Client() if pipbox_preview and not args.demo else None          # die Vorschau macht ein eigener Dienst (pipbox-preview.service), der Webserver reicht nur durch
     Handler.swupdate = SwUpdate(args.state, args.demo, Handler.send)
     if not args.demo:
         threading.Thread(target=Handler.swupdate.auto_loop, daemon=True).start()

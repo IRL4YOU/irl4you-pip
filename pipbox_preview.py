@@ -9,19 +9,31 @@ Die Sendekette wird dabei nicht angefasst (kein Abzweig in der Pipeline, kein Ei
 Mischer abbrechen, hier wird nur mitgelesen. Ohne Zuschauer läuft nichts. Eine Vorschau endet, wenn der Browser die Verbindung schließt, nach
 MAX_SECONDS oder wenn der Sender stoppt.
 
-Gemessen auf der Box (Orange Pi 5 Plus, 1080p30 HEVC, 640x360, 30 Bilder/s): rund 18 % eines Kerns, 9 MB Speicher, etwa 3 Mbit/s, die Sendung bleibt unberührt."""
+Gemessen auf der Box (Orange Pi 5 Plus, 1080p30 HEVC, 640x360, 30 Bilder/s): rund 18 % eines Kerns, 9 MB Speicher, etwa 3 Mbit/s, die Sendung bleibt unberührt.
+
+Rechte: Der Webserver läuft als Benutzer pipbox und darf weder rohe Pakete lesen noch den Hardware-Dekoder benutzen (/dev/mpp_service gehört root). Die Arbeit macht darum ein
+eigener kleiner Dienst (pipbox-preview.service, Aufruf: pipbox_preview.py --serve) nur mit dem Recht CAP_NET_RAW. Er wird von systemd erst gestartet, wenn jemand die Vorschau
+öffnet (pipbox-preview.socket), und beendet sich nach IDLE_EXIT Sekunden ohne Zuschauer. Der Webserver spricht über einen Unix-Socket (Gruppe pipbox, Modus 0660) mit ihm:
+eine JSON-Zeile hin, eine JSON-Zeile zurück, danach (nur bei "stream") die Motion-JPEG-Daten, bis eine Seite schließt."""
 import ctypes
+import json
 import os
 import select
 import shutil
 import socket
 import struct
 import subprocess
+import sys
 import threading
 import time
 
 LISTEN_PORT = 9100                # belacoder -> srtla_send (wie in pipbox_send.py)
+SOCKET = "/run/pipbox-preview.sock"
+SEND_STATUS = "/run/pipbox-send/status.json"
+IDLE_EXIT = 60                    # der Dienst beendet sich nach so vielen Sekunden ohne Zuschauer (systemd startet ihn bei der nächsten Anfrage neu)
+MAX_REQUEST = 512                 # längste Anfragezeile in Byte
 MAX_SECONDS = 600                 # eine Vorschau endet nach 10 Minuten, die Seite fragt dann "Weiter ansehen?"
+LONG_SECONDS = 24 * 3600            # mit dem Häkchen "dauerhaft" in der Oberfläche (je Browser): so lange, danach startet die Seite von selbst neu
 MAX_VIEWERS = 2                   # gleichzeitige Vorschauen (jede kostet rund 18 % eines Kerns)
 CHECK_EVERY = 3.0                 # so oft wird geprüft, ob der Sender noch läuft
 FIRST_FRAME_WAIT = 12.0           # bis zum ersten Bild: Schlüsselbild abwarten (alle 2 s), dann dekodieren
@@ -125,6 +137,35 @@ def detect_codec(pipeline_text):
     return "h265" if ("265" in t or "hevc" in t) else "h264"
 
 
+def big_cpus(cpu_dir="/sys/devices/system/cpu"):
+    """Nummern der schnellen Kerne (big.LITTLE über cpu_capacity), [] wenn alle gleich schnell sind (wie pipbox_live.big_cpus, ohne dessen Abhängigkeiten)."""
+    cap = {}
+    try:
+        for d in os.listdir(cpu_dir):
+            if d.startswith("cpu") and d[3:].isdigit():
+                try:
+                    with open("%s/%s/cpu_capacity" % (cpu_dir, d)) as f:
+                        cap[int(d[3:])] = int(f.read().strip())
+                except (OSError, ValueError):
+                    pass
+    except OSError:
+        return []
+    if not cap or max(cap.values()) == min(cap.values()):
+        return []
+    top = max(cap.values())
+    return sorted(c for c, v in cap.items() if v >= top * 0.9)
+
+
+def sending_now(path=SEND_STATUS, now=time.time):
+    """Läuft der Sender? Der Sende-Dienst schreibt seinen Zustand alle 2 s nach /run/pipbox-send/status.json (jünger als 15 s, nicht im Beenden)."""
+    try:
+        with open(path) as f:
+            st = json.load(f)
+        return now() - float(st.get("time", 0)) < 15 and st.get("state") not in ("stopping", "refused")
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
 def little_cpus(big):
     """Alle Kerne außer den schnellen: dort läuft die Vorschau, damit die schnellen für die Sendung frei bleiben."""
     try:
@@ -152,7 +193,7 @@ class Preview:
     def __init__(self, port=LISTEN_PORT, pipeline_path=None, big_cpus=None):
         self.port = port
         self.pipeline_path = pipeline_path
-        self.big_cpus = big_cpus or (lambda: [])
+        self.big_cpus = big_cpus or globals()["big_cpus"]
         self.lock = threading.Lock()
         self.viewers = 0
 
@@ -162,6 +203,11 @@ class Preview:
                 return detect_codec(f.read())
         except (OSError, TypeError):
             return "h264"
+
+    @staticmethod
+    def limit(long=False):
+        """Höchstdauer einer Vorschau: 10 Minuten, mit "long" (Häkchen in der Oberfläche) 24 Stunden."""
+        return LONG_SECONDS if long else MAX_SECONDS
 
     def status(self, sending):
         """Für die Oberfläche: kann eine Vorschau starten, und wenn nicht, warum nicht."""
@@ -207,9 +253,9 @@ class Preview:
         except OSError as e:
             raise Unavailable("gst: %s" % e)
 
-    def stream(self, write, fps, width, still_sending, max_seconds=MAX_SECONDS):
+    def stream(self, write, fps, width, still_sending, max_seconds=MAX_SECONDS, ready=None, gone=None):
         """Läuft, bis der Browser geht (write löst OSError aus), die Zeit um ist oder der Sender stoppt. write(bytes) gibt Daten an den Browser,
-        still_sending() sagt, ob der Sender noch läuft. Rückgabe: Grund des Endes ("client", "zeit", "sender", "kein-bild", "fehler")."""
+        still_sending() sagt, ob der Sender noch läuft, ready() wird einmal aufgerufen, sobald alles gestartet ist, gone() sagt, ob die Gegenseite schon weg ist (auch ohne dass gerade Daten fließen). Rückgabe: Grund des Endes ("client", "zeit", "sender", "kein-bild", "fehler")."""
         fps = clamp(fps, *FPS_RANGE, 30)
         width = clamp(width, *WIDTH_RANGE, 640)
         self._acquire()
@@ -218,6 +264,8 @@ class Preview:
         try:
             sock = self.open_capture()
             proc = self.spawn(fps, width)
+            if ready is not None:
+                ready()                                    # Mitlesen und Dekoder laufen: ab hier kommen Daten (oder "kein-bild")
 
             def feed():
                 ro = Reorder()
@@ -252,6 +300,9 @@ class Preview:
                 now = time.monotonic()
                 if now - t0 > max_seconds:
                     reason = "zeit"
+                    break
+                if gone is not None and gone():
+                    reason = "client"
                     break
                 if stop.is_set() and not select.select([fd], [], [], 0)[0]:
                     reason = "fehler"
@@ -304,3 +355,174 @@ class Preview:
                 except OSError:
                     pass
             self._release()
+
+
+def read_line(sock, limit=MAX_REQUEST):
+    """Eine Zeile (bis \\n) byteweise lesen, damit danach die Nutzdaten unberührt im Socket bleiben. Zu lang oder zu früh geschlossen: ValueError."""
+    out = b""
+    while True:
+        c = sock.recv(1)
+        if not c:
+            raise ValueError("Verbindung zu früh geschlossen")
+        if c == b"\n":
+            return out
+        out += c
+        if len(out) > limit:
+            raise ValueError("Zeile zu lang")
+
+
+def peer_gone(conn):
+    """Hat die Gegenseite die Verbindung geschlossen? Ohne zu warten (select), denn recv() mit MSG_DONTWAIT wartet bei einem Socket mit Zeitgrenze trotzdem bis zu ihr."""
+    try:
+        if not select.select([conn], [], [], 0)[0]:
+            return False
+        return conn.recv(1, socket.MSG_PEEK) == b""
+    except (ValueError, OSError):
+        return True
+
+
+class Service:
+    """Der Dienst hinter dem Unix-Socket: nimmt Anfragen vom Webserver an. Anfragen: {"cmd": "status"} und {"cmd": "stream", "fps", "w", "long"}.
+    Antwort immer zuerst eine JSON-Zeile: Status, {"ok": true} oder {"error": Grund}; bei "stream" folgen danach die Bilddaten."""
+
+    def __init__(self, preview, sending=sending_now, idle=IDLE_EXIT):
+        self.pv, self.sending, self.idle = preview, sending, idle
+        self.lock = threading.Lock()
+        self.active = 0
+        self.last = time.monotonic()
+
+    def serve(self, lsock):
+        """Annehmen, bis IDLE_EXIT Sekunden lang niemand mehr da ist; dann Rückkehr (der Dienst endet, systemd startet ihn bei der nächsten Anfrage)."""
+        lsock.settimeout(1.0)
+        while True:
+            try:
+                conn, _ = lsock.accept()
+            except socket.timeout:
+                with self.lock:
+                    busy = self.active
+                if not busy and time.monotonic() - self.last >= self.idle:
+                    return
+                continue
+            except OSError:
+                return
+            with self.lock:
+                self.active += 1
+            self.last = time.monotonic()
+            threading.Thread(target=self._run, args=(conn,), name="preview-conn", daemon=True).start()
+
+    def _run(self, conn):
+        try:
+            self.handle(conn)
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+            with self.lock:
+                self.active -= 1
+            self.last = time.monotonic()
+
+    def _send(self, conn, obj):
+        conn.sendall(json.dumps(obj).encode() + b"\n")
+
+    def handle(self, conn):
+        conn.settimeout(5)
+        try:
+            req = json.loads(read_line(conn))
+            if not isinstance(req, dict):
+                raise ValueError("keine Anfrage")
+        except ValueError:
+            return self._send(conn, {"error": "anfrage"})
+        cmd = req.get("cmd")
+        if cmd == "status":
+            return self._send(conn, self.pv.status(self.sending()))
+        if cmd != "stream":
+            return self._send(conn, {"error": "anfrage"})
+        st = self.pv.status(self.sending())
+        if not st["available"]:
+            return self._send(conn, {"error": st["why"]})
+        try:
+            self.pv.stream(conn.sendall, req.get("fps"), req.get("w"), self.sending, max_seconds=self.pv.limit(req.get("long") is True), gone=lambda: peer_gone(conn),
+                           ready=lambda: (self._send(conn, {"ok": True}), conn.settimeout(15)))        # Schreibzeit je Stück: ein Browser, der nicht liest, hält den Platz höchstens 15 s
+        except Busy:
+            self._send(conn, {"error": "busy"})
+        except Unavailable:
+            self._send(conn, {"error": "capture"})
+
+
+class Client:
+    """Der Webserver: fragt den Dienst über den Unix-Socket. Ist er nicht erreichbar (nicht installiert, Socket fehlt), gilt "nicht verfügbar"."""
+
+    def __init__(self, path=SOCKET, timeout=5.0):
+        self.path, self.timeout = path, timeout
+
+    def _call(self, req):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(self.timeout)
+        try:
+            s.connect(self.path)
+            s.sendall(json.dumps(req).encode() + b"\n")
+        except OSError:
+            s.close()
+            raise
+        return s
+
+    def status(self):
+        try:
+            s = self._call({"cmd": "status"})
+            try:
+                st = json.loads(read_line(s, 4096))
+            finally:
+                s.close()
+            return st if isinstance(st, dict) and "available" in st else {"available": False, "why": "missing"}
+        except (OSError, ValueError):
+            return {"available": False, "why": "missing"}
+
+    def open(self, fps, width, long=False):
+        """(Socket, Kopfzeile) einer Vorschau; bei einem Fehler des Dienstes (Socket, Kopfzeile mit "error") ist der Socket None. OSError, wenn der Dienst fehlt."""
+        s = self._call({"cmd": "stream", "fps": clamp(fps, *FPS_RANGE, 30), "w": clamp(width, *WIDTH_RANGE, 640), "long": bool(long)})
+        try:
+            head = json.loads(read_line(s, 4096))
+        except ValueError:
+            s.close()
+            return None, {"error": "capture"}
+        if not isinstance(head, dict) or head.get("error") or not head.get("ok"):
+            s.close()
+            return None, {"error": (head or {}).get("error", "capture") if isinstance(head, dict) else "capture"}
+        return s, head
+
+
+def listen_socket(path=SOCKET):
+    """Der Socket von systemd (Socket-Aktivierung, Dateinummer 3), sonst (Handstart zum Testen) selbst angelegt mit Gruppe pipbox und Modus 0660."""
+    if os.environ.get("LISTEN_PID") == str(os.getpid()) and os.environ.get("LISTEN_FDS") == "1":
+        return socket.socket(fileno=3)
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    ls.bind(path)
+    try:
+        import grp
+        os.chown(path, 0, grp.getgrnam("pipbox").gr_gid)
+    except (ImportError, KeyError, OSError):
+        pass
+    os.chmod(path, 0o660)
+    ls.listen(8)
+    return ls
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] != ["--serve"]:
+        print("Aufruf: pipbox_preview.py --serve (Dienst der Vorschau, Anfragen über %s)" % SOCKET)
+        return 2
+    pv = Preview(pipeline_path="/var/tmp/pipbox/pipeline")
+    Service(pv).serve(listen_socket())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
