@@ -361,6 +361,8 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
   #livecard:not(:has(:is(.ph,.err,.pending):not(:empty):not([hidden]))){display:none}              /* gibt es keinen Hinweis oder Fehler, verschwindet der Block samt Abstand: kein Platz verschenkt */
   /* Fußleiste wie die Kopfleiste: abgerundet, mit seitlichem Rand und etwas Abstand nach unten (der Rand in der Hintergrundfarbe verdeckt, was darunter durchläuft) */
   #mfoot{display:flex;position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));z-index:60;gap:6px;padding:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 0 0 8px var(--bg),0 env(safe-area-inset-bottom) 0 8px var(--bg),0 -12px 12px -4px var(--shade)}
+  #mfoot{transition:transform .22s ease,visibility 0s}
+  html.mfhide #mfoot{transform:translateY(calc(100% + 32px + env(safe-area-inset-bottom)));visibility:hidden;transition:transform .22s ease,visibility 0s .22s}      /* beim Runterscrollen weg (Platz für Chat und Vorschau), beim Hochscrollen wieder da */
   body{padding-bottom:calc(var(--mfh,72px) + 20px + env(safe-area-inset-bottom))}    /* --mfh: Höhe der Fußleiste, setzt die Seite (mit Knopfreihe höher) */
   .toast{bottom:calc(var(--mfh,72px) + 28px + env(safe-area-inset-bottom))}
 }
@@ -2444,6 +2446,19 @@ function fitMsg(m){                                                         // I
   m.style.fontSize=""; let fs=parseFloat(getComputedStyle(m).fontSize)||14;
   while(m.scrollWidth>m.clientWidth+1&&fs>9){ fs-=.5; m.style.fontSize=fs+"px"; }
 }
+// Fußleiste am Handy: beim Runterscrollen ausblenden, beim Hochscrollen (und ganz oben, ganz unten, beim Fokus) wieder einblenden
+(function(){
+  const f=$("mfoot"), root=document.documentElement; let y=Math.max(0,window.scrollY), run=0, hid=false;
+  const set=h=>{ if(h!==hid){ hid=h; root.classList.toggle("mfhide",h); } };
+  window.addEventListener("scroll",()=>{
+    if(getComputedStyle(f).display==="none"){ run=0; set(false); return; }                                // nur dort, wo die Leiste überhaupt steht (Handy)
+    const ny=Math.max(0,window.scrollY), d=ny-y; y=ny;
+    run=(d>0)===(run>0)?run+d:d;                                                                          // Richtungswechsel zählt neu (kleines Wackeln löst nichts aus)
+    const bottom=window.innerHeight+ny>=document.documentElement.scrollHeight-8;
+    if(ny<24||bottom||run<-8) set(false); else if(run>8) set(true);
+  },{passive:true});
+  f.addEventListener("focusin",()=>set(false));
+})();
 function sizeFoot(){ const h=$("mfoot").offsetHeight; if(h) document.documentElement.style.setProperty("--mfh",h+"px"); else document.documentElement.style.removeProperty("--mfh"); }
 window.addEventListener("resize",sizeFoot);
 if(window.ResizeObserver) new ResizeObserver(sizeFoot).observe($("mfoot"));          // auch wenn eine Übersetzung den Text breiter oder höher macht
