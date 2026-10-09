@@ -129,7 +129,7 @@ Der Punkt vor jeder Kamera (in der Kameraliste und in der Karte **Status**) zeig
 | Rot | Kein Signal. |
 | Grau | Status unbekannt. |
 
-Fällt etwas aus, erscheint im Status eine Meldung mit der Uhrzeit. Ein Klick auf das **i** dahinter zeigt, was du tun kannst:
+Fällt etwas aus, erscheint im Status eine Meldung mit der Uhrzeit. Ein Klick auf das **i** dahinter zeigt, was du tun kannst. **Hast du eine Kamera oder ein Handy bewusst abgeschaltet oder abgezogen, ist das kein Fehler: Mit dem × an der Meldung (bei Kamera, HDMI und USB) schließt du sie.** Ohne ×-Klick verschwindet sie, sobald die Kamera wieder sendet (die Meldung „Kamera ausgefallen“ spätestens nach 6 Stunden, die USB-Meldung nach 10 Minuten „wieder da“ oder nach 24 Stunden). Ein späterer neuer Ausfall meldet sich wieder:
 
 | Meldung | Was sie heißt, was du tust |
 |---|---|
