@@ -102,7 +102,7 @@ Eine Kamera, die sich per USB als **Webcam (UVC)** meldet, kann die Box genauso 
 2. Im Abschnitt **HDMI- und USB-Kameras** bei **Quelle** die **USB-Webcam** wählen. Darunter steht, welche Kamera die Box gefunden hat und welches Bildformat sie nimmt.
 3. Das Häkchen **Als Kamera senden** setzen. Die Kamera erscheint als **„USB-Kamera“** in der Kameraliste und im Bildaufbau.
 
-Die Box probiert die Bildformate selbst durch (H.264 1080p, H.264 720p, MJPEG 1080p, MJPEG 720p, dann Rohbild) und nimmt das erste, das ein Bild liefert. Bei der Action 6 schneidet sie in 1080p die 8 schwarzen Füllzeilen unten weg, die die Kamera anhängt; andere Kameras gehen unverändert durch. Den Ton nimmt sie vom USB-Mikrofon derselben Kamera, sonst sendet sie Stille. Es gibt **eine** Quelle für die Kamera „HDMI/USB“: Wer die USB-Webcam wählt, nutzt den HDMI-Eingang nicht gleichzeitig.
+Die Box probiert die Bildformate selbst durch (**MJPEG 1080p**, MJPEG 720p, H.264 1080p, H.264 720p, dann Rohbild) und nimmt das erste, das ein Bild liefert. MJPEG kommt zuerst, weil die Box es mit der eingestellten **Bitrate** neu kodiert; der H.264-Strom einer Action-Kamera über USB hat nur etwa 1 Mbit/s (Action 5 Pro: 1,3 Mbit/s in 1080p). Läuft ein Format nicht stabil, nimmt die Box das nächste. Bei der Action 6 schneidet sie in 1080p die 8 schwarzen Füllzeilen unten weg, die die Kamera anhängt; andere Kameras gehen unverändert durch. Den Ton nimmt sie vom USB-Mikrofon derselben Kamera, sonst sendet sie Stille. Es gibt **eine** Quelle für die Kamera „HDMI/USB“: Wer die USB-Webcam wählt, nutzt den HDMI-Eingang nicht gleichzeitig.
 
 **Stand:** Mit der **Osmo Action 6** (Webcam-Modus, Hub mit eigenem Netzteil) kommt das Bild an: H.264 in 1080p30 direkt aus der Kamera.
 
