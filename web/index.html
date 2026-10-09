@@ -2662,7 +2662,9 @@ function sigLevel(m){
   if(ups.length&&!on) return 0;
   let q=4;
   if(ups.length&&on<ups.length) q-=1;                                                                  // ein gewählter Weg fällt aus
-  const want=(s.bitrate_kbps||0)/1000; if(want>0){ const r=upTotal(m)/want; if(r<.5) q-=2; else if(r<.8) q-=1; }
+  // Zu wenig gesendet zählt nur, wenn der Sendepuffer anwächst (das Netz kommt nicht nach) oder fast nichts rausgeht. Der Encoder liefert bei ruhiger Szene weniger als die Ziel-Bitrate;
+  // das ist kein Fehler (früher zog der Vergleich mit dem Ziel dann grundlos einen Punkt ab).
+  const want=(s.bitrate_kbps||0)/1000; if(want>0){ const r=upTotal(m)/want, backlog=s.snd_buf_ms!=null&&s.snd_buf_ms>300; if(r<.1) q-=2; else if(backlog&&r<.5) q-=2; else if(backlog&&r<.8) q-=1; }
   if(s.rtt_ms!=null){ if(s.rtt_ms>1000) q-=2; else if(s.rtt_ms>400) q-=1; }
   if(s.snd_buf_ms!=null){ if(s.snd_buf_ms>3000) q-=2; else if(s.snd_buf_ms>1500) q-=1; }
   return Math.max(0,Math.min(4,q));
