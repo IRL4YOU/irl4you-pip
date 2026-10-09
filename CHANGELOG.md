@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.193 (Beta)
+- **Fehler behoben: Am Handy fehlte der Knopf zum Live-Gehen, wenn die Fußleiste ausgeblendet war (Meldung des Nutzers).** Am Handy steht **Live/Stop** nur in der Fußleiste (der Knopf im Kopf ist dort ausgeblendet). Stand die Einstellung unter Optionen → „Fußleiste am Handy“ auf **„Ausblenden bei Chat oder Vorschau“** oder **„Immer ausblenden“**, gab es am Handy keinen Weg, die Sendung zu starten. Das war ein Fehler an meinem Entwurf von 0.9.185 und 0.9.186. Jetzt erscheint der **Live-Knopf im Kopf**, sobald die Fußleiste dauerhaft weg ist; bei „Automatisch“ und „Immer anzeigen“ bleibt es wie bisher (Fußleiste mit Live/Stop). Während der Sendung ist der Kopf zugeklappt: Mit dem Pfeil rechts oben klappt man ihn auf, dann steht dort „Stop“. Bei 375 px Breite ohne Überlauf geprüft.
+- **Bis zum Update:** Unter Optionen → „Fußleiste am Handy“ auf „Automatisch“ oder „Immer anzeigen“ stellen, dann ist Live/Stop wieder in der Fußleiste.
+- Tests: `tools/test_ui_layout.py` jetzt 22 Tests.
+
 ## 0.9.192 (Beta)
 - **Neue Standardreihenfolge der Karten unten (Wunsch des Nutzers).** Ganz unten steht jetzt **Box ausschalten und abmelden**, darüber **Problem melden / Wunsch äußern**, darüber **Optionen** (vorher standen die Optionen mitten in der Liste, die Melden-Karte unter den Protokollen). Davor bleibt alles wie gehabt: Software-Update, System-Updates, Protokolle, Einstellungen sichern, Entwickler. Die Reihenfolge lässt sich weiter je Gerät unter Optionen → Reihenfolge der Hauptmenüs ändern. **Wer seine Reihenfolge schon geändert hat, behält sie**; nur wer nie etwas verschoben hat, sieht die neue Standardreihenfolge.
 - Tests: `tools/test_ui_layout.py` jetzt 21 Tests (Standardreihenfolge).
