@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.194 (Beta)
+- **Live-Knopf auch in der Karte „Vorschau“ und passend im Kopf (Rückmeldung des Nutzers zu 0.9.193).** Die Vorschau gibt es nur, während die Box sendet; solange das nicht der Fall ist, steht jetzt **in der Karte Vorschau ein kleiner Knopf „Live gehen“** (er verschwindet, sobald gesendet wird, und ist gesperrt, wenn die Box nicht starten kann; der Mauszeiger nennt den Grund). So braucht niemand die große Fußleiste, um live zu gehen.
+- **Kopf am Handy:** Der Live-Knopf im Kopf (erscheint, wenn die Fußleiste dauerhaft weg ist) war bei „Live gehen“ am Handy rechts abgeschnitten. Dort steht jetzt kurz „Live“, und zwei Knöpfe im Kopf sind etwas schmaler (Abstand 5 statt 6 px, Polster der Knöpfe 8 px): bei 375 px Breite alles sichtbar, ohne Überlauf, ohne seitliches Scrollen.
+- Tests: `tools/test_ui_layout.py` jetzt 24 Tests; im Browser bei 375 px geprüft (Kopf mit Live-Knopf, Karte mit Knopf im nicht gesendeten Zustand).
+
 ## 0.9.193 (Beta)
 - **Fehler behoben: Am Handy fehlte der Knopf zum Live-Gehen, wenn die Fußleiste ausgeblendet war (Meldung des Nutzers).** Am Handy steht **Live/Stop** nur in der Fußleiste (der Knopf im Kopf ist dort ausgeblendet). Stand die Einstellung unter Optionen → „Fußleiste am Handy“ auf **„Ausblenden bei Chat oder Vorschau“** oder **„Immer ausblenden“**, gab es am Handy keinen Weg, die Sendung zu starten. Das war ein Fehler an meinem Entwurf von 0.9.185 und 0.9.186. Jetzt erscheint der **Live-Knopf im Kopf**, sobald die Fußleiste dauerhaft weg ist; bei „Automatisch“ und „Immer anzeigen“ bleibt es wie bisher (Fußleiste mit Live/Stop). Während der Sendung ist der Kopf zugeklappt: Mit dem Pfeil rechts oben klappt man ihn auf, dann steht dort „Stop“. Bei 375 px Breite ohne Überlauf geprüft.
 - **Bis zum Update:** Unter Optionen → „Fußleiste am Handy“ auf „Automatisch“ oder „Immer anzeigen“ stellen, dann ist Live/Stop wieder in der Fußleiste.
