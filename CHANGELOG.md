@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.192 (Beta)
+- **Neue Standardreihenfolge der Karten unten (Wunsch des Nutzers).** Ganz unten steht jetzt **Box ausschalten und abmelden**, darüber **Problem melden / Wunsch äußern**, darüber **Optionen** (vorher standen die Optionen mitten in der Liste, die Melden-Karte unter den Protokollen). Davor bleibt alles wie gehabt: Software-Update, System-Updates, Protokolle, Einstellungen sichern, Entwickler. Die Reihenfolge lässt sich weiter je Gerät unter Optionen → Reihenfolge der Hauptmenüs ändern. **Wer seine Reihenfolge schon geändert hat, behält sie**; nur wer nie etwas verschoben hat, sieht die neue Standardreihenfolge.
+- Tests: `tools/test_ui_layout.py` jetzt 21 Tests (Standardreihenfolge).
+
 ## 0.9.191 (Beta)
 - **Auch ein Wunsch bekommt eine Nummer (Issue #62 von Bittersweet1987).** Bei „Problem melden / Wunsch äußern“ hatte nur ein Problem eine Nummer; der Wunsch (FEATURE) nicht, weil es ursprünglich so gewünscht war. Jetzt bekommen **beide** eine Nummer `IRL-XXXXXX`: Der Titel lautet `[FEATURE] Titeltext (Nummer)`, in der Beschreibung stehen Box-Version und Nummer, und der Wunsch steht unter **Meine Fälle** (mit „Auf GitHub suchen“ und „Erledigt“). Neben jedem Fall steht jetzt, ob es ein **Problem** oder ein **Wunsch** war; ältere Einträge ohne Angabe gelten als Problem. Weiterhin keine Rückmeldung zum Stand von selbst: Die Box fragt GitHub nicht ab.
 - Server: `SupportCases.create(title, kind)` mit `kind` `issue` oder `feature`, `POST /api/support` nimmt `kind` an (sonst „Ungültige Anfrage“). Ein geänderter Text in allen 14 Sprachen.
