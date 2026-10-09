@@ -632,6 +632,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     </div>
     <label class="muted" style="display:block;margin:8px 0"><input type="checkbox" id="w_hidden"> verstecktes Netz (Name wird nicht ausgesendet)</label>
     <div class="actions"><button id="w_scan" type="button" class="sec">Netze suchen</button> <button id="w_connect" type="button">Verbinden</button> <button id="w_disc" type="button" class="sec">Trennen</button></div>
+    <div id="wifidriver" class="ph" style="margin:8px 0" role="status"></div>
     <div id="wifimsg" class="ph" style="margin:8px 0" role="status"></div>
     <div id="wifinets" class="ph"></div>
     <div id="wifisaved" class="ph"></div>
@@ -1866,6 +1867,9 @@ async function wifiLoad(){
   // Ein gespeichertes Netz lässt sich hier anklicken (übernimmt den Namen) und mit leerem Passwort verbinden: es gilt dann das gespeicherte Passwort
   $("wifisaved").innerHTML=(d.saved||[]).length?"Gespeicherte Netze (Name anklicken, Passwort leer lassen und „Verbinden“): "+d.saved.map(s=>`<a href="#" data-ssid="${esc(s)}">${esc(s)}</a> <a href="#" data-forget="${esc(s)}" class="muted">vergessen</a>`).join(" · "):"";
   wifiPwHint();
+  { const dr=d.driver||{}, el=$("wifidriver");                                   // Treiber für WLAN-Sticks (AIC8800D80): Meldung, solange er eingerichtet wird oder nicht ging
+    el.textContent=["working","waiting","failed","unsupported"].includes(dr.state)?(dr.message||""):"";
+    el.style.color=dr.state==="failed"||dr.state==="unsupported"?"var(--crit)":""; }
   const hsAct=String(d.action||"").startsWith("hotspot_");                    // Meldung des letzten Auftrags dort zeigen, wo er ausgelöst wurde
   $("wifimsg").textContent=d.helper_installed?(hsAct?"":(d.message||"")):"Der WLAN-Helfer ist auf dieser Box noch nicht installiert (install.sh erneut ausführen).";
   $("hsmsg").textContent=!d.helper_installed?"":(hsAct?(d.state==="working"?"Läuft …":(d.message||"")):hsMsg);
