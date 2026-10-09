@@ -382,13 +382,14 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
 #swcard[open]>summary{margin-bottom:10px}
 #swcard .swpick{margin-top:12px}
 /* Änderungen eines Updates: gegliedert und lesbar (Überschrift je Version, Aufzählung, fette Stichworte), bei viel Text scrollbar */
-#sw_notes{max-height:26em;overflow:auto;margin:10px 0;padding:6px 14px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:14px;line-height:1.5}
-#sw_notes h4{margin:12px 0 4px;font-size:14px;color:var(--accent);letter-spacing:.02em}
-#sw_notes h4:first-child{margin-top:6px}
-#sw_notes ul{margin:4px 0 8px;padding-left:20px}
-#sw_notes li{margin:5px 0}
-#sw_notes p{margin:4px 0}
-#sw_notes code{font-size:12.5px;padding:1px 5px;border-radius:5px;background:var(--card)}
+#sw_notes,#sw_hres{max-height:26em;overflow:auto;margin:10px 0;padding:6px 14px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:14px;line-height:1.5}
+#sw_notes h4,#sw_hres h4{margin:12px 0 4px;font-size:14px;color:var(--accent);letter-spacing:.02em}
+#sw_notes h4:first-child,#sw_hres h4:first-child{margin-top:6px}
+#sw_notes ul,#sw_hres ul{margin:4px 0 8px;padding-left:20px}
+#sw_notes li,#sw_hres li{margin:5px 0}
+#sw_notes p,#sw_hres p{margin:4px 0}
+#sw_notes code,#sw_hres code{font-size:12.5px;padding:1px 5px;border-radius:5px;background:var(--card)}
+#sw_hist{margin:8px 0}#sw_hq{width:100%;box-sizing:border-box}#sw_hcount{margin:6px 0 0}#sw_hres mark{background:var(--warn);color:#000;border-radius:3px;padding:0 1px}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:80;max-width:calc(100% - 32px);padding:10px 16px;border:1px solid var(--ok);border-radius:10px;background:var(--card);color:var(--text);box-shadow:0 8px 24px rgba(2,6,23,.6);font-size:14px}
 #sw_notes{white-space:pre-wrap;border-left:3px solid var(--line);padding-left:10px;margin:10px 0}
 #updcard[open]>summary .sumh::before{content:"\25BE  ";}
@@ -933,6 +934,12 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div class="row"><span>Installiert</span><b id="sw_cur">–</b></div>
     <div class="row"><span>Neueste auf GitHub</span><b id="sw_latest">–</b></div>
     <div id="sw_notes" hidden></div>
+    <div class="actions" style="margin:6px 0 0"><button id="sw_histbtn" type="button" class="sec" aria-expanded="false" aria-controls="sw_hist">Alle Änderungen</button></div>
+    <div id="sw_hist" hidden>
+      <input id="sw_hq" type="search" placeholder="Suchen, z. B. Vorschau, Chat, Fußleiste" aria-label="Änderungen durchsuchen" autocomplete="off" maxlength="60">
+      <div id="sw_hcount" class="ph"></div>
+      <div id="sw_hres"></div>
+    </div>
     <div class="swpick">
       <label class="muted" for="sw_ver">Auf eine bestimmte Version wechseln (auch ältere):</label>
       <div class="dlrow"><input id="sw_ver" list="sw_vers" placeholder="Version wählen oder eintragen, z. B. 0.9.0" autocomplete="off" maxlength="24">
@@ -2449,14 +2456,15 @@ function fitMsg(m){                                                         // I
   while(m.scrollWidth>m.clientWidth+1&&fs>9){ fs-=.5; m.style.fontSize=fs+"px"; }
 }
 // Fußleiste am Handy, Einstellung je Gerät (Optionen): "auto" = beim Runterscrollen weg, beim Hochscrollen (und ganz oben, ganz unten, beim Fokus) wieder da, aber nur solange
-// Chat oder Vorschau zu sehen sind (sonst gibt es nichts zu gewinnen: die Leiste bleibt); "always" = bleibt immer; "hide" = weg, solange Chat oder Vorschau zu sehen sind.
+// Chat oder Vorschau zu sehen sind (sonst gibt es nichts zu gewinnen: die Leiste bleibt); "always" = bleibt immer; "hide" = weg, solange Chat oder Vorschau zu sehen sind;
+// "off" = immer weg (Issue #56: wer weder Chat noch Vorschau nutzt, will sie trotzdem nicht sehen).
 (function(){
   const f=$("mfoot"), root=document.documentElement, KEY="pb_foot"; let y=Math.max(0,window.scrollY), run=0, scrollHid=false, mode="auto";
-  try{ const v=localStorage.getItem(KEY); if(v==="always"||v==="hide") mode=v; }catch(e){}
+  try{ const v=localStorage.getItem(KEY); if(v==="always"||v==="hide"||v==="off") mode=v; }catch(e){}
   const shown=()=>["c_chat","c_prev"].some(id=>{ const e=$(id); return !!e&&e.open&&e.offsetParent!==null; });                 // Karte offen und nicht unter Optionen ausgeblendet
-  const apply=()=>{ const wide=shown(), h=mode!=="always"&&wide&&(mode==="hide"||scrollHid);
-                    root.classList.toggle("mfhide",h); root.classList.toggle("mfperm",mode==="hide"&&wide); };
-  window.pbFootMode=m=>{ mode=(m==="always"||m==="hide")?m:"auto"; try{ localStorage.setItem(KEY,mode); }catch(e){} scrollHid=false; apply(); };
+  const apply=()=>{ const wide=shown(), h=mode==="off"||(mode!=="always"&&wide&&(mode==="hide"||scrollHid));
+                    root.classList.toggle("mfhide",h); root.classList.toggle("mfperm",mode==="off"||(mode==="hide"&&wide)); };
+  window.pbFootMode=m=>{ mode=(m==="always"||m==="hide"||m==="off")?m:"auto"; try{ localStorage.setItem(KEY,mode); }catch(e){} scrollHid=false; apply(); };
   window.pbFootGet=()=>mode;
   window.addEventListener("scroll",()=>{
     if(getComputedStyle(f).display==="none"){ run=0; scrollHid=false; apply(); return; }                // nur dort, wo die Leiste überhaupt steht (Handy)
@@ -2654,6 +2662,55 @@ function fmtNotes(t){
   });
   close(); return out;
 }
+// ---- Änderungsverlauf mit Suche (Issue #57): die ganze CHANGELOG.md von GitHub, auf Wunsch geladen; die Suche filtert Punkte und Versionsüberschriften
+(function(){
+  const btn=$("sw_histbtn"), panel=$("sw_hist"), q=$("sw_hq"), cnt=$("sw_hcount"), res=$("sw_hres"); let secs=null, busy=false, tm=0;
+  function parse(text){
+    const out=[]; let cur=null, it=null;
+    String(text||"").split("\n").forEach(raw=>{ const l=raw.replace(/\s+$/,"");
+      if(/^##\s+/.test(l)){ cur={head:l,items:[]}; out.push(cur); it=null; }
+      else if(!cur) return;
+      else if(/^\s*[-*]\s+/.test(l)){ it=[l]; cur.items.push(it); }
+      else if(!l.trim()) it=null;
+      else if(it&&/^\s+\S/.test(l)) it.push(l);
+      else { it=[l]; cur.items.push(it); } });
+    return out;
+  }
+  function mark(root,toks){                                                                             // Treffer hervorheben (nur in Textknoten, nie als HTML)
+    if(!toks.length) return;
+    const re=new RegExp("("+toks.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi");
+    const wk=document.createTreeWalker(root,NodeFilter.SHOW_TEXT), nodes=[]; while(wk.nextNode()) nodes.push(wk.currentNode);
+    for(const n of nodes){ const t=n.nodeValue; re.lastIndex=0; if(!re.test(t)) continue; re.lastIndex=0;
+      const fr=document.createDocumentFragment(); let last=0, m;
+      while((m=re.exec(t))){ if(!m[0].length){ re.lastIndex++; continue; } if(m.index>last) fr.appendChild(document.createTextNode(t.slice(last,m.index)));
+        const k=document.createElement("mark"); k.textContent=m[0]; fr.appendChild(k); last=m.index+m[0].length; }
+      if(last<t.length) fr.appendChild(document.createTextNode(t.slice(last))); n.parentNode.replaceChild(fr,n); }
+  }
+  function render(){
+    if(!secs) return;
+    const toks=q.value.toLowerCase().split(/\s+/).filter(Boolean).slice(0,6);
+    let out="", hits=0, vers=0;
+    for(const sec of secs){
+      const hl=sec.head.toLowerCase();
+      const pick=toks.length?sec.items.filter(it=>{ const t=hl+" "+it.join(" ").toLowerCase(); return toks.every(w=>t.includes(w)); }):sec.items;
+      if(toks.length&&!pick.length) continue;
+      vers++; hits+=pick.length;
+      out+=sec.head+"\n"+pick.map(it=>it.join("\n")).join("\n")+"\n\n";
+    }
+    res.dataset.h=""; res.innerHTML=fmtNotes(out); mark(res,toks);
+    cnt.textContent=toks.length?(hits?`${hits} Treffer in ${vers} Versionen`:"Keine Treffer."):`${secs.length} Versionen. Zum Suchen ein Stichwort eintippen.`;
+  }
+  async function load(){
+    if(busy) return; busy=true; cnt.textContent="Wird geladen …";
+    try{ const r=await fetch("/api/swupdate/history"); const d=r.ok?await r.json():null;
+         if(!d||d.error||!d.text){ cnt.textContent=(d&&d.error)||"Der Verlauf konnte nicht geladen werden."; }
+         else { secs=parse(d.text); render(); } }
+    catch(e){ cnt.textContent="Der Verlauf konnte nicht geladen werden."; }
+    busy=false;
+  }
+  btn.addEventListener("click",()=>{ const open=panel.hidden; panel.hidden=!open; btn.setAttribute("aria-expanded",String(open)); if(open){ if(!secs) load(); q.focus(); } });
+  q.addEventListener("input",()=>{ clearTimeout(tm); tm=setTimeout(render,150); });
+})();
 // Ende des Updates: Fortschritt voll zeigen, dann die Seite einmal neu laden (danach erscheint bei Bedarf die Anmeldung)
 function swFinish(cur){
   pbUpdating=swPending=0;
@@ -3337,10 +3394,10 @@ $("chat_form").addEventListener("submit",async e=>{
       b.addEventListener("click",ev=>{ ev.preventDefault(); h.hidden=!h.hidden; b.setAttribute("aria-expanded",String(!h.hidden)); }); box.appendChild(g); }
     { const g=document.createElement("div"); g.className="optgrp"; const l=document.createElement("label"); l.className="optrow"; const t=document.createElement("span"); t.textContent="Fußleiste am Handy"; l.appendChild(t);
       const sel=document.createElement("select"); sel.id="foot_mode"; sel.style.marginLeft="8px";
-      for(const [v,txt] of [["auto","Automatisch"],["always","Immer anzeigen"],["hide","Ausblenden"]]){ const o=document.createElement("option"); o.value=v; o.textContent=txt; sel.appendChild(o); }
+      for(const [v,txt] of [["auto","Automatisch"],["always","Immer anzeigen"],["hide","Ausblenden bei Chat oder Vorschau"],["off","Immer ausblenden"]]){ const o=document.createElement("option"); o.value=v; o.textContent=txt; sel.appendChild(o); }
       sel.value=window.pbFootGet?window.pbFootGet():"auto"; sel.addEventListener("change",()=>window.pbFootMode&&window.pbFootMode(sel.value)); l.appendChild(sel); g.appendChild(l);
       const b=document.createElement("button"); b.type="button"; b.className="helpbtn"; b.textContent="i"; b.setAttribute("aria-label","Erklärung zeigen"); b.setAttribute("aria-expanded","false"); l.appendChild(b);
-      const h=document.createElement("div"); h.className="ph"; h.hidden=true; h.textContent="Die Knöpfe unten am Handy (Live/Stop, Kameras, Ton). Automatisch: Sie gleiten beim Runterscrollen weg und kommen beim Hochscrollen zurück, solange Chat oder Vorschau zu sehen sind; ohne beide bleiben sie immer da. Immer anzeigen: Die Leiste bleibt stehen. Ausblenden: Sie ist weg, solange Chat oder Vorschau zu sehen sind (mehr Platz, zum Beispiel auf dem Motorrad). Gilt nur für dieses Gerät.";
+      const h=document.createElement("div"); h.className="ph"; h.hidden=true; h.textContent="Die Knöpfe unten am Handy (Live/Stop, Kameras, Ton). Automatisch: Sie gleiten beim Runterscrollen weg und kommen beim Hochscrollen zurück, solange Chat oder Vorschau zu sehen sind; ohne beide bleiben sie immer da. Immer anzeigen: Die Leiste bleibt stehen. Ausblenden bei Chat oder Vorschau: Sie ist weg, solange Chat oder Vorschau zu sehen sind (mehr Platz, zum Beispiel auf dem Motorrad); ohne beide ist sie da. Immer ausblenden: Sie ist nie zu sehen. Gilt nur für dieses Gerät.";
       g.appendChild(h); b.addEventListener("click",ev=>{ ev.preventDefault(); h.hidden=!h.hidden; b.setAttribute("aria-expanded",String(!h.hidden)); }); box.appendChild(g); }
   }
   function buildOrder(focus){
