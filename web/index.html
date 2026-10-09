@@ -351,7 +351,9 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
   header{margin-top:max(4px,env(safe-area-inset-top));top:4px}                      /* Kopfleiste ganz oben, kaum Luft darüber */
   header h1{font-size:15px;white-space:nowrap}
   header .hdr{flex-wrap:nowrap;gap:5px;min-width:0}
-  header .hdr button,header .hdr>.badge{min-height:30px;padding:3px 8px;white-space:nowrap}header .hdr #fold_toggle,header .hdr #sm_btn{padding-left:8px;padding-right:8px}
+  h1.hl{flex:0 0 auto}h1.hl .htxt{display:none}h1.hl .hlogo{animation:none;opacity:1}                          /* am Handy dauerhaft nur das Logo: so bleibt Platz für breite, zentrierte Knöpfe */
+  header .hdr button:not([hidden]),header .hdr>.badge{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:34px;padding:3px 10px;line-height:1;text-align:center;white-space:nowrap}
+  header .hdr select{min-height:34px;text-align:center;text-align-last:center}
   header .hdr .updbtn{font-size:0;padding:3px 9px}header .hdr .updbtn .dot{margin:0;font-size:13px}    /* nur der gelbe Punkt, Text steht im Tooltip */
   html:not(.mfperm) #hdr_live{display:none!important}                                      /* die Fußleiste hat Live/Stop; ist sie per Einstellung ganz weg (Optionen → Fußleiste), steht der Knopf im Kopf */
   body.streaming:not(.hdr-open) #hdr_sig{display:inline-flex;align-items:center;min-width:0}body.streaming #hdr_more{display:inline-flex}      /* während der Sendung: zugeklappt zeigt der Kopf die Pulsanzeige, aufgeklappt alle Knöpfe wie sonst */
@@ -375,6 +377,9 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
   html.mfhide .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 }
 @media(max-width:374px){.mf-live{min-width:60px}.mf-t{min-width:38px}}                /* schmale Handys: die fünf Knöpfe müssen noch in die Leiste passen */
+@media(max-width:374px){                                                                              /* schmale Handys: Knöpfe im Kopf etwas enger, damit auch mit Update-Punkt und Live-Knopf alles passt */
+  header .hdr button:not([hidden]),header .hdr>.badge{min-width:30px;padding:3px 6px}header .hdr .updbtn{min-width:28px;padding:3px 5px}header .hdr{gap:4px}
+}
 @media(max-width:339px){
   body.streaming #hdr_sig .sig svg{width:44px}body.streaming #hdr_sig .camdots{margin-left:5px;gap:3px}
   #mfoot{gap:4px;padding:5px}#mf_tools{gap:4px}.mf-live{min-width:52px;font-size:15px}.mf-t{min-width:34px}
