@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.168 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
+**Version 0.9.169 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
 
 > **Beta heißt:** Es läuft im Alltag, aber noch nicht alles ist über lange Zeit und unterwegs geprüft (siehe "Was noch fehlt oder ungetestet ist"). Neue Versionen gibt es oft; zurück auf eine frühere Version geht in der Oberfläche.
 
@@ -176,6 +176,21 @@ Die eingebauten Bluetooth-Module der Boxen empfangen schlecht, darum ist ein USB
 - Nach dem Laden muss ein Adapter da sein, das neue Modul wirklich laufen und die Firmware ohne Fehler laden; sonst wird alles zurückgerollt und für diese Kombination nicht noch einmal versucht. Es läuft dann mit dem Standardtreiber weiter. Das Standardmodul des Kernels wird nie überschrieben.
 - Nach einem Kernel-Update gilt der Treiber nicht mehr; die Box prüft nach dem Start und alle 15 Minuten und richtet ihn, wenn für den neuen Kernel vorbereitet, neu ein. Deinstallation und "Rückweg": Datei `/lib/modules/<Kernel>/updates/btusb.ko` löschen (macht `install.sh uninstall`).
 - Nach dem Wechsel auf einen anderen Stick fragt eine Kamera eventuell einmal nach der Kopplung (neue Bluetooth-Adresse).
+
+## WLAN-Stick mit AIC8800D80 (UGREEN AX900 WiFi 6)
+
+Der Kernel 5.10 der BELABOX hat keinen Treiber für diesen Chip. Der Stick meldet sich beim Einstecken zuerst als **USB-Laufwerk** (`a69c:5723`, "Aic MSC", mit dem Windows-Treiber darauf) und muss in den WLAN-Modus geschaltet werden. Die Box erledigt das beim Einstecken selbst, ohne dass jemand sudo braucht:
+
+| Stick | Stand |
+|---|---|
+| UGREEN AX900 WiFi 6 (`a69c:5723`, Chip AIC8800D80) | **die Box richtet den Treiber beim Einstecken selbst ein** (dauert einige Minuten, **braucht dabei einmal Internet**). **Getestet** an der Orange Pi 5 Plus (blauer USB-3-Anschluss) mit dem ganzen Ablauf: Helfer holt und baut den Treiber, schaltet den Stick um, die WLAN-Schnittstelle (`wlan0`) entsteht und verbindet sich mit einem gespeicherten Netz; auch nach erneutem Einstecken und nach einem Neustart |
+
+**Wie es geht.** Der Helfer `pipbox-wlandriver.py` (Dienst `pipbox-wlandriver`, ausgelöst beim Einstecken und vom Zeitgeber alle 15 Minuten) holt einmal den Treiber `shenmintao/aic8800d80` im **festen Stand** `1d1b8ff` (Zweig `legacy-mcu1`, GPL-2.0, mit der Firmware des Herstellers) von github.com, prüft ihn gegen eine feste SHA-256-Summe, baut daraus `aic_load_fw` und `aic8800_fdrv` für den Kernel, legt die Module nach `/lib/modules/<Kernel>/updates/aic8800/`, die Firmware nach `/lib/firmware/aic8800_fw/USB/aic8800D80/` und die Einstellung `aic_fw_path` nach `/etc/modprobe.d/pipbox-aic8800.conf`, schaltet den Stick mit `usb_modeswitch` um und prüft, dass eine WLAN-Schnittstelle entsteht. Danach laden udev und der Kernel die Module beim Einstecken von selbst. Die Meldung steht in der Karte "Verbindungen" im Abschnitt "WLAN-Verbindungen".
+
+- **Wichtig:** Dieser Stand ("legacy-mcu1") ist für Chips mit `chip_mcu_id=1`. Die neuere Firmware (358072 Byte statt 327037 Byte) passt dort nicht in den Speicher des Chips; der Upload bricht bei Adresse `0x170400` mit "bin upload fail" ab. Das haben wir an der Box so gemessen.
+- **Root-Rechte nur dafür:** Der Dienst läuft mit eingeschränkten Rechten (nur Module laden und Kernelmeldungen lesen, Schreiben nur in die genannten Ordner, Netz nur für diesen Download, keine neuen Rechte). Er nimmt keine Eingaben an.
+- Gebaut wird nur auf dem passenden Kernel (5.10.160) mit vorhandenen Kernel-Headern und **nie während einer Übertragung**. Ohne Internet versucht die Box es später erneut; geht es nicht, wird alles zurückgebaut und für diese Kombination nicht noch einmal versucht.
+- Rückweg: `sudo python3 /opt/pipbox/pipbox-wlandriver.py uninstall` (entfernt Module, Firmware und die Einstellung), oder die Regel `/etc/udev/rules.d/81-pipbox-wlandriver.rules` löschen.
 
 ## Was noch fehlt oder ungetestet ist
 

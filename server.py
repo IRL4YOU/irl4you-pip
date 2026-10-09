@@ -2772,6 +2772,7 @@ class Wifi:
     verbindet, liegt nur dort und wird nie gespeichert oder ausgegeben; nmcli legt das Profil an. Das Passwort des eigenen Hotspots ist
     zum Weitergeben an Kameras und Handys gedacht und liegt in hotspot.json (Benutzer pipbox, 0600)."""
     STATUS = "/run/pipbox-wifi/status.json"
+    DRIVER_STATUS = "/run/pipbox-wlandriver/status.json"        # schreibt der Root-Helfer pipbox-wlandriver.py (Treiber für WLAN-Sticks mit AIC8800D80)
     ACTIONS = ("scan", "connect", "forget", "disconnect", "hotspot_start", "hotspot_stop", "hotspot_save")
     HS_PREFIX = "pipbox-hotspot-"
     HS_BANDS = {"bg": tuple(range(1, 14)), "a": (36, 40, 44, 48)}
@@ -2866,6 +2867,39 @@ class Wifi:
         card["label"] = self.names.label(card["key"], default) if self.names else default
         card["custom"] = bool(self.names and card["label"] != default)
 
+    SYS_NET = "/sys/class/net"
+
+    def labels(self):
+        """{Schnittstelle: Anzeigename} der WLAN-Karten für die Anzeige im Status ("wlan0 (TP-Link Archer T2U)"): eigener Name der Karte, sonst der Name,
+        den der Stick meldet. Leicht (nur /sys, der Stand der Sticks 10 s gemerkt), weil die Statusseite oft fragt."""
+        if self.demo:
+            return {"wlan0": dji.device_label("802.11ac NIC", "Realtek", "0bda:c811"), "wlan1": dji.device_label("802.11ac NIC", "Realtek", "2357:011e")}
+
+        def raw():
+            out = []
+            try:
+                names = sorted(os.listdir(self.SYS_NET))
+            except OSError:
+                return out
+            for n in names:
+                if os.path.isdir(f"{self.SYS_NET}/{n}/wireless") and not n.startswith("p2p"):
+                    info = dji.netdev_info(n, self.SYS_NET)
+                    out.append((n, info["usb_id"], dji.device_label(info["name"], info["vendor"], info["usb_id"])))
+            return out
+        res = {}
+        for n, usb_id, default in ttl_cached("wifi_labels", 10.0, raw) or []:
+            res[n] = (self.names.label(DeviceNames.key(usb_id, n), default) if self.names else default) or ""
+        return {n: v for n, v in res.items() if v}
+
+    def driver_status(self):
+        """Was der Treiber-Helfer für WLAN-Sticks gerade tut ("working", "waiting", "failed", "unsupported", "ok") und sagt, sonst leer."""
+        try:
+            with open(self.DRIVER_STATUS) as f:
+                raw = json.load(f)
+            return {"state": str(raw.get("state", "")), "message": str(raw.get("message", ""))[:300]}
+        except (OSError, ValueError, AttributeError):
+            return {}
+
     def status(self):
         if self.demo:
             cards = []
@@ -2890,7 +2924,7 @@ class Wifi:
             h = {}
         return {"helper_installed": os.path.exists("/etc/systemd/system/pipbox-wifi.path"), "cards": self.cards(),
                 "state": h.get("state", "idle"), "message": h.get("message", ""), "action": h.get("action", ""), "scan": h.get("scan") or {},
-                "saved": h.get("saved") or [], "time": h.get("time", 0)}
+                "saved": h.get("saved") or [], "time": h.get("time", 0), "driver": self.driver_status()}
 
     def _hotspot_request(self, d, st, card):
         """Prüft Starten, Beenden und Speichern der Einstellungen eines Hotspots; gibt die Anfrage für den Helfer zurück. Fehlen bei "hotspot_start"
@@ -7574,6 +7608,12 @@ class Handler(BaseHTTPRequestHandler):
         body = read(os.path.join(WEB_DIR, name), "")
         self.send_bytes(200, body.encode(), "text/html; charset=utf-8")
 
+    def conn_labels(self):
+        """Namen hinter den Schnittstellen (Status, Sendewege): eigene Namen der Verbindungen, bei WLAN-Karten ohne eigenen Namen der Name des Sticks."""
+        base = dict(self.wifi.labels()) if self.wifi else {}
+        base.update(self.names.conn_names() if self.names else {})
+        return base
+
     def do_GET(self):
         self.request_read()
         path = self.path.split("?")[0]
@@ -7606,7 +7646,7 @@ class Handler(BaseHTTPRequestHandler):
             for c in m["cameras"]:
                 c.update(extras.get(c["key"], {}))             # Akkustand der DJI-Kameras (Status, Kameras)
             m["uplinks"] = uplink_states(((self.srtla.data or {}).get("settings") or {}).get("uplinks") or [])
-            m["conn_names"] = self.names.conn_names() if self.names else {}
+            m["conn_names"] = self.conn_labels()
             pic = self.send.picture()
             for c in m["cameras"]:
                 p = pic.get(c["key"]) if pic else None
@@ -7687,7 +7727,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/network":
             return self.reply(200, self.netchoice.status())
         if path == "/api/srtla":
-            return self.reply(200, {**self.srtla.public(), "interfaces": iface_ips(), "conn_names": self.names.conn_names() if self.names else {}})
+            return self.reply(200, {**self.srtla.public(), "interfaces": iface_ips(), "conn_names": self.conn_labels()})
         if path == "/api/pipeline":
             st = self.pipeline.status(self.cams.listing(""))
             st["live"] = {"main": self.send.delay_live(), "pips": self.send.delay_live_pips()}
