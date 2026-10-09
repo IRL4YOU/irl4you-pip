@@ -54,7 +54,7 @@ MAX_BYTES = 8 * 1024 * 1024
 MAX_FILES = 300
 MAX_FILE = 2 * 1024 * 1024
 MAX_TOTAL = 20 * 1024 * 1024
-REQUIRED = ("VERSION", "server.py", "dji.py", "dji_daemon.py", "hdmi_daemon.py", "install/pipbox-hdmi.service", "pipbox_send.py", "pipbox_send_ctl.py",
+REQUIRED = ("VERSION", "server.py", "dji.py", "dji_daemon.py", "phone_battery.py", "controllers.py", "controller_keys.py", "hdmi_daemon.py", "install/pipbox-hdmi.service", "pipbox_send.py", "pipbox_send_ctl.py",
             "web/index.html", "web/login.html", "web/i18n.js", "web/i18n/languages.json", "install/install.sh", "gst/gstpbpip.c", "gst/build.sh")
 VERSION_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}(-[a-z0-9.]{1,16})?$")
 
@@ -304,7 +304,7 @@ def restore(ver, reason="", note="Zurück auf"):
         raise Refuse(f"Version {ver} ist nicht gesichert")
     local = local_version()
     status(state="installing", step=f"Stelle Version {ver} wieder her", message="", frm=local, to=ver, progress=10)
-    dji_names = ("dji.py", "dji_daemon.py")
+    dji_names = ("dji.py", "dji_daemon.py", "phone_battery.py", "controllers.py")
     dji_changed = files_differ(f"{src}/opt-pipbox", INSTALL, dji_names)
     hdmi_changed = files_differ(f"{src}/opt-pipbox", INSTALL, ("hdmi_daemon.py",))
     if local != ver and VERSION_RE.match(local):

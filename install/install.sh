@@ -49,6 +49,7 @@ case "${1:-install}" in
       fi
     fi
     getent group bluetooth >/dev/null || groupadd --system bluetooth
+    getent group input >/dev/null || groupadd --system input        # Controller-Tasten: Lesezugriff auf /dev/input
     echo "PIPBOX-STEP dienst"      # Fortschrittsanzeige des Update-Helfers (pipbox-swupdate.py liest diese Zeilen)
     systemctl stop pipbox.service 2>/dev/null || true
     # Fester, rechteloser Benutzer (der D-Bus-Daemon akzeptiert keine DynamicUser-Benutzer).
@@ -93,7 +94,7 @@ PY
     install -d /opt/pipbox/web
     # Bluetooth-Dienst nur neu starten, wenn sich seine Dateien ändern (sonst reißen die Kameras ab)
     dji_changed=0
-    for f in dji.py dji_daemon.py; do cmp -s "$HERE/$f" "/opt/pipbox/$f" || dji_changed=1; done
+    for f in dji.py dji_daemon.py phone_battery.py controllers.py; do cmp -s "$HERE/$f" "/opt/pipbox/$f" || dji_changed=1; done
     cmp -s "$HERE/install/pipbox-dji.service" /etc/systemd/system/pipbox-dji.service || dji_changed=1
     # HDMI-Dienst: ebenso nur neu starten, wenn sich seine Dateien ändern (er speist den HDMI-Eingang als Kamera ein)
     hdmi_changed=0
@@ -102,6 +103,9 @@ PY
     install -m 644 "$HERE/server.py" /opt/pipbox/server.py
     install -m 644 "$HERE/dji.py" /opt/pipbox/dji.py
     install -m 644 "$HERE/dji_daemon.py" /opt/pipbox/dji_daemon.py
+    install -m 644 "$HERE/phone_battery.py" /opt/pipbox/phone_battery.py
+    install -m 644 "$HERE/controllers.py" /opt/pipbox/controllers.py
+    install -m 644 "$HERE/controller_keys.py" /opt/pipbox/controller_keys.py
     install -m 644 "$HERE/hdmi_daemon.py" /opt/pipbox/hdmi_daemon.py
     install -m 644 "$HERE/pipbox_send.py" /opt/pipbox/pipbox_send.py
     install -m 644 "$HERE/pipbox_send_ctl.py" /opt/pipbox/pipbox_send_ctl.py
