@@ -3464,17 +3464,23 @@ $("chat_form").addEventListener("submit",async e=>{
   applyOrder(); applyHidden(); buildList();
 })();
 
-// ---- Problem melden / Wunsch äußern (Issue #13): fertig ausgefülltes GitHub-Formular, Support-Nummer, Liste "Meine Fälle"; die Box sendet nichts selbst
+// ---- Problem melden / Wunsch äußern (Issue #13): fertig ausgefülltes GitHub-Formular, Nummer, Liste "Meine Fälle"; die Box sendet nichts selbst
+// Issue #64: Der Link wird beim Klick aus den aktuellen Feldern gebaut (nie veraltet); der Eintrag in "Meine Fälle" entsteht erst, wenn man das Formular öffnet (nicht schon beim Vorbereiten);
+// ein anderer Titel nach dem Öffnen ist ein neuer Fall mit neuer Nummer; ein Eintrag lässt sich nur in den ersten 30 Minuten entfernen.
 (function(){
-  const card=$("c_report"), title=$("rp_title"), desc=$("rp_desc"), go=$("rp_go"), msg=$("rp_msg"), out=$("rp_out"), list=$("rp_cases"), logrow=$("rp_logrow"); let version="";
+  const card=$("c_report"), title=$("rp_title"), desc=$("rp_desc"), go=$("rp_go"), msg=$("rp_msg"), out=$("rp_out"), list=$("rp_cases"), logrow=$("rp_logrow"); let version="", now=0, win=1800, nowAt=0;
   const kind=()=>document.querySelector('input[name="rp_kind"]:checked').value;
-  const NEW="https://github.com/IRL4YOU/irl4you-pip/issues/new", MAXURL=7000;
+  const NEW="https://github.com/IRL4YOU/irl4you-pip/issues/new", MAXURL=7000, ALPH="ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const newId=()=>{ const a=new Uint8Array(6); (window.crypto||window.msCrypto).getRandomValues(a); return "IRL-"+Array.from(a,x=>ALPH[x%ALPH.length]).join(""); };
+  const clean=t=>String(t||"").replace(/\s+/g," ").trim().slice(0,100);
+  let draft={id:"",saved:false,title:""};
   function sync(){ const f=kind()==="feature"; logrow.hidden=f; desc.placeholder=f?"Beschreibung (Pflicht)":"Beschreibung (freiwillig)"; }
   document.querySelectorAll('input[name="rp_kind"]').forEach(r=>r.addEventListener("change",sync)); sync();
   const when=t=>{ const d=new Date(t*1000); return d.toLocaleDateString()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
   function paint(cases,issues){
     list.textContent="";
     if(!cases.length){ const p=document.createElement("div"); p.className="muted"; p.textContent="Noch keine Fälle."; list.appendChild(p); return; }
+    const age=now+(Date.now()-nowAt)/1000;                                                              // Zeit der Box, seit dem Laden weitergezählt
     for(const c of cases){
       const r=document.createElement("div"); r.className="rpcase"+(c.done?" done":"");
       const d=document.createElement("span"); d.className="rpd"; d.textContent=when(c.t); r.appendChild(d);
@@ -3482,41 +3488,50 @@ $("chat_form").addEventListener("submit",async e=>{
       const id=document.createElement("code"); id.textContent=c.id; id.translate=false; r.appendChild(id);
       const t=document.createElement("span"); t.className="rpt"; t.textContent=c.title; t.translate=false; r.appendChild(t);
       const a=document.createElement("a"); a.href=(issues||"https://github.com/IRL4YOU/irl4you-pip/issues")+"?q="+encodeURIComponent("is:issue "+c.id); a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Auf GitHub suchen"; r.appendChild(a);
-      const b=document.createElement("button"); b.type="button"; b.className="sec"; b.classList.add("small"); b.dataset.id=c.id; b.dataset.done=c.done?"0":"1"; b.textContent=c.done?"Wieder offen":"Erledigt"; r.appendChild(b);
+      const b=document.createElement("button"); b.type="button"; b.className="sec"; b.classList.add("small"); b.dataset.id=c.id; b.dataset.done=c.done?"0":"1"; b.textContent=c.done?"Wieder öffnen":"Erledigt"; r.appendChild(b);
+      if(age-c.t<=win){ const x=document.createElement("button"); x.type="button"; x.className="sec"; x.classList.add("small"); x.dataset.id=c.id; x.dataset.del="1"; x.textContent="Entfernen";
+                        x.title="Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten."; r.appendChild(x); }
       list.appendChild(r); }
   }
   async function load(){
-    try{ const d=await srtlaCall("GET","/api/support"); version=d.version||""; paint(d.cases||[],d.issues); }catch(e){ list.textContent=""; }
+    try{ const d=await srtlaCall("GET","/api/support"); version=d.version||""; now=d.now||0; win=d.delete_window||1800; nowAt=Date.now(); paint(d.cases||[],d.issues); }catch(e){ list.textContent=""; }
   }
   list.addEventListener("click",async e=>{
     const b=e.target.closest("button[data-id]"); if(!b) return;
-    try{ await srtlaCall("POST","/api/support",{action:"done",id:b.dataset.id,done:b.dataset.done==="1"}); }catch(x){ msg.textContent="Fehler: "+x.message; }
+    try{ await srtlaCall("POST","/api/support",b.dataset.del?{action:"delete",id:b.dataset.id}:{action:"done",id:b.dataset.id,done:b.dataset.done==="1"}); msg.textContent=""; }catch(x){ msg.textContent="Fehler: "+x.message; }
     load();
   });
-  function link(url,short){
-    out.textContent=""; out.hidden=false;
-    const a=document.createElement("a"); a.className="rpgo"; a.href=url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Formular auf GitHub öffnen"; out.appendChild(a);
-    const p=document.createElement("div"); p.textContent="Das Formular öffnet in einem neuen Tab. Dort bei GitHub anmelden und unten auf „Submit new issue“ klicken."+(short?" Die Beschreibung war für den Link zu lang und ist gekürzt: bitte auf GitHub vervollständigen.":""); out.appendChild(p);
-    return p;
+  function compose(){                                                                                    // Titel, Text und Link aus den aktuellen Feldern (null mit Meldung, wenn etwas fehlt)
+    const f=kind()==="feature", t=clean(title.value), body0=desc.value.trim();
+    if(t.length<3){ msg.textContent="Bitte einen Titel eintragen (mindestens 3 Zeichen)."; return null; }
+    if(f&&!body0){ msg.textContent="Bei einem Wunsch ist die Beschreibung Pflicht."; return null; }
+    if(!draft.id||(draft.saved&&t!==draft.title)) draft={id:newId(),saved:false,title:""};               // schon geöffnet und jetzt ein anderer Titel: neuer Fall, neue Nummer
+    const id=draft.id, ttl=(f?"[FEATURE] ":"[ISSUE] ")+t+" ("+id+")";
+    let body=(body0?body0+"\n\n":"")+"---\nBox-Version: "+(version||"?")+"\nSupport-Nummer: "+id+(!f&&$("rp_log").checked?"\nProtokoll: als Datei angehängt":""), short=false;
+    let url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body);
+    while(url.length>MAXURL&&body.length>200){ body=body.slice(0,Math.floor(body.length*0.8)); short=true; url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body+"\n[gekürzt]"); }
+    return {f,t,id,url,short};
   }
-  go.addEventListener("click",async()=>{
+  function show(c){
+    out.textContent=""; out.hidden=false;
+    const a=document.createElement("a"); a.className="rpgo"; a.href=c.url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Formular auf GitHub öffnen"; out.appendChild(a);
+    const p=document.createElement("div"); p.textContent="Das Formular öffnet in einem neuen Tab. Dort bei GitHub anmelden und unten auf „Submit new issue“ klicken."+(c.short?" Die Beschreibung war für den Link zu lang und ist gekürzt: bitte auf GitHub vervollständigen.":""); out.appendChild(p);
+    const q=document.createElement("div"); q.appendChild(document.createTextNode("Deine Support-Nummer: ")); const k=document.createElement("code"); k.textContent=c.id; q.appendChild(k); out.appendChild(q);
+    const lm=document.createElement("div"); lm.className="muted"; out.appendChild(lm);
+    a.addEventListener("click",ev=>{                                                                      // beim Öffnen: Link neu aus den Feldern bauen, Fall erst jetzt eintragen
+      const n=compose(); if(!n){ ev.preventDefault(); return; }
+      a.href=n.url;
+      if(!draft.saved){
+        draft.saved=true; draft.title=n.t;
+        srtlaCall("POST","/api/support",{action:"create",kind:n.f?"feature":"issue",title:n.t,id:n.id}).then(load,()=>{});
+        if(!n.f&&$("rp_log").checked) logsDownloadTo(go,lm).then(()=>{ lm.textContent+=" Datei auf GitHub ins Textfeld ziehen."; });
+      }
+    });
+  }
+  go.addEventListener("click",()=>{                                                                       // nur vorbereiten: kein Eintrag, nichts wird gespeichert
     msg.textContent=""; out.hidden=true;
-    const f=kind()==="feature", t=title.value.trim(), body0=desc.value.trim();
-    if(t.length<3){ msg.textContent="Bitte einen Titel eintragen (mindestens 3 Zeichen)."; return; }
-    if(f&&!body0){ msg.textContent="Bei einem Wunsch ist die Beschreibung Pflicht."; return; }
-    go.disabled=true;
-    try{
-      const c=await srtlaCall("POST","/api/support",{action:"create",kind:f?"feature":"issue",title:t}), id=c.id;            // Problem und Wunsch bekommen je eine Nummer
-      const ttl=(f?"[FEATURE] ":"[ISSUE] ")+c.title+" ("+id+")";
-      let body=(body0?body0+"\n\n":"")+"---\nBox-Version: "+(version||"?")+"\nSupport-Nummer: "+id+(!f&&$("rp_log").checked?"\nProtokoll: als Datei angehängt":"");
-      let url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body), short=false;
-      while(url.length>MAXURL&&body.length>200){ body=body.slice(0,Math.floor(body.length*0.8)); short=true; url=NEW+"?title="+encodeURIComponent(ttl)+"&body="+encodeURIComponent(body+"\n[gekürzt]"); }
-      const p=link(url,short);
-      { const q=document.createElement("div"); q.appendChild(document.createTextNode("Deine Support-Nummer: ")); const c=document.createElement("code"); c.textContent=id; q.appendChild(c); p.parentNode.appendChild(q); }
-      if(!f&&$("rp_log").checked){ const lm=document.createElement("div"); lm.className="muted"; out.appendChild(lm); logsDownloadTo(go,lm).then(()=>{ lm.textContent+=" Datei auf GitHub ins Textfeld ziehen."; }); }
-      load();
-    }catch(x){ msg.textContent="Fehler: "+x.message; }
-    go.disabled=false;
+    if(draft.saved) draft={id:"",saved:false,title:""};                                                  // ein neuer Fall nach einem geöffneten bekommt eine neue Nummer
+    const c=compose(); if(c) show(c);
   });
   card.addEventListener("toggle",()=>{ if(card.open) load(); });
 })();
