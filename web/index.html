@@ -37,6 +37,8 @@ main{max-width:980px;margin:0 auto;padding:16px;display:grid;gap:14px;grid-templ
 #prev_img{display:block;width:100%;max-width:960px;aspect-ratio:16/9;margin-top:10px;background:#000;border-radius:10px;object-fit:contain}
 #prev_box[hidden]{display:none}
 #prev_msg:empty{display:none}
+.prevkeep{display:flex;align-items:flex-start;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);line-height:1.4}
+.prevkeep input{flex:none;margin-top:2px}
 .prevctl{display:flex;align-items:center;gap:8px;margin-left:auto}
 .prevctl button.small{padding:2px 12px;line-height:1.3}
 #prev_img{margin-top:0}
@@ -574,7 +576,8 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </section>
 
   <details class="card wide" id="c_prev"><summary><span class="sumh">Vorschau</span><span class="prevctl"><button type="button" id="prev_btn" class="sec small">Start</button><button type="button" class="helpbtn" id="prev_help_btn" aria-label="Erklärung zeigen" aria-expanded="false">i</button></span></summary>
-    <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Im Heimnetz sind es 30 Bilder pro Sekunde, von unterwegs weniger (das spart Upload). Die Vorschau endet nach 10 Minuten, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt.</div>
+    <div id="prev_help" class="ph" hidden>Zeigt das fertig gemischte Bild so, wie es gerade gesendet wird, in kleiner Auflösung: also auch, wohin die Kameras gerade zeigen und wie die Bilder angeordnet sind. Im Heimnetz sind es 30 Bilder pro Sekunde, von unterwegs weniger (das spart Upload). Die Vorschau endet nach 10 Minuten, beim Zuklappen der Karte, beim Schließen der Seite und wenn die Sendung endet. Sie kostet die Box etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft; die Sendung selbst bleibt unberührt. Mit dem Häkchen darunter entfällt die Grenze von 10 Minuten: Die Vorschau startet dann in diesem Browser von selbst wieder, sobald die Seite sichtbar ist und die Box sendet.</div>
+    <label class="prevkeep"><input type="checkbox" id="prev_always"> Mir ist bewusst, dass die Vorschau Rechenleistung kostet. Ich möchte sie in diesem Browser dauerhaft eingeschaltet lassen.</label>
     <div id="prev_msg" class="ph" role="status"></div>
     <div id="prev_box" hidden><img id="prev_img" alt="Vorschau des Sendebilds"></div>
   </details>
@@ -3058,43 +3061,74 @@ $("chat_form").addEventListener("submit",async e=>{
   document.addEventListener("click",()=>{ if(on&&!lock&&!vid) acquire(); },{once:false});                // ein Fingertipp genügt, falls der Browser den Start ohne Geste verweigert hat
 })();
 
-// ---- Vorschau des Sendebilds (Issue #52): Motion-JPEG vom Server, nur solange die Vorschau läuft, die Seite sichtbar ist und höchstens 10 Minuten ----
+// ---- Vorschau des Sendebilds (Issue #52): Motion-JPEG vom Server, nur solange die Vorschau läuft und die Seite sichtbar ist; höchstens 10 Minuten, außer mit dem Häkchen (nur in diesem Browser) ----
 (function(){
-  const card=$("c_prev"), btn=$("prev_btn"), img=$("prev_img"), msg=$("prev_msg"), box=$("prev_box");
-  let on=false, timer=0, gen=0;
+  const card=$("c_prev"), btn=$("prev_btn"), img=$("prev_img"), msg=$("prev_msg"), box=$("prev_box"), keep=$("prev_always");
+  let on=false, timer=0, wait=0, gen=0, poll=0;
   const LAN=/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|.+\.local$)/i;
   const lan=()=>LAN.test(location.hostname);                                       // Heimnetz: volle Bildrate; von unterwegs (auch Tailscale): weniger Bilder, kleineres Bild
   const WHY={off:"Die Vorschau gibt es nur, während die Box sendet.", busy:"Es laufen schon so viele Vorschauen, wie die Box zugleich zeigen kann.",
              "kein-bild":"Es kommt kein Bild. Läuft die Sendung?", missing:"Die Vorschau ist auf dieser Box nicht verfügbar.", gst:"Die Vorschau ist auf dieser Box nicht verfügbar.",
              root:"Die Vorschau ist auf dieser Box nicht verfügbar.", capture:"Die Vorschau ist auf dieser Box nicht verfügbar."};
-  function stop(text,more){
-    on=false; gen++; clearTimeout(timer);
+  const store=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem(k); if(v===null) localStorage.removeItem(k); else localStorage.setItem(k,v); }catch(e){} return null; };       // nur in diesem Browser (nicht auf der Box)
+  const always=()=>keep.checked;
+  const running=()=>always()&&store("pb_prev_run")==="1";                          // "dauerhaft an" gewünscht: nach Seitenwechsel, Sendepause oder Verbindungsabbruch von selbst weiter
+  function halt(){
+    on=false; gen++; clearTimeout(timer); clearInterval(poll);
     img.removeAttribute("src"); box.hidden=true;                                   // schließt die Verbindung: der Server beendet die Vorschau sofort
+  }
+  function stop(text,more){
+    halt(); clearTimeout(wait); wait=0;
     btn.textContent=more?"Weiter ansehen":"Start"; btn.disabled=false; msg.textContent=text||"";
   }
-  async function start(){
-    const my=++gen; clearTimeout(timer); btn.disabled=true; msg.textContent="Vorschau wird geöffnet …"; card.open=true;
-    let st; try{ const r=await fetch("/api/preview"); st=await r.json(); }catch(e){ return stop(WHY.missing); }
+  function waiting(){                                                              // wartet, bis die Box sendet (oder die Seite wieder sichtbar ist), und startet dann selbst
+    halt(); clearTimeout(wait); wait=0; btn.textContent="Stop"; btn.disabled=false;
+    if(document.hidden){ msg.textContent=""; return; }
+    msg.textContent="Die Vorschau startet wieder, sobald die Box sendet.";
+    wait=setTimeout(()=>{ wait=0; if(running()&&!on) start(true); },10000);
+  }
+  async function start(auto){
+    const my=++gen; clearTimeout(timer); clearTimeout(wait); wait=0;
+    btn.disabled=true; if(!auto) msg.textContent="Vorschau wird geöffnet …"; card.open=true;
+    let st; try{ const r=await fetch("/api/preview"); st=await r.json(); }catch(e){ st={available:false,why:"missing"}; }
     if(my!==gen) return;
-    if(!st.available) return stop(WHY[st.why]||WHY.missing);
+    if(!st.available){ if(running()&&st.why!=="missing") return waiting(); return stop(WHY[st.why]||WHY.missing); }
     on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent="";
     const home=lan();
-    img.src="/api/preview/stream?fps="+(home?30:10)+"&w="+(home?640:480)+"&t="+Date.now();
+    img.src="/api/preview/stream?fps="+(home?30:10)+"&w="+(home?640:480)+(always()?"&long=1":"")+"&t="+Date.now();
     box.hidden=false;
     if(!home) msg.textContent="Von unterwegs: 10 Bilder pro Sekunde und kleineres Bild, das spart Upload.";
-    timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),Math.max(5,(st.max_seconds||600)-3)*1000);
+    if(!always()) timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),Math.max(5,(st.max_seconds||600)-3)*1000);
+    clearInterval(poll);
+    poll=setInterval(async()=>{                                                    // ein Browser meldet das Ende eines Bildstroms nicht: alle 10 s nachsehen, ob die Box noch sendet
+      const mine=gen; let st2; try{ st2=await (await fetch("/api/preview")).json(); }catch(e){ return; }
+      if(mine!==gen||!on||st2.available||st2.why!=="off") return;
+      if(running()) waiting(); else stop(WHY.off);
+    },10000);
   }
   img.addEventListener("error",async()=>{
     if(!on) return; const my=gen; let why="kein-bild";
     try{ const st=await (await fetch("/api/preview")).json(); if(!st.available) why=st.why; }catch(e){ why="missing"; }
-    if(my===gen&&on) stop(WHY[why]||WHY["kein-bild"]);
+    if(my!==gen||!on) return;
+    if(running()) waiting(); else stop(WHY[why]||WHY["kein-bild"]);
   });
-  btn.addEventListener("click",e=>{ e.preventDefault(); if(on) stop(); else start(); });                  // der Knopf sitzt in der Kopfzeile: er klappt die Karte nicht selbst zu
+  function userStop(){ store("pb_prev_run",null); stop(); }                        // Stop-Knopf, Zuklappen, Ausblenden: gilt auch mit Häkchen als "aus"
+  btn.addEventListener("click",e=>{ e.preventDefault(); if(on||wait) userStop(); else { if(always()) store("pb_prev_run","1"); start(); } });       // der Knopf sitzt in der Kopfzeile: er klappt die Karte nicht selbst zu
+  keep.addEventListener("change",()=>{
+    store("pb_prev_always",keep.checked?"1":null);
+    if(keep.checked){ if(on){ store("pb_prev_run","1"); start(true); } }           // läuft schon: neu mit "long", der Server begrenzt sonst auf 10 Minuten
+    else{ store("pb_prev_run",null); if(wait){ stop(); } else if(on){ clearTimeout(timer); timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),597000); } }
+  });
   $("prev_help_btn").addEventListener("click",e=>{ e.preventDefault(); const h=$("prev_help"); h.hidden=!h.hidden; $("prev_help_btn").setAttribute("aria-expanded",String(!h.hidden)); if(!h.hidden) card.open=true; });
-  card.addEventListener("toggle",()=>{ if(!card.open&&on) stop(); });                // Karte zugeklappt: Vorschau aus
-  new MutationObserver(()=>{ if(on&&card.hasAttribute("data-pbhide")) stop(); }).observe(card,{attributes:true,attributeFilter:["data-pbhide"]});      // unter Optionen ausgeblendet: Vorschau aus
-  document.addEventListener("visibilitychange",()=>{ if(document.hidden&&on) stop(); });
-  addEventListener("pagehide",()=>{ if(on) stop(); });
+  card.addEventListener("toggle",()=>{ if(!card.open&&(on||wait)) userStop(); });  // Karte zugeklappt: Vorschau aus, auch mit Häkchen (die Rechenleistung wird anderswo gebraucht)
+  new MutationObserver(()=>{ if((on||wait)&&card.hasAttribute("data-pbhide")) userStop(); }).observe(card,{attributes:true,attributeFilter:["data-pbhide"]});      // unter Optionen ausgeblendet: Vorschau aus
+  document.addEventListener("visibilitychange",()=>{
+    if(document.hidden){ if(on||wait){ if(running()) waiting(); else stop(); } }  // Seite im Hintergrund: Vorschau aus (mit Häkchen: kommt zurück, sobald die Seite wieder sichtbar ist)
+    else if(running()&&!on) start(true);
+  });
+  addEventListener("pagehide",()=>{ if(on) halt(); });
+  try{ keep.checked=store("pb_prev_always")==="1"; }catch(e){}
+  if(running()&&!document.hidden) setTimeout(()=>{ if(running()&&!on) start(true); },1500);   // nach Neuladen der Seite: mit Häkchen von selbst weiter
 })();
 
 // ---- Hauptmenüs: Reihenfolge (▲ ▼) und Menüpunkte ausblenden, beides unter Optionen; je Browser gemerkt, Standard unverändert ----
