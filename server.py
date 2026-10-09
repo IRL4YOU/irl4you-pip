@@ -39,6 +39,10 @@ import controller_keys            # Tasten gekoppelter Bluetooth-Controller und 
 import dji                         # Namen von USB-Sticks (WLAN, Bluetooth) aus /sys, liegt neben dieser Datei
 import hdmi_daemon                 # Prüfung der HDMI-Einstellungen (dieselbe wie im HDMI-Dienst), liegt neben dieser Datei
 import pipbox_live                 # Engine "alle Kameras immer bereit" mit Compositor und dynamischen Zweigen (Technik von streamingbox), liegt neben dieser Datei
+try:
+    import pipbox_preview          # Vorschau des Sendebilds (Issue #52), liegt neben dieser Datei; fehlt sie (halb eingespieltes Update), gibt es nur keine Vorschau
+except ImportError:
+    pipbox_preview = None
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 # Echte Netzwerkkarten für die Upload-Anzeige (Ethernet, WLAN, USB-/Mobilfunk-Modems). Virtuelles (Tailscale, Docker,
@@ -7486,6 +7490,7 @@ class Handler(BaseHTTPRequestHandler):
     srtla = None
     pipeline = None
     send = None
+    preview = None
     twitch = None
     hdmi = None
     uiaccess = None
@@ -7562,6 +7567,37 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Die Anfrage ist unvollständig")
             buf += chunk
         return buf
+
+    def preview_stream(self):
+        """Motion-JPEG des gesendeten Bildes (Issue #52): multipart/x-mixed-replace, bis der Browser geht, die Zeit um ist oder die Sendung endet."""
+        pv = self.preview
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        st = pv.status(self.send._active()) if pv else {"available": False, "why": "missing"}
+        if not st["available"]:
+            return self.reply(503 if st["why"] != "busy" else 429, {"error": st["why"]})
+        started = []
+
+        def write(data):
+            if not started:
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace;boundary=" + pipbox_preview.BOUNDARY)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("X-Frame-Options", "DENY")
+                self.end_headers()
+                started.append(1)
+            self.wfile.write(data)
+            self.wfile.flush()
+
+        self.close_connection = True
+        try:
+            why = pv.stream(write, (q.get("fps") or [30])[0], (q.get("w") or [640])[0], self.send._active)
+        except pipbox_preview.Unavailable as e:
+            why = "busy" if isinstance(e, pipbox_preview.Busy) else "capture"
+        except OSError:
+            why = "client"
+        if not started:
+            self.reply(429 if why == "busy" else 503, {"error": why})
 
     def send_bytes(self, code, body, ctype, cookie=None, headers=None):
         self.send_response(code)
@@ -7657,6 +7693,10 @@ class Handler(BaseHTTPRequestHandler):
                     if f:
                         c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
             return self.reply(200, m)
+        if path == "/api/preview":
+            return self.reply(200, self.preview.status(self.send._active()) if self.preview else {"available": False, "why": "missing"})
+        if path == "/api/preview/stream":
+            return self.preview_stream()
         if path == "/api/layout":
             return self.reply(200, self.layout.get() if self.layout else {"set": False, "order": [], "hidden": []})
         if path == "/api/controller-keys":
@@ -7995,6 +8035,7 @@ def main():
     Handler.srtla = SrtlaStore(os.path.join(args.state, "srtla.json"))
     Handler.pipeline = PipelineStore(os.path.join(args.state, "pipeline.json"))
     Handler.send = SendControl(args.state, Handler.srtla, Handler.pipeline, Handler.cams, args.demo)
+    Handler.preview = pipbox_preview.Preview(pipeline_path="/var/tmp/pipbox/pipeline", big_cpus=pipbox_live.big_cpus) if pipbox_preview and not args.demo else None
     Handler.swupdate = SwUpdate(args.state, args.demo, Handler.send)
     if not args.demo:
         threading.Thread(target=Handler.swupdate.auto_loop, daemon=True).start()
