@@ -123,15 +123,19 @@ class UsbWatch:
     Quelle ist das Kernel-Protokoll (dmesg, ohne Rechte lesbar): "usb 2-1: USB disconnect", "usb usb2-port1: disabled by hub (EMI?)" und "over-current".
     Die Ereignisse stehen mit Zeit in <state>/usb-events.json (überstehen einen Neustart des Dienstes; ein Ausfall, bei dem die ganze Box stehen bleibt, ist
     für den Kernel nicht zu sehen). Die Oberfläche zeigt sie als Meldung: Art des Geräts (aus dem Produktnamen) und Uhrzeit. Kommt das Gerät wieder (der Kernel
-    erkennt am selben Anschluss ein neues Gerät), steht „wieder da“ dabei und die Meldung verschwindet nach BACK_SHOW (10 Minuten); kommt es nicht wieder, bleibt
-    sie bis WINDOW (24 Stunden) oder bis der Nutzer sie mit dem × schließt (dismiss)."""
+    erkennt am selben Anschluss ein neues Gerät), steht „wieder da“ dabei und die Meldung verschwindet nach BACK_SHOW (5 Minuten ohne neue Trennung); kommt es nicht
+    wieder, bleibt sie bis WINDOW (24 Stunden) oder bis der Nutzer sie mit dem × schließt (dismiss).
+    Issue #58: In den ersten GRACE Sekunden nach dem Start der Box zählen Trennungen nicht (manche Sticks melden sich beim Hochfahren mehrmals neu an, zum
+    Beispiel beim Wechsel des Betriebsmodus); Meldungen aus der Zeit vor dem Neustart erscheinen danach nicht mehr. Die Meldung nennt Namen und Anschluss."""
     WINDOW = 24 * 3600.0
-    BACK_SHOW = 600.0
+    BACK_SHOW = 300.0
+    GRACE = 120.0
     EVERY = 20.0
     KEEP = 20
     RE_LINE = re.compile(r"^(\d{4}-\d\d-\d\dT[\d:.,]+[+-]\d\d:\d\d) (.*)$")
     RE_PROD = re.compile(r"^usb (\d+-[\d.]+): Product: (.{1,80})$")
     RE_NEW = re.compile(r"^usb (\d+-[\d.]+): new .*USB device number \d+")
+    RE_ID = re.compile(r"^usb (\d+-[\d.]+): New USB device found, idVendor=([0-9a-fA-F]{4}), idProduct=([0-9a-fA-F]{4})")
     RE_GONE = re.compile(r"^usb (\d+-[\d.]+): USB disconnect, device number \d+$")
     RE_HUB = re.compile(r"^usb usb(\d+)-port(\d+): (disabled by hub|over-current condition)")
     CATS = (("wlan", re.compile(r"(?i)802\.11|wlan|wireless|wi-?fi|\bnic\b|rtl88|rtl81|ralink|mediatek.*wlan")),
@@ -139,8 +143,9 @@ class UsbWatch:
             ("net", re.compile(r"(?i)rndis|ethernet|\bcdc\b|router|modem|lte|\b4g\b|\b5g\b|mudi|gl-?inet|tether|android|hotspot|gadget")),
             ("cam", re.compile(r"(?i)camera|uvc|capture|hdmi|video|osmo|action|dji|webcam")))
 
-    def __init__(self, path, runner=None, clock=time.time, demo=False):
+    def __init__(self, path, runner=None, clock=time.time, demo=False, uptime=None):
         self.path, self.runner, self.clock, self.demo = path, runner or self._dmesg, clock, demo
+        self.uptime = uptime or (self._uptime if clock is time.time else (lambda: None))              # mit eigener Uhr (Tests) gibt es keine Startzeit
         self.lock = threading.Lock()
         self.events, self.last = [], 0.0
         self.demo_t, self.demo_closed = clock() - 2100, False              # Vorschau: eine feste Beispielmeldung, die sich schließen lässt
@@ -151,6 +156,21 @@ class UsbWatch:
                 self.events = [e for e in saved if isinstance(e, dict) and isinstance(e.get("t"), (int, float)) and isinstance(e.get("cat"), str)][-self.KEEP:]
         except (OSError, ValueError):
             pass
+        boot = self._boot()
+        if boot is not None:
+            self.events = [e for e in self.events if e["t"] >= boot]                                 # aus der Zeit vor dem Neustart: das Gerät kam mit dem Neustart neu
+
+    @staticmethod
+    def _uptime():
+        try:
+            return float(read("/proc/uptime", "").split()[0])
+        except (OSError, ValueError, IndexError):
+            return None
+
+    def _boot(self):
+        """Zeitpunkt des Starts der Box (Uhr minus Betriebszeit) oder None."""
+        up = self.uptime()
+        return self.clock() - up if isinstance(up, (int, float)) and up >= 0 else None
 
     @staticmethod
     def _dmesg():
@@ -168,7 +188,8 @@ class UsbWatch:
 
     def _parse(self, text):
         import datetime
-        prod, out, backs = {}, [], []
+        prod, ids, out, backs = {}, {}, [], []
+        boot = self._boot()
         for raw in text.splitlines()[-6000:]:
             m = self.RE_LINE.match(raw)
             if not m:
@@ -186,14 +207,22 @@ class UsbWatch:
             if n:
                 backs.append((t, n.group(1)))
                 continue
+            i = self.RE_ID.match(msg)
+            if i:
+                ids[i.group(1)] = "%s:%s" % (i.group(2).lower(), i.group(3).lower())
+                continue
             g = self.RE_GONE.match(msg)
             if g:
-                out.append({"t": round(t, 1), "port": g.group(1), "cat": self.category(prod.get(g.group(1), "")), "why": "gone"})
+                if boot is None or t >= boot + self.GRACE:                                  # in den ersten Sekunden nach dem Start melden sich Geräte oft mehrmals neu an
+                    out.append({"t": round(t, 1), "port": g.group(1), "cat": self.category(prod.get(g.group(1), "")), "why": "gone",
+                                "name": prod.get(g.group(1), ""), "ids": ids.get(g.group(1), "")})
                 continue
             h = self.RE_HUB.match(msg)
             if h:
                 port = "%s-%s" % (h.group(1), h.group(2))
-                out.append({"t": round(t, 1), "port": port, "cat": self.category(prod.get(port, "")), "why": "emi" if h.group(3).startswith("disabled") else "over"})
+                if boot is None or t >= boot + self.GRACE:
+                    out.append({"t": round(t, 1), "port": port, "cat": self.category(prod.get(port, "")), "why": "emi" if h.group(3).startswith("disabled") else "over",
+                                "name": prod.get(port, ""), "ids": ids.get(port, "")})
         merged = []
         for e in sorted(out, key=lambda x: x["t"]):                       # Trennung und abgeschalteter Anschluss kurz hintereinander am selben Anschluss: ein Ereignis
             if merged and merged[-1]["port"] == e["port"] and e["t"] - merged[-1]["t"] < 5:
@@ -250,7 +279,8 @@ class UsbWatch:
         now = self.clock()
         with self.lock:
             fresh = [e for e in self.events if now - e["t"] <= self.WINDOW and not e.get("ack") and not (e.get("back") and now - e["back"] > self.BACK_SHOW)]
-        return [{"level": "warn", "kind": "usb", "cat": e["cat"], "why": e.get("why", "gone"), "t": int(e["t"]), "back": bool(e.get("back"))}
+        return [{"level": "warn", "kind": "usb", "cat": e["cat"], "why": e.get("why", "gone"), "t": int(e["t"]), "back": bool(e.get("back")),
+                 "name": str(e.get("name") or "")[:80], "port": str(e.get("port") or "")[:12], "ids": str(e.get("ids") or "")[:9]}
                 for e in sorted(fresh, key=lambda x: -x["t"])[:2]]
 
     def dismiss(self, t):
