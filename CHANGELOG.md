@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.195 (Beta)
+- **Kopf am Handy: dauerhaft das Logo, dafür breite und zentrierte Knöpfe (Vorschlag des Nutzers).** Bis 620 px Breite steht im Kopf nur noch das **Logo** (kein Wechsel mit dem Text „IRL4YOU BOX“; am Rechner bleibt der Wechsel alle 30 Sekunden). Der gewonnene Platz geht an die Knöpfe: Sie sind **mindestens 36 × 34 px** groß, haben gleich viel Polster und ihr Inhalt (Symbol oder Text) ist **mittig** (`inline-flex`, zentriert), auch die Sprachauswahl. Auf schmalen Handys (bis 374 px) etwas enger, damit **auch im ungünstigsten Fall** (gelber Update-Punkt, alle Knöpfe und der Live-Knopf) nichts abgeschnitten wird: Bei 375, 340 und 320 px Breite im Browser geprüft, ohne Überlauf, ohne Überlappung mit dem Logo, ohne seitliches Scrollen.
+- Tests: `tools/test_ui_layout.py` jetzt 25 Tests.
+
 ## 0.9.194 (Beta)
 - **Live-Knopf auch in der Karte „Vorschau“ und passend im Kopf (Rückmeldung des Nutzers zu 0.9.193).** Die Vorschau gibt es nur, während die Box sendet; solange das nicht der Fall ist, steht jetzt **in der Karte Vorschau ein kleiner Knopf „Live gehen“** (er verschwindet, sobald gesendet wird, und ist gesperrt, wenn die Box nicht starten kann; der Mauszeiger nennt den Grund). So braucht niemand die große Fußleiste, um live zu gehen.
 - **Kopf am Handy:** Der Live-Knopf im Kopf (erscheint, wenn die Fußleiste dauerhaft weg ist) war bei „Live gehen“ am Handy rechts abgeschnitten. Dort steht jetzt kurz „Live“, und zwei Knöpfe im Kopf sind etwas schmaler (Abstand 5 statt 6 px, Polster der Knöpfe 8 px): bei 375 px Breite alles sichtbar, ohne Überlauf, ohne seitliches Scrollen.
