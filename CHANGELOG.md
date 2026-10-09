@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.164 (Beta)
+- **Verbindungsanzeige neben „Chat“ wird nicht mehr grundlos gelb.** Nutzerfrage am 9. Oktober 2026: Bei 9 Mbit/s stand sie auf gelb. Die Anzeige verglich die gesendete Menge mit dem **Ziel** des Encoders (12 Mbit/s) und zog bei weniger als 80 % einen Punkt ab, auch wenn die Szene einfach weniger Daten braucht (der Encoder liefert dann weniger als das Maximum, hier 8 bis 9 Mbit/s). Jetzt zählt „zu wenig gesendet“ nur noch, wenn der Sendepuffer über 300 ms anwächst (das Netz kommt nicht nach) und weniger als 80 % beziehungsweise 50 % rausgehen, oder wenn fast nichts (unter 10 %) rausgeht. Alle anderen Abzüge (ein Weg fällt aus, Laufzeit, Sendepuffer) bleiben.
+- Geprüft in der Demo-Oberfläche mit acht Fällen (ruhige Szene 8 von 12 Mbit/s bleibt grün; ein Weg fällt aus plus Puffer 400 ms: gelb; fast nichts plus ein Weg aus: rot und so weiter).
+- Neu in `ANLEITUNG-Betrieb.md` (Abschnitt 6): Erklärung der Verbindungsanzeige mit allen Abzügen und Farben.
+
 ## 0.9.163 (Beta)
 - **USB-Webcam: deutlich mehr Bitrate.** Gemeldet am 9. Oktober 2026: Mit der Action 5 Pro kamen nur 0,7 Mbit/s an. Gemessen an der Kamera: Ihr H.264-Strom über USB hat nur **1,3 Mbit/s in 1080p** (0,5 Mbit/s in 720p), und die Box reichte ihn unverändert durch, die eingestellte Bitrate (8000 kbit/s) galt dafür nicht. Das MJPEG-Bild derselben Kamera hat 52 Mbit/s und wird mit dem Encoder der Box auf die eingestellte Bitrate kodiert (**7,8 Mbit/s** gemessen). Darum probiert die Box jetzt **zuerst MJPEG** (1080p, dann 720p), danach erst H.264 (1080p, 720p) und Rohbild. Bei der Action 4 war MJPEG schon vorher der Weg (kein brauchbares H.264 über den Kameratreiber).
 - **Kein vorschneller Rückfall auf 720p:** Scheitert ein Probelauf, wird er nach einer Sekunde ein zweites Mal versucht (die Kamera ist direkt nach dem Stoppen der Einspeisung manchmal kurz belegt; so landete die Action 5 Pro beim Neustart des Dienstes in 720p).
