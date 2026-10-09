@@ -146,7 +146,12 @@ def hook_text(mac, addr, prefix):
             '[ "$ADDRFAM" = "inet" ] || exit 0\n'
             '[ -r "/sys/class/net/$IFACE/address" ] || exit 0\n'
             '[ "$(cat "/sys/class/net/$IFACE/address")" = "%s" ] || exit 0\n'
-            'ip addr replace %s/%d dev "$IFACE" 2>/dev/null || true\nexit 0\n' % (mac, addr, prefix))
+            'LB=""\n[ ${#IFACE} -le 12 ] && LB="label $IFACE:pb"\n'
+            'if ip addr replace %s/%d dev "$IFACE" $LB 2>/dev/null; then\n'
+            '  logger -t pipbox-extra-ip "gesetzt auf $IFACE (${MODE:-?} ${PHASE:-?} ${METHOD:-?})" 2>/dev/null || true\n'
+            'else\n'
+            '  logger -t pipbox-extra-ip "FEHLER beim Setzen auf $IFACE (${MODE:-?} ${PHASE:-?} ${METHOD:-?})" 2>/dev/null || true\n'
+            'fi\nexit 0\n' % (mac, addr, prefix))
 
 
 def status(**kw):

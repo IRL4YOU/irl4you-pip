@@ -886,6 +886,90 @@ def settings_summary():
     return "\n".join(lines) + "\n"
 
 
+NET_JOURNAL_RE = r"ifup|ifdown|ifplugd|dhclient|dhcp|NetworkManager|networking|systemd-networkd|pipbox-extra-ip|eth[0-9]|enP[0-9]|enx|link (is|beat)|carrier"
+NET_FILES = ["/etc/network/interfaces"]
+FOREVER = 4294967295
+
+
+def net_addresses():
+    """Je Netzkarte: Zustand, Kabel, Adressen mit Art (fest oder per DHCP, Rest der Lebensdauer, Label). Zeigt, ob eine feste Adresse nach einem Neustart fehlt."""
+    nl = chr(10)
+    try:
+        data = json.loads(run(["ip", "-j", "-d", "addr"], 10) or "[]")
+    except ValueError:
+        return "(ip -j nicht lesbar)" + nl
+    if not isinstance(data, list):
+        return "(unerwartete Ausgabe)" + nl
+    out = []
+    for d in data:
+        name = str(d.get("ifname", "?"))
+        if name == "lo":
+            continue
+        carrier = read_small("/sys/class/net/%s/carrier" % name)
+        adrs = []
+        for a in d.get("addr_info", []):
+            if a.get("family") != "inet":
+                continue
+            life = a.get("valid_life_time")
+            kind = "fest (forever)" if life in (FOREVER, None) else "per DHCP (Rest %s s)" % life
+            if a.get("dynamic"):
+                kind = "dynamisch, " + kind
+            adrs.append("%s/%s [%s, Label %s]" % (a.get("local"), a.get("prefixlen"), kind, a.get("label", name)))
+        out.append("%s: Zustand %s, Kabel/Träger %s, %d IPv4-Adresse(n)%s" % (name, d.get("operstate", "?"), {"1": "ja", "0": "nein"}.get(carrier, carrier), len(adrs),
+                                                                             (": " + "; ".join(adrs)) if adrs else ""))
+    return nl.join(out) + nl
+
+
+def net_files():
+    """Netzdateien des Systems (ifupdown) und unsere Zusatzadresse: Wer eine feste Adresse von Hand eingetragen hat, sieht man hier."""
+    nl = chr(10)
+    parts = []
+    files = list(NET_FILES)
+    try:
+        files += sorted(os.path.join("/etc/network/interfaces.d", n) for n in os.listdir("/etc/network/interfaces.d"))
+    except OSError:
+        pass
+    for f in files:
+        txt = tail_file(f, 80, 8000)
+        parts.append("--- %s ---%s%s" % (f, nl, txt.rstrip(nl)))
+    parts.append("--- Zusatzadresse des Zusatzpakets (/etc/pipbox/extra-ip.json) ---" + nl + tail_file("/etc/pipbox/extra-ip.json", 5, 600).rstrip(nl))
+    hook = "/etc/network/if-up.d/pipbox-extra-ip"
+    parts.append("--- Skript beim Hochfahren der Karte (%s) ---%s%s" % (hook, nl, tail_file(hook, 20, 1500).rstrip(nl)))
+    try:
+        parts.append("--- Skripte in /etc/network/if-up.d ---" + nl + " ".join(sorted(os.listdir("/etc/network/if-up.d"))))
+    except OSError:
+        pass
+    return nl.join(parts) + nl
+
+
+def net_journal(boot, first, last):
+    """Meldungen zu Netzkarten, ifupdown, ifplugd, DHCP und unserem Skript aus dem Journal eines Starts (boot 0 = jetzt, -1 = vorher)."""
+    nl = chr(10)
+    text = run(["journalctl", "-b", str(boot), "-g", NET_JOURNAL_RE, "--case-sensitive=no", "--no-pager", "-o", "short-iso"], 25)       # ohne -n: damit würde erst gekürzt, dann gesucht
+    lines = [l for l in text.splitlines() if l.strip() and " tailscaled[" not in l]                                                   # tailscaled meldet jede Änderung der Karten seitenlang
+    if not lines:
+        return "(keine Zeilen gefunden)" + nl
+    if len(lines) > first + last:
+        lines = lines[:first] + ["    (… %d Zeilen ausgelassen …)" % (len(lines) - first - last)] + lines[-last:]
+    return collapse_repeats(nl.join(lines)) 
+
+
+def network_report():
+    nl = chr(10)
+    out = ["Adressen je Netzkarte (fest = bleibt, per DHCP = vom Router mit Lebensdauer):", net_addresses().rstrip(nl), "",
+           "Karten und Kabel (ip -br link):", run(["ip", "-br", "link"], 8).rstrip(nl), "",
+           "Routen und Regeln:", run(["ip", "-4", "route"], 8).rstrip(nl), run(["ip", "-4", "rule"], 8).rstrip(nl), "",
+           "Dienste fürs Netz:"]
+    for u in ("networking", "ifplugd", "NetworkManager", "systemd-networkd", "dhcpcd"):
+        out.append("%-18s %s" % (u, run(["systemctl", "is-active", u + ".service"], 5).strip()))
+    out.append(run(["systemctl", "list-units", "--no-legend", "--no-pager", "ifplugd*", "ifup@*", "dhclient*"], 8).rstrip(nl))
+    out += ["", "Verbindungen von NetworkManager (Name, Art, Karte, Zustand):", run(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE,STATE", "con", "show"], 8).rstrip(nl), "",
+            net_files().rstrip(nl), "",
+            "Journal dieses Starts (Netz-Meldungen: ifup/ifdown, ifplugd, DHCP, Kabel, unser Skript; Anfang und Ende):", net_journal(0, 140, 60).rstrip(nl), "",
+            "Journal des vorigen Starts (Netz-Meldungen, Ende: Herunterfahren und Neustart):", net_journal(-1, 10, 60).rstrip(nl)]
+    return nl.join(out) + nl
+
+
 def usb_devices():
     """USB-Geräte aus /sys (lsusb gibt es auf der Box nicht): Anschluss, Hersteller-/Produktnummer, Name."""
     base = "/sys/bus/usb/devices"
@@ -941,6 +1025,7 @@ def sections():
             + "Fehlgeschlagene Dienste:\n" + (run(["systemctl", "--failed", "--no-legend", "--no-pager"], 10).strip() or "keine") + "\n"),
            ("Einstellungen (Kurzfassung)", settings_summary()),
            ("Netzwerkkarten", run(["ip", "-br", "addr"], 8) + run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev"], 8)),
+           ("Netzwerk beim Start (Adressen fest/DHCP, Netzdateien, Meldungen von ifupdown, ifplugd, DHCP und der Zusatzadresse; bei fehlender Adresse nach einem Neustart)", network_report()),
            ("USB-Geräte", usb_devices()),
            ("WLAN-Karten (Zustand und gefundene Funkstationen)", wifi_cards()),
            ("Bluetooth", run(["hciconfig"], 8)),
