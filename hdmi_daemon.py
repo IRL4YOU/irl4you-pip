@@ -41,8 +41,9 @@ HDMI_DEVICE = "/dev/hdmirx"
 HDMI_STATUS = "/sys/kernel/debug/hdmirx/status"          # Zustand des HDMI-Empfängers (nur root)
 HDMI_AUDIO = "hw:CARD=rockchiphdmiin"                    # ALSA-Karte des HDMI-Tons
 KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")       # wie in der Weboberfläche
-DEFAULTS = {"enabled": False, "key": "hdmi", "bitrate": 8000, "fps": 30, "audio": "hdmi", "source": "hdmi"}
+DEFAULTS = {"enabled": False, "key": "hdmi", "bitrate": 8000, "fps": 30, "audio": "hdmi", "source": "hdmi", "usb_format": "auto"}
 SOURCE_CHOICES = ("hdmi", "usb")
+USB_FORMAT_CHOICES = ("auto", "mjpeg", "h264")           # Bildformat der USB-Webcam: Automatisch (MJPEG zuerst), MJPEG oder H.264 zuerst; das andere bleibt als Rückfall
 SYS_V4L = "/sys/class/video4linux"
 PROC_ASOUND = "/proc/asound"
 SYS_USB = "/sys/bus/usb/devices"
@@ -130,6 +131,10 @@ def clean_settings(d, current=None):
         if d["source"] not in SOURCE_CHOICES:
             raise ValueError("Quelle: HDMI-Eingang oder USB-Webcam")
         out["source"] = d["source"]
+    if "usb_format" in d:
+        if d["usb_format"] not in USB_FORMAT_CHOICES:
+            raise ValueError("Bildformat: Automatisch, MJPEG oder H.264")
+        out["usb_format"] = d["usb_format"]
     return out
 
 
@@ -218,6 +223,13 @@ def find_usb_audio(cam, asound=PROC_ASOUND):
             if re.match(r"^[A-Za-z0-9_]{1,40}$", cid):
                 return "plughw:CARD=" + cid
     return None
+
+
+def usb_candidates(fmt):
+    """Reihenfolge der Bildformate: "mjpeg" und "h264" ziehen ihre Art vor, die anderen bleiben als Rückfall; sonst (Automatisch) die Standardreihenfolge."""
+    if fmt in ("mjpeg", "h264"):
+        return tuple(sorted(USB_CANDIDATES, key=lambda c: c[0] != fmt))        # stabil: innerhalb gleicher Art bleibt die Reihenfolge (1080p vor 720p)
+    return USB_CANDIDATES
 
 
 def usb_caps(cand):
@@ -431,7 +443,7 @@ class Daemon:
         """Erstes Bildformat, das die Kamera liefert (Probelauf, blockiert bis zu einigen Sekunden). Ein früheres Ergebnis für denselben Knoten gilt weiter."""
         if self.usb_choice and self.usb_choice[0] == cam["node"]:
             return self.usb_choice[1]
-        for cand in USB_CANDIDATES:
+        for cand in usb_candidates(self.cfg.get("usb_format")):
             if (cam["node"], cand) in self.usb_bad:
                 continue
             argv = usb_probe_argv(cam["node"], cand)
@@ -654,6 +666,8 @@ class Daemon:
         if cmd == "set":
             new = clean_settings(req.get("settings"), self.cfg)
             changed = new != self.cfg
+            if new.get("usb_format") != self.cfg.get("usb_format"):
+                self.usb_choice, self.usb_bad, self.usb_quick_fails = None, set(), 0       # neues Bildformat: neu probieren
             self.cfg = new
             self.save()
             if changed and self.proc is not None:             # neue Werte gelten sofort: Einspeisung neu starten

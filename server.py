@@ -4208,7 +4208,7 @@ class HdmiService:
     HOST, PORT = "127.0.0.1", 9102
     CAMERA_NAMES = ("HDMI", "HDMI-Eingang", "HDMI 2")
     USB_NAMES = ("USB-Kamera", "USB-Webcam", "USB 2")        # Name der Kamera, wenn die Quelle die USB-Webcam ist (der Schlüssel bleibt "hdmi")
-    ALLOWED = ("enabled", "bitrate", "fps", "audio", "source")        # was die Oberfläche ändern darf (der Schlüssel ist fest)
+    ALLOWED = ("enabled", "bitrate", "fps", "audio", "source", "usb_format")        # was die Oberfläche ändern darf (der Schlüssel ist fest)
     TTL = 1.5
     DOWN = "Der HDMI-Dienst läuft nicht (Software-Update oder install.sh ausführen)"
 
