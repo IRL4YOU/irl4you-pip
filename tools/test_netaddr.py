@@ -240,7 +240,7 @@ class Server(unittest.TestCase):
                 time.sleep(0.05)
         t = threading.Thread(target=helper)
         t.start()
-        st = ea.set(True, MAC0, "192.168.1.50", 24)
+        st = ea.set(True, MAC0, "192.168.1.50", 24, True)
         t.join()
         self.assertEqual(seen["req"], {"enable": True, "mac": MAC0, "addr": "192.168.1.50", "prefix": 24})
         self.assertTrue(st["enabled"])
@@ -259,14 +259,14 @@ class Server(unittest.TestCase):
         t = threading.Thread(target=helper)
         t.start()
         with self.assertRaises(ValueError) as cm:
-            ea.set(True, MAC0, "192.168.1.50", 24)
+            ea.set(True, MAC0, "192.168.1.50", 24, True)
         t.join()
         self.assertIn("überschneidet", str(cm.exception))
 
     def test_without_helper_and_without_answer(self):
         ea = self.make()
         with self.assertRaises(ValueError) as cm:
-            ea.set(True, MAC0, "192.168.1.50", 24)
+            ea.set(True, MAC0, "192.168.1.50", 24, True)
         self.assertIn("nächsten Software-Update", str(cm.exception))
         open(ea.UNIT, "w").write("x")
         ea.WAIT = 0.3
@@ -277,14 +277,24 @@ class Server(unittest.TestCase):
     def test_invalid_input_is_refused_before_anything_is_written(self):
         ea = self.make()
         open(ea.UNIT, "w").write("x")
-        for args in ((True, MAC0, "8.8.8.8", 24), ("ja", None, None, None)):
+        for args in ((True, MAC0, "8.8.8.8", 24, True), ("ja", None, None, None)):
             with self.assertRaises(ValueError):
                 ea.set(*args)
         self.assertFalse(os.path.exists(ea.req))
 
+    def test_needs_consent(self):
+        # ohne ausdrücklichen Haken "auf eigene Verantwortung" wird nichts geschrieben (auch nicht über die API)
+        ea = server.ExtraAddress(tempfile.mkdtemp(), clock=time.time, sleep=time.sleep)
+        for ack in (False, None, "true", 1):
+            with self.assertRaises(ValueError) as cm:
+                ea.set(True, MAC0, "192.168.1.50", 24, ack)
+            self.assertIn("Verantwortung", str(cm.exception))
+        self.assertFalse(os.path.exists(ea.req))
+        self.assertFalse(server.ExtraAddress(tempfile.mkdtemp(), demo=True).set(False)["enabled"])    # Ausschalten braucht keinen Haken
+
     def test_demo_mode(self):
         ea = server.ExtraAddress(tempfile.mkdtemp(), demo=True)
-        st = ea.set(True, "aa:bb:cc:00:11:22", "192.168.1.50", 24)
+        st = ea.set(True, "aa:bb:cc:00:11:22", "192.168.1.50", 24, True)
         self.assertTrue(st["enabled"] and st["installed"])
         self.assertFalse(ea.set(False)["enabled"])
 
@@ -292,7 +302,7 @@ class Server(unittest.TestCase):
 class Wiring(unittest.TestCase):
     def test_routes(self):
         self.assertIn('if path == "/api/netaddr":', SRC)
-        self.assertIn('self.netaddr.set(d.get("enable"), d.get("mac"), d.get("addr"), d.get("prefix"))', SRC)
+        self.assertIn('self.netaddr.set(d.get("enable"), d.get("mac"), d.get("addr"), d.get("prefix"), d.get("ack"))', SRC)
         self.assertIn("Handler.netaddr = ExtraAddress(", SRC)
 
     def test_install_and_uninstall_know_the_helper(self):
@@ -316,8 +326,10 @@ class Wiring(unittest.TestCase):
         i = PAGE.index('id="opt_netaddr"')
         self.assertGreater(i, a)
         self.assertLess(i, PAGE.index('id="c_report"'))                                                  # innerhalb der Karte Optionen
-        self.assertIn("{enable:true,mac:card.value,addr:addr.value.trim(),prefix:parseInt(prefix.value,10)}", PAGE)
+        self.assertIn("{enable:true,ack:ack.checked,mac:card.value,addr:addr.value.trim(),prefix:parseInt(prefix.value,10)}", PAGE)
         self.assertIn("MAC-Adresse", PAGE[i:i + 1200])
+        self.assertIn('id="na_ack"', PAGE)                                                                # Haken "eigene Verantwortung"
+        self.assertIn("save.disabled=!ready||(on.checked&&!ack.checked)", PAGE)
         self.assertIn("getrennter Adressraum", PAGE[i:i + 1200])
 
 
