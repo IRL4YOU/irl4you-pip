@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.190 (Beta)
+- **IRL4YOU-Logo im Kopf der Oberfläche (Issue #61 von Bittersweet1987).** Das Logo (die „4“ im Ring mit dem orangen Punkt) steht links im Kopf und **wechselt sich alle 30 Sekunden mit dem Text „IRL4YOU BOX“ ab**, weich überblendet. **Während einer Sendung** bleibt nur das Logo, der Text entfällt (spart Platz im Kopf, besonders am Handy). Das Logo ist eine kleine Vektorgrafik in der Seite (rund 600 Byte, nichts wird nachgeladen) mit eigenem dunklem Grund, sieht also im hellen wie im dunklen Modus gleich aus. Für Bildschirmleser bleibt „IRL4YOU BOX“ als Name der Überschrift. Wer in seinem Gerät **Animationen reduziert** hat (`prefers-reduced-motion`), bekommt keinen Wechsel: Logo und Text stehen dann nebeneinander (in der Sendung wieder nur das Logo).
+- Tests: `tools/test_ui_layout.py` jetzt 20 Tests; im Browser geprüft (Logo bis 28 s, Überblendung um 28 bis 30 s, Text bis 58 s, nur Logo in der Sendung, Handy 375 px ohne seitliches Scrollen, heller Modus).
+
 ## 0.9.189 (Beta)
 - **„Prozess(e) blockiert (D-State)“ meldet nicht mehr beim Start und bei kurzen Speicherzugriffen (Issue #51, Rückmeldung von Bittersweet1987).** Nach jedem Start oder Neustart erschienen 1 bis 5 Meldungen, die sich nach ein bis zwei Minuten gaben. Seit die Namen hinter dem „i“ stehen (0.9.178), ist die Ursache zu sehen: Es waren ausnahmslos Threads, die auf die **Speicherkarte** warteten (`apt-get`, `kworker/…kblockd`, `ext4-rsv-conversion`, `jbd2/mmcblk1p1`, `flush-179:0`) oder auf den CPU-Regler (`sugov`). Beim Start schreibt die Box viel auf die Karte (apt-get, Journal). Mit der Sendung hat das nichts zu tun. Die Meldung löste bisher bei jeder einzelnen Messung aus, in der auch nur ein Thread kurz im Zustand D stand. Jetzt:
   - **Schonzeit:** In den ersten **120 Sekunden nach dem Start** der Box gibt es die Meldung nicht (Bittersweet schlug 1 Minute vor; sein Protokoll zeigt 1 bis 2 Minuten).
