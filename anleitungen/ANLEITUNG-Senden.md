@@ -100,6 +100,16 @@ Unter jedem kleinen Bild findest du weitere Einstellungen für Aussehen (zum Bei
 
 Eine deaktivierte Kamera ist nicht im Stream, und ihr Ton ist nicht nutzbar. Ein Wechsel des Hauptbilds kann den Encoder neu starten (siehe "Hauptbild wählen"). *Mit Testquellen geprüft, noch nicht mit echten Kameras.*
 
+### Vorschau: das gesendete Bild ansehen
+
+Die Karte **Vorschau** (oben, unter dem Live-Bereich; unter **Optionen** lässt sie sich wie die anderen Karten ausblenden und verschieben) zeigt das **fertig gemischte Bild so, wie es gesendet wird**, nicht einzelne Kameras. So siehst du, ob eine Kamera schief steht, die Drohne nicht dorthin zeigt, wo du es erwartest, oder ein kleines Bild an der falschen Stelle sitzt.
+
+- **Start / Stop** sitzt in der Kopfzeile der Karte. Die Vorschau gibt es nur, **während die Box sendet**. Sie startet nie von selbst.
+- **Im Heimnetz** sind es 30 Bilder pro Sekunde in 640 × 360, **von unterwegs** (öffentliche Adresse, Tailscale) 10 Bilder pro Sekunde und ein kleineres Bild, damit die Vorschau nicht den Upload der Sendung nimmt (rund 3 Mbit/s bei voller Bildrate).
+- **Ende:** nach 10 Minuten (dann steht dort **Weiter ansehen**), beim Zuklappen oder Ausblenden der Karte, beim Schließen der Seite oder wenn der Browser im Hintergrund liegt, und wenn die Sendung endet. Es laufen höchstens zwei Vorschauen zugleich.
+- **Was es kostet:** etwa die Hälfte eines der vier kleinen Prozessorkerne, solange sie läuft (die schnellen Kerne bleiben der Sendung); ohne Vorschau läuft nichts davon. Die Sendung bleibt unberührt.
+- **Wie es funktioniert:** Die Box liest den Datenstrom mit, den der Encoder lokal an `srtla_send` schickt, und dekodiert ihn mit dem Hardware-Dekoder. Dafür braucht es **kein** zusätzliches Programm und keinen Eingriff in die Sendekette. Das Bild kommt etwa 2 Sekunden nach dem Start (das erste Schlüsselbild wird abgewartet) und liegt kurz hinter dem echten Bild zurück.
+
 ## 6. Bitrate-Regler und Stabilität
 
 Karte SRTLA, Bereich **Bitrate und Latenz**: Hier stellst du **Mindestbitrate** und **Höchstbitrate** in kbit/s sowie die **Latenz** in ms ein und klickst **Bitrate und Latenz speichern**. Die Änderung gilt nach einem Neustart der Sendung. Auch die Einstellungen des Empfängers (SRT-Latenz, Umordnungstoleranz) beeinflussen die Bitrate.
