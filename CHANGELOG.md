@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.191 (Beta)
+- **Auch ein Wunsch bekommt eine Nummer (Issue #62 von Bittersweet1987).** Bei „Problem melden / Wunsch äußern“ hatte nur ein Problem eine Nummer; der Wunsch (FEATURE) nicht, weil es ursprünglich so gewünscht war. Jetzt bekommen **beide** eine Nummer `IRL-XXXXXX`: Der Titel lautet `[FEATURE] Titeltext (Nummer)`, in der Beschreibung stehen Box-Version und Nummer, und der Wunsch steht unter **Meine Fälle** (mit „Auf GitHub suchen“ und „Erledigt“). Neben jedem Fall steht jetzt, ob es ein **Problem** oder ein **Wunsch** war; ältere Einträge ohne Angabe gelten als Problem. Weiterhin keine Rückmeldung zum Stand von selbst: Die Box fragt GitHub nicht ab.
+- Server: `SupportCases.create(title, kind)` mit `kind` `issue` oder `feature`, `POST /api/support` nimmt `kind` an (sonst „Ungültige Anfrage“). Ein geänderter Text in allen 14 Sprachen.
+- Tests: `tools/test_support.py` jetzt 18 Tests (Wunsch mit Nummer, Art bleibt erhalten, ungültige Art, alte Einträge, Titel und Liste in der Seite).
+
 ## 0.9.190 (Beta)
 - **IRL4YOU-Logo im Kopf der Oberfläche (Issue #61 von Bittersweet1987).** Das Logo (die „4“ im Ring mit dem orangen Punkt) steht links im Kopf und **wechselt sich alle 30 Sekunden mit dem Text „IRL4YOU BOX“ ab**, weich überblendet. **Während einer Sendung** bleibt nur das Logo, der Text entfällt (spart Platz im Kopf, besonders am Handy). Das Logo ist eine kleine Vektorgrafik in der Seite (rund 600 Byte, nichts wird nachgeladen) mit eigenem dunklem Grund, sieht also im hellen wie im dunklen Modus gleich aus. Für Bildschirmleser bleibt „IRL4YOU BOX“ als Name der Überschrift. Wer in seinem Gerät **Animationen reduziert** hat (`prefers-reduced-motion`), bekommt keinen Wechsel: Logo und Text stehen dann nebeneinander (in der Sendung wieder nur das Logo).
 - Tests: `tools/test_ui_layout.py` jetzt 20 Tests; im Browser geprüft (Logo bis 28 s, Überblendung um 28 bis 30 s, Text bis 58 s, nur Logo in der Sendung, Handy 375 px ohne seitliches Scrollen, heller Modus).
