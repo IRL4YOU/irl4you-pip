@@ -35,6 +35,28 @@ class Parsing(unittest.TestCase):
         self.assertEqual(item["bits"], 100)
         self.assertEqual(item["type"], "msg")
 
+    def test_new_twitch_emote_ids_with_41_characters_are_kept(self):
+        """Kanal-, Abo-, Follower- und bewegte Emotes haben Kennungen wie "emotesv2_" + 32 Zeichen (41): Bis 0.9.179 wurden sie wegen der Grenze von 40 verworfen."""
+        eid = "emotesv2_dcd06b30a5c24f6eb871e8f5edbd44f7"
+        self.assertEqual(len(eid), 41)
+        line = ("@display-name=Anna;emotes=%s:0-4,10-14/25:6-8 :anna!anna@anna.tmi.twitch.tv PRIVMSG #kanal :Hallo Kpa Hallo" % eid)
+        item = reader().parse(line)
+        self.assertEqual(item["emotes"], [[eid, 0, 4], ["25", 6, 8], [eid, 10, 14]])
+
+    def test_emote_id_limits(self):
+        r = reader()
+        ok = "a" * 64
+        self.assertEqual(r.parse("@emotes=%s:0-1 :a!a@a.tmi.twitch.tv PRIVMSG #kanal :hi" % ok)["emotes"], [[ok, 0, 1]])
+        self.assertEqual(r.parse("@emotes=%s:0-1 :a!a@a.tmi.twitch.tv PRIVMSG #kanal :hi" % ("a" * 65))["emotes"], [])         # zu lang
+        for bad in ("a.b", "a-b", "a%2Fb", "emotesv2_äö", ""):
+            self.assertEqual(r.parse("@emotes=%s:0-1 :a!a@a.tmi.twitch.tv PRIVMSG #kanal :hi" % bad)["emotes"], [], bad)
+
+    def test_page_builds_the_image_address_from_the_id(self):
+        page = open(os.path.join(os.path.dirname(HERE), "web", "index.html"), encoding="utf-8").read()
+        self.assertIn('static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/1.0', page)                  # "default" liefert bewegte Emotes als GIF
+        i = page.index("EMOTE.replace(")
+        self.assertIn("encodeURIComponent", page[i:i + 120])                                          # die Kennung wird für die Adresse kodiert
+
     def test_twitch_timestamp_is_used_for_the_time_of_the_message(self):
         r = reader()
         item = r.parse("@tmi-sent-ts=1791403200123;display-name=Zeit :z!z@z.tmi.twitch.tv PRIVMSG #kanal :Uhr")
