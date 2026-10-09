@@ -72,14 +72,31 @@ class PhoneChat(unittest.TestCase):
 
 
 class FootHides(unittest.TestCase):
+    BLK = PAGE[PAGE.index("// Fußleiste am Handy, Einstellung je Gerät"):PAGE.index("function sizeFoot(){")]
+
     def test_footer_slides_away_and_back(self):
         self.assertIn("html.mfhide #mfoot{transform:translateY(", PAGE)
         self.assertIn("visibility:hidden", PAGE[PAGE.index("html.mfhide #mfoot"):PAGE.index("html.mfhide #mfoot") + 300])
-        blk = PAGE[PAGE.index("// Fußleiste am Handy: beim Runterscrollen"):PAGE.index("function sizeFoot(){")]
-        self.assertIn('if(ny<24||bottom||run<-8) set(false); else if(run>8) set(true);', blk)  # oben, unten, deutlich hoch: da; deutlich runter: weg
-        self.assertIn('getComputedStyle(f).display==="none"', blk)                              # nur wo die Leiste steht
-        self.assertIn('f.addEventListener("focusin",()=>set(false))', blk)
-        self.assertIn("window.addEventListener(\"scroll\"", blk)                               # Fensterscrollen, nicht das im Chatfeld
+        self.assertIn("if(ny<24||bottom||run<-8) scrollHid=false; else if(run>8) scrollHid=true;", self.BLK)   # oben, unten, deutlich hoch: da; deutlich runter: weg
+        self.assertIn('getComputedStyle(f).display==="none"', self.BLK)                              # nur wo die Leiste steht
+        self.assertIn('f.addEventListener("focusin"', self.BLK)
+        self.assertIn('window.addEventListener("scroll"', self.BLK)                                  # Fensterscrollen, nicht das im Chatfeld
+
+    def test_only_hides_while_chat_or_preview_is_shown(self):
+        self.assertIn('["c_chat","c_prev"].some(id=>{ const e=$(id); return !!e&&e.open&&e.offsetParent!==null; })', self.BLK)
+        self.assertIn('const wide=shown(), h=mode!=="always"&&wide&&(mode==="hide"||scrollHid);', self.BLK)
+
+    def test_three_modes_kept_per_device_only(self):
+        self.assertIn('KEY="pb_foot"', self.BLK)
+        self.assertIn('localStorage.setItem(KEY,mode)', self.BLK)
+        self.assertIn('v==="always"||v==="hide"', self.BLK)                                          # Standard: automatisch
+        self.assertNotIn("srtlaCall", self.BLK)                                                      # nichts geht an die Box
+        self.assertIn('for(const [v,txt] of [["auto","Automatisch"],["always","Immer anzeigen"],["hide","Ausblenden"]])', PAGE)
+        self.assertIn('window.pbFootMode(sel.value)', PAGE)
+
+    def test_no_space_kept_when_footer_is_gone_for_good(self):
+        self.assertIn("html.mfperm body{padding-bottom:calc(16px + env(safe-area-inset-bottom))}", PAGE)
+        self.assertIn('root.classList.toggle("mfperm",mode==="hide"&&wide)', self.BLK)
 
 
 if __name__ == "__main__":
