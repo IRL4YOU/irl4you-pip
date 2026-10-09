@@ -3510,12 +3510,15 @@ class SwUpdate:
     STATUS = "/run/pipbox-swupdate/status.json"
     BACKUP = "/var/lib/pipbox-backup"
     STAGE = "Beta"
+    CHANGELOG_MAX = 600_000          # die ganze Datei (heute rund 130 KB; früher nur die ersten 60 KB: ältere Versionen fehlten schon)
+    HISTORY_TTL = 30 * 60
 
     def __init__(self, state_dir, demo, send):
         self.req = os.path.join(state_dir, "swupdate-request")
         self.demo, self.send = demo, send
         self.lock = threading.Lock()
         self.cache, self.cache_t = None, 0.0
+        self.hist, self.hist_t = None, 0.0
         self.started = time.time()
         self.rel_cache, self.rel_t = [], 0.0
         here = os.path.dirname(os.path.abspath(__file__))
@@ -3553,14 +3556,14 @@ class SwUpdate:
         return "\n".join(out)
 
     @classmethod
-    def _sections_since(cls, text, current, max_sections=6, max_lines=160):
+    def _sections_since(cls, text, current, max_sections=100, max_lines=4000, max_chars=200_000):
         """Die Änderungen aller Versionen, die neuer sind als die installierte (neueste zuerst), aus dem Text der CHANGELOG.md. Wer mehrere
-        Versionen übersprungen hat, sieht so alles, was neu ist. Ist keine neuer (oder die Überschriften sind unbekannt), gilt der erste Abschnitt."""
+        Versionen übersprungen hat, sieht so alles, was neu ist (Issue #57: früher nur die neuesten 6 Versionen; jetzt bis zu 100, höchstens 200 KB). Ist keine neuer (oder die Überschriften sind unbekannt), gilt der erste Abschnitt."""
         def num(v):
             m = re.match(r"^(\d+)\.(\d+)\.(\d+)", v or "")
             return tuple(int(x) for x in m.groups()) if m else None
         cur = num(current)
-        out, keep, sections = [], False, 0
+        out, keep, sections, chars = [], False, 0, 0
         for l in text.splitlines():
             if l.startswith("## "):
                 m = re.match(r"^##\s+(\d+\.\d+\.\d+)", l)
@@ -3572,7 +3575,8 @@ class SwUpdate:
                         break
             if keep:
                 out.append(l.rstrip())
-                if len(out) >= max_lines:
+                chars += len(l) + 1
+                if len(out) >= max_lines or chars >= max_chars:
                     break
         return "\n".join(out) if out else cls._first_section(text)
 
@@ -3605,13 +3609,34 @@ class SwUpdate:
                     # installierte Version ist dann die neueste, die wir kennen; nach wenigen Minuten wird noch einmal gefragt.
                     res["latest"], res["stale"] = self.version, True
                 try:
-                    res["notes"] = self._sections_since(self._get("CHANGELOG.md", 60000), self.version)
+                    res["notes"] = self._sections_since(self._get("CHANGELOG.md", self.CHANGELOG_MAX), self.version)
                 except OSError:
                     res["notes"] = ""
             except (OSError, ValueError):
                 res["error"] = "GitHub ist nicht erreichbar oder lieferte keine gültige Versionsnummer."
         with self.lock:
             self.cache, self.cache_t = res, time.time()
+        return res
+
+    def history(self):
+        """Der ganze Änderungsverlauf (CHANGELOG.md von GitHub) für die Suche in der Oberfläche: {"text", "error"}. Nur auf Wunsch geladen, 30 Minuten gehalten,
+        nie während einer Übertragung (kein Mobilfunk-Verkehr nebenbei). Der Fehlertext ist fertig lesbar."""
+        with self.lock:
+            if self.hist and time.time() - self.hist_t < self.HISTORY_TTL:
+                return self.hist
+        if self.demo:
+            res = {"text": "## 0.9.1 (Demo)\n- Beispiel für eine neue Version.\n\n## 0.9.0 (Demo)\n- Erste Version.", "error": ""}
+        elif self.send._active():
+            with self.lock:
+                return self.hist or {"text": "", "error": "Während der Übertragung wird nichts von GitHub geladen. Bitte nach dem Senden noch einmal öffnen."}
+        else:
+            try:
+                res = {"text": self._get("CHANGELOG.md", self.CHANGELOG_MAX), "error": ""}
+            except OSError:
+                with self.lock:
+                    return self.hist or {"text": "", "error": "GitHub ist nicht erreichbar."}
+        with self.lock:
+            self.hist, self.hist_t = res, time.time()
         return res
 
     def auto_loop(self):
@@ -7962,6 +7987,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/swupdate":
             q = (self.path.split("?", 1) + [""])[1]
             return self.reply(200, self.swupdate.status(force="check=1" in q, fresh="fresh=1" in q))
+        if path == "/api/swupdate/history":
+            return self.reply(200, self.swupdate.history())
         if path == "/api/update":
             try:
                 self.updates.auto_check(present=True)       # Wer die Seite öffnet, soll gleich wissen, ob es Updates gibt (einmal je Start, still)
