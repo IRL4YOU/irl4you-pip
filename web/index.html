@@ -720,6 +720,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
             <label class="f">Bildrate<select id="hdmi_fps"><option value="30">30 fps</option><option value="25">25 fps</option></select></label>
             <label class="f">Bitrate (Mbit/s)<input id="hdmi_br" type="number" min="1" max="20" step="0.5"></label>
             <label class="f">Ton<select id="hdmi_audio"><option value="hdmi">HDMI-Ton</option><option value="none">ohne Ton</option></select></label>
+            <label class="f" id="hdmi_fmtrow">Bildformat<select id="hdmi_fmt"><option value="auto">Automatisch (MJPEG zuerst)</option><option value="mjpeg">MJPEG (die Box kodiert mit der Bitrate neu)</option><option value="h264">H.264 (Strom der Kamera)</option></select></label>
           </div>
           <div class="actions"><button id="hdmi_save" type="button">Speichern</button></div>
         </details>
@@ -1570,7 +1571,7 @@ function hdmiStateText(d){
 }
 function hdmiButtons(){
   const usable=!!(hdmiData&&hdmiData.service&&hdmiData.available!==false)&&!hdmiBusy;
-  ["hdmi_on","hdmi_source","hdmi_fps","hdmi_br","hdmi_audio","hdmi_save"].forEach(id=>{ $(id).disabled=!usable; });
+  ["hdmi_on","hdmi_source","hdmi_fps","hdmi_br","hdmi_audio","hdmi_fmt","hdmi_save"].forEach(id=>{ $(id).disabled=!usable; });
   if(hdmiIsUsb(hdmiData)) $("hdmi_fps").disabled=true;                                          // bei der USB-Webcam bestimmt die Kamera die Bildrate (30 fps, wenn sie es kann)
 }
 function hdmiFill(d){
@@ -1581,7 +1582,8 @@ function hdmiFill(d){
   $("hdmi_name").textContent=usb?"USB-Webcam":"HDMI-Eingang";
   $("hdmi_audio").options[0].textContent=usb?"Ton der Kamera":"HDMI-Ton";
   $("hdmi_vsum").textContent=`${usb?"":s.fps+" fps · "}${(s.bitrate/1000).toFixed(1).replace(/\.0$/,"")} Mbit/s · ${s.audio==="none"?"ohne Ton":(usb?"Ton der Kamera":"HDMI-Ton")}`;
-  if(!hdmiDirty){ $("hdmi_source").value=s.source||"hdmi"; $("hdmi_on").checked=!!s.enabled; $("hdmi_fps").value=String(s.fps); $("hdmi_br").value=String(s.bitrate/1000); $("hdmi_audio").value=s.audio; }
+  if(!hdmiDirty){ $("hdmi_source").value=s.source||"hdmi"; $("hdmi_on").checked=!!s.enabled; $("hdmi_fps").value=String(s.fps); $("hdmi_br").value=String(s.bitrate/1000); $("hdmi_audio").value=s.audio; $("hdmi_fmt").value=s.usb_format||"auto"; }
+  $("hdmi_fmtrow").hidden=!usb;                                                                  // das Bildformat gibt es nur bei der USB-Webcam
   const err=$("hdmi_err"); if(d.state==="error"&&d.message){ err.textContent=d.message; err.style.color=""; } else if(err.dataset.keep!=="1") err.textContent="";
   hdmiButtons();
 }
@@ -1597,7 +1599,7 @@ async function hdmiPost(body,done){
 }
 $("hdmi_on").addEventListener("change",()=>hdmiPost({enabled:$("hdmi_on").checked}));
 $("hdmi_source").addEventListener("change",()=>hdmiPost({source:$("hdmi_source").value}));
-$("hdmi_save").addEventListener("click",()=>hdmiPost({bitrate:Math.round(parseFloat($("hdmi_br").value)*1000),fps:parseInt($("hdmi_fps").value,10),audio:$("hdmi_audio").value},"Gespeichert."));
+$("hdmi_save").addEventListener("click",()=>hdmiPost({bitrate:Math.round(parseFloat($("hdmi_br").value)*1000),fps:parseInt($("hdmi_fps").value,10),audio:$("hdmi_audio").value,usb_format:$("hdmi_fmt").value},"Gespeichert."));
 ["input","change"].forEach(ev=>$("hdmi_vsec").addEventListener(ev,()=>{ hdmiDirty=true; }));
 $("hdmi_cam").addEventListener("toggle",()=>{ if($("hdmi_cam").open) hdmiLoad(); });
 hdmiLoad(); setInterval(()=>{ if(due("hdmi","c_cams",20000)) hdmiLoad(); },3000);
