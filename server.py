@@ -7544,8 +7544,8 @@ def client_wifi_list():
 
 class SupportCases:
     """Issue #13: Probleme und Wünsche aus der Box melden. Die Box sendet selbst nichts (dafür bräuchte sie einen GitHub-Schlüssel mit Schreibrechten, und der
-    ließe sich aus der öffentlichen Software auslesen); sie bereitet das Formular auf GitHub vor. Hier steht nur die Liste "Meine Fälle": je Problem eine
-    Support-Nummer (IRL-XXXXXX, ohne Bezug zu Person oder Box), Titel, Zeit und "erledigt" (gilt nur auf der Box). Datei <state>/support-cases.json."""
+    ließe sich aus der öffentlichen Software auslesen); sie bereitet das Formular auf GitHub vor. Hier steht nur die Liste "Meine Fälle": je Problem und
+    je Wunsch eine Nummer (IRL-XXXXXX, ohne Bezug zu Person oder Box), Art, Titel, Zeit und "erledigt" (gilt nur auf der Box). Datei <state>/support-cases.json."""
     KEEP = 100
     ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"                 # ohne I, L, O, 0, 1: nicht zu verwechseln
     ID_RE = re.compile(r"^IRL-[A-HJKMNP-Z2-9]{6}$")
@@ -7585,9 +7585,11 @@ class SupportCases:
 
     def list(self):
         with self.lock:
-            return [dict(c) for c in reversed(self.cases)]
+            return [dict(c, kind="feature" if c.get("kind") == "feature" else "issue") for c in reversed(self.cases)]       # ältere Einträge ohne Art sind Probleme
 
-    def create(self, title):
+    def create(self, title, kind="issue"):
+        if kind not in ("issue", "feature"):
+            raise ValueError("Ungültige Anfrage")
         t = self.clean_title(title)
         with self.lock:
             used = {c["id"] for c in self.cases}
@@ -7595,7 +7597,7 @@ class SupportCases:
                 cid = "IRL-" + "".join(secrets.choice(self.ALPHABET) for _ in range(6))
                 if cid not in used:
                     break
-            case = {"id": cid, "title": t, "t": int(self.clock()), "done": False}
+            case = {"id": cid, "title": t, "t": int(self.clock()), "done": False, "kind": kind}
             self.cases = (self.cases + [case])[-self.KEEP:]
             self._save()
             return dict(case)
@@ -8307,7 +8309,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/support":
                 try:
                     if d.get("action") == "create":
-                        return self.reply(200, self.support.create(d.get("title")))
+                        return self.reply(200, self.support.create(d.get("title"), d.get("kind", "issue")))
                     if d.get("action") == "done":
                         return self.reply(200, self.support.mark(d.get("id"), d.get("done")))
                 except ValueError as e:
