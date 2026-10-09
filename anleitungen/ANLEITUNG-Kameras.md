@@ -68,7 +68,7 @@ HorizonBalancing, HorizonSteady). Welche Kamera Hauptbild oder kleines Bild ist,
 ### Bluetooth-Stick
 
 Die eingebauten Bluetooth-Module der Boxen empfangen schlecht, ein USB-Stick ist besser. Unter **Verbindungen** im Abschnitt
-**Bluetooth (für DJI-Kameras)** siehst du, welche Sticks laufen, und eine Meldung, wenn ein Stick keinen Adapter ergibt.
+**Bluetooth** siehst du, welche Sticks laufen, und eine Meldung, wenn ein Stick keinen Adapter ergibt.
 
 | Stick | Stand |
 |---|---|
