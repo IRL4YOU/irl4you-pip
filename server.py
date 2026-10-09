@@ -5246,6 +5246,7 @@ class ThirdPartyEmotes:
         self.paths, self.fetch, self.clock = paths, fetch or self._fetch, clock
         self.lock = threading.Lock()
         self.map, self.room, self.until, self.thread = {}, None, 0.0, None
+        self.users, self.uq, self.uthread, self.on_user = collections.OrderedDict(), collections.deque(), None, None      # Listen der Schreiber (Uid -> (bis, Wörter))
 
     def _fetch(self, url):
         try:
@@ -5320,20 +5321,93 @@ class ThirdPartyEmotes:
                 self.map = merged
             self.until = self.clock() + (self.TTL if fails == 0 else self.RETRY)
 
-    def mark(self, item):
-        """Wörter des Textes, die ein Emote sind, in item["emotes"] eintragen (mit den Twitch-eigenen zusammengeführt, nichts überlappt)."""
-        m = self.map
+    USER_TTL, USER_MAX, USER_QUEUE = 1800.0, 300, 50
+
+    # Emotes der Schreiber: BTTV und 7TV zeigen in der Erweiterung auch die Emotes, die ein Zuschauer selbst eingerichtet hat (persönliche Liste). Die Listen sind
+    # öffentlich (keine Anmeldung); die Box fragt sie je Schreiber einmal ab (nur über die Nummer aus Twitchs Nachricht), hält sie 30 Minuten und lädt nacheinander.
+    def user_map(self, uid):
+        with self.lock:
+            e = self.users.get(uid)
+            return e[1] if e and self.clock() < e[0] else None
+
+    def want_user(self, uid):
+        if not (isinstance(uid, str) and re.fullmatch(r"[0-9]{1,12}", uid)):
+            return
+        with self.lock:
+            e = self.users.get(uid)
+            if (e and self.clock() < e[0]) or uid in self.uq or len(self.uq) >= self.USER_QUEUE:
+                return
+            self.uq.append(uid)
+            if self.uthread is None or not self.uthread.is_alive():
+                self.uthread = threading.Thread(target=self._user_loop, daemon=True)
+                self.uthread.start()
+
+    def _user_loop(self):
+        while True:
+            with self.lock:
+                if not self.uq:
+                    self.uthread = None
+                    return
+                uid = self.uq.popleft()
+            out, fails = {}, 0
+            for kind, url in (("bttv", "https://api.betterttv.net/3/cached/users/twitch/" + uid), ("7tv", "https://7tv.io/v3/users/twitch/" + uid)):
+                try:
+                    d = self.fetch(url)
+                except Exception:
+                    d = None
+                if d is None:
+                    fails += 1
+                    continue
+                d = d if isinstance(d, dict) else {}
+                if kind == "bttv":
+                    lst = [x for k in ("channelEmotes", "sharedEmotes") for x in (d.get(k) if isinstance(d.get(k), list) else [])]
+                    self._add(out, "bttv", lst, "id", "code", self.BTTV_ID)
+                else:
+                    st = d.get("emote_set") if isinstance(d.get("emote_set"), dict) else {}
+                    self._add(out, "7tv", st.get("emotes") if isinstance(st.get("emotes"), list) else [], "id", "name", self.STV_ID)
+            with self.lock:
+                self.users[uid] = (self.clock() + (self.USER_TTL if fails == 0 else self.RETRY), out)
+                self.users.move_to_end(uid)
+                while len(self.users) > self.USER_MAX:
+                    self.users.popitem(last=False)
+            cb = self.on_user
+            if cb:
+                try:
+                    cb(uid)
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _apply(item, m):
+        """Wörter des Textes, die in m stehen, in item["emotes"] eintragen (mit den vorhandenen zusammengeführt, nichts überlappt). Gibt zurück, ob sich etwas änderte."""
         text = item.get("text") or ""
         if not m or not text:
-            return
+            return False
         found = [[m[w.group()], w.start(), w.end() - 1] for w in re.finditer(r"\S+", text) if w.group() in m]
         if not found:
-            return
+            return False
         merged = [list(e) for e in item.get("emotes") or []]
+        n0 = len(merged)
         for e in found:
             if all(e[2] < o[1] or e[1] > o[2] for o in merged):
                 merged.append(e)
         item["emotes"] = sorted(merged, key=lambda e: e[1])[:60]
+        return len(merged) != n0
+
+    def mark(self, item):
+        """Wörter des Textes, die ein Emote sind, in item["emotes"] eintragen: erst Kanal und global, dann die Liste des Schreibers (wird sie noch geladen, kommt sie später über mark_user)."""
+        self._apply(item, self.map)
+        uid = item.get("uid")
+        if uid:
+            um = self.user_map(uid)
+            if um is None:
+                self.want_user(uid)
+            else:
+                self._apply(item, um)
+
+    def mark_user(self, item):
+        um = self.user_map(item.get("uid") or "")
+        return bool(um) and self._apply(item, um)
 
 
 class TwitchReader:
@@ -5362,6 +5436,8 @@ class TwitchReader:
     def __init__(self, store, demo=False, host=None, port=None, tls=True, context=None, clock=time.monotonic, wall=time.time, sleep=time.sleep, paths=None, third=None):
         self.paths = paths or ChatPaths()
         self.third = third or ThirdPartyEmotes(self.paths)
+        if hasattr(self.third, "on_user"):
+            self.third.on_user = self._user_ready             # Liste eines Schreibers ist da: seine Nachrichten im Speicher nachträglich mit Emotes versehen
         self.events = None                  # TwitchEvents (EventSub), wird nach dem Start gesetzt
         self.store, self.demo = store, demo
         self.host, self.port, self.tls, self.context = host or self.HOST, port or self.PORT, tls, context
@@ -5527,6 +5603,15 @@ class TwitchReader:
             item["id"], item["t"] = self.next_id, int(item.get("ts") or self.wall())
             self.next_id += 1
             self.items.append(item)
+
+    def _user_ready(self, uid):
+        patched = []
+        with self.lock:
+            for it in self.items:
+                if it.get("uid") == uid and it.get("mid") and it.get("type") in ("msg", "me") and self.third.mark_user(it):
+                    patched.append((it["mid"], [list(e) for e in it["emotes"]]))
+        for mid, em in patched:
+            self._add({"type": "emotes", "meta": True, "mid": mid, "text": "", "emotes": em})       # laufende Oberflächen ersetzen die Emotes der schon gezeigten Zeile
 
     # ---- Abfrage durch die Oberfläche
     def poll(self, since=0):
