@@ -96,12 +96,14 @@ class Cases(unittest.TestCase):
         self.assertEqual([x["id"] for x in c2.list()], [a["id"]])
         self.assertTrue(c2.list()[0]["done"])
 
-    def test_list_is_bounded(self):
+    def test_list_is_bounded_but_generous(self):
+        self.assertEqual(server.SupportCases.KEEP, 1000)                                      # Fälle sollen erhalten bleiben
         c, _ = cases()
-        for i in range(server.SupportCases.KEEP + 20):
+        c.KEEP = 50
+        for i in range(c.KEEP + 20):
             c.create("Fall %d" % i)
-        self.assertEqual(len(c.list()), server.SupportCases.KEEP)
-        self.assertEqual(c.list()[0]["title"], "Fall %d" % (server.SupportCases.KEEP + 19))
+        self.assertEqual(len(c.list()), 50)
+        self.assertEqual(c.list()[0]["title"], "Fall 69")
 
     def test_unwritable_folder_does_not_crash(self):
         c, _ = cases("/proc/gibt/es/nicht.json")
