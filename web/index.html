@@ -1999,6 +1999,7 @@ document.querySelectorAll(".pvs").forEach(box=>{
   styleFill(k,true);
 });
 let pipeData=null, pipeDirty=false, pipDelayDirty=false, pipLive={}, pipCams=[], pipCorners=[];
+let pipPrevMain="";                       // das Hauptbild vor der letzten Wahl: wird eine Kamera aus einem kleinen Bild zum Hauptbild, rückt die bisherige Hauptkamera auf ihren Platz
 const DL=[["p_delay","n_delay","v_delay","main_delay_ms"],["p_delay1","n_delay1","v_delay1","pip_delay_ms"],["p_delay2","n_delay2","v_delay2","pip2_delay_ms"],["p_delay3","n_delay3","v_delay3","pip3_delay_ms"]];
 function setDelays(vals){
   DL.forEach(([r,n,v],i)=>{
@@ -2071,6 +2072,7 @@ function pipConstrain(v){
   v=v||{main:$("p_main").value,pip:$("p_pip").value,pip2:$("p_pip2").value,pip3:$("p_pip3").value,c1:$("p_corner").value,c2:$("p_corner2").value,c3:$("p_corner3").value};
   const has=k=>pipCams.some(x=>x.key===k), free=ex=>pipCams.filter(x=>!ex.includes(x.key));
   const main=has(v.main)?v.main:((pipCams[0]||{}).key||"");
+  pipPrevMain=main;
   const pip=(has(v.pip)&&v.pip!==main)?v.pip:((free([main])[0]||{}).key||"");
   const pip2=(has(v.pip2)&&v.pip2!==main&&v.pip2!==pip)?v.pip2:"";
   const pip3=(pip2&&has(v.pip3)&&v.pip3!==main&&v.pip3!==pip&&v.pip3!==pip2)?v.pip3:"";
@@ -2155,7 +2157,13 @@ $("pipecard").addEventListener("change",async e=>{
     }
     return;
   }
-  pipeDirty=true; pipConstrain();
+  pipeDirty=true;
+  if(e.target.id==="p_main"){                // Kamera aus einem kleinen Bild zum Hauptbild gewählt: tauschen, damit keine Kamera aus dem Bildaufbau fällt
+    const v={main:$("p_main").value,pip:$("p_pip").value,pip2:$("p_pip2").value,pip3:$("p_pip3").value,c1:$("p_corner").value,c2:$("p_corner2").value,c3:$("p_corner3").value};
+    ["pip","pip2","pip3"].forEach(k=>{ if(v[k]===v.main&&pipPrevMain&&pipPrevMain!==v.main) v[k]=pipPrevMain; });
+    pipConstrain(v); return;
+  }
+  pipConstrain();
 });
 async function pipSave(){
   $("pipeerr").textContent="";
