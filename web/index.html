@@ -164,7 +164,19 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 @media(min-width:461px){.sig{height:28px}.sig svg{height:28px}.sig .sgs{height:28px;font-size:8px;line-height:9px;min-width:22px;overflow:visible}}      /* Rechner: höherer Verlauf, damit alle drei Zahlen lesbar sind */
 @media(max-width:460px){.sig{gap:5px;margin-left:6px}.sig .sgs{display:none}.sig svg{width:60px}.camdots{gap:4px}.camdots .dot{width:8px;height:8px}}
 .chatbox img.em{height:1.6em;width:auto;vertical-align:middle;margin:0 1px}
-@media(max-width:620px){.chatbox{max-height:56vh;font-size:16px}.chatbox .cm{padding:9px 2px}}
+/* Handy: so viele Nachrichten wie möglich auf der Fläche (Zeilenabstand 1,15 statt 1,45, keine Luft über und unter der Nachricht statt 9 px, Uhrzeit und Abzeichen kleiner, Emotes ohne die Zeile zu dehnen) */
+@media(max-width:620px){
+  .chatbox{max-height:56vh;font-size:15px;line-height:1.15}
+  .chatbox .cm{padding:0 2px;column-gap:6px;align-items:baseline}
+  .chatbox .cm .ct{font-size:11px;line-height:1.15}
+  .chatbox .bdg{font-size:9px;padding:1px 3px;margin-right:4px;vertical-align:0}
+  .chatbox .cm .cn{margin-right:4px}
+  .chatbox img.em{height:1.3em;margin:-2px 1px}
+  .chatbox .cm.ev{padding:3px 6px 3px 8px;margin:1px 0}
+  .chatbox .cm.ev .evh{font-size:12px;margin-bottom:0}
+  .chatbox .cm.sub,.chatbox .cm.raid,.chatbox .cm.notice{padding-left:6px}
+  .chatbox .cm .mm{padding:2px 10px;margin:-2px -4px -2px 0;min-height:28px}
+}
 .qrline{margin-top:4px;display:flex;align-items:center;gap:6px;opacity:.75}.qrline:hover,.qrline:focus-within{opacity:1}
 .qrline select{width:auto;min-width:0;padding:1px 4px;font-size:12px;height:24px}
 .qrbox{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
