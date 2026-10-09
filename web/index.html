@@ -47,6 +47,9 @@ html.nohead :is(#c_chat,#c_prev)>summary{position:absolute;top:8px;right:8px;mar
 html.nohead :is(#c_chat,#c_prev)>summary>.sumh,html.nohead #c_chat>summary>:is(.sig,.camdots){display:none}
 html.nohead :is(#c_chat,#c_prev)>summary :is(button,.prevctl){pointer-events:auto}
 html.nohead #c_prev .prevctl{background:var(--card);border-radius:10px;padding:2px 4px;opacity:.94}
+html.nohead #chat_msg.quiet{display:none}                                          /* "Noch keine Nachrichten." entfällt: das Eingabefeld zeigt, dass der Chat da ist (Fehlermeldungen bleiben) */
+html.nohead #c_chat.chatok>summary{visibility:hidden;opacity:0;transition:opacity .2s}        /* läuft der Chat, stört das ⚙: es erscheint kurz bei Mausbewegung oder Antippen oder solange die Einstellungen offen sind */
+html.nohead #c_chat.chatok.showctl>summary,html.nohead #c_chat.chatok:has(#chat_opt[aria-expanded=true])>summary{visibility:visible;opacity:1}
 html.nohead #c_prev{min-height:48px}
 html.nohead #c_prev.prevrun>summary{visibility:hidden;opacity:0;transition:opacity .2s}      /* läuft die Vorschau, stören die Knöpfe im Bild: sie erscheinen nur kurz bei Mausbewegung oder Antippen */
 html.nohead #c_prev.prevrun.showctl>summary{visibility:visible;opacity:1}
@@ -3031,7 +3034,8 @@ $("chat_form").addEventListener("submit",async e=>{
       if(evNew){ if(!near) $("chat_evchip").hidden=false; evSignal(); }
       const text={"kein-kanal":"Kein Kanal in der Twitch-Karte eingetragen.","verbinde":"Verbinde …","fehler":"Keine Verbindung zu Twitch."}[d.state]||"";
       msg.textContent=(d.state==="ok"&&!shown)?"Noch keine Nachrichten.":text; msg.hidden=!msg.textContent;
-    }catch(e){ if(Date.now()-lastOk>10000){ msg.textContent="Keine Verbindung zur Box."; msg.hidden=false; } }       // sonst: nächster Durchlauf
+      msg.classList.toggle("quiet",d.state==="ok"&&!shown); card.classList.toggle("chatok",d.state==="ok");        // kompakte Ansicht: läuft der Chat, entfallen die Leerzeile und das ⚙ (bis zur Mausbewegung oder zum Antippen)
+    }catch(e){ if(Date.now()-lastOk>10000){ msg.textContent="Keine Verbindung zur Box."; msg.classList.remove("quiet"); card.classList.remove("chatok"); msg.hidden=false; } }       // sonst: nächster Durchlauf
     finally{ busy=false; }
   }
   card.addEventListener("toggle",()=>{ if(card.open) poll(); });
@@ -3190,8 +3194,8 @@ $("chat_form").addEventListener("submit",async e=>{
     }
     if(my===gen&&on&&mode==="mp4") ended();                                        // der Strom hat aufgehört
   }
-  function showCtl(){                                                              // kompakte Ansicht: Knöpfe für 3 Sekunden zeigen
-    card.classList.add("showctl"); clearTimeout(ctlTimer); ctlTimer=setTimeout(()=>card.classList.remove("showctl"),3000);
+  function showCtl(){                                                              // kompakte Ansicht: Knöpfe für 10 Sekunden zeigen
+    card.classList.add("showctl"); clearTimeout(ctlTimer); ctlTimer=setTimeout(()=>card.classList.remove("showctl"),10000);
   }
   card.addEventListener("pointermove",e=>{ if(e.pointerType==="mouse"&&on) showCtl(); });
   box.addEventListener("click",()=>{ if(on) showCtl(); });                          // am Handy: das Bild antippen
@@ -3213,6 +3217,14 @@ $("chat_form").addEventListener("submit",async e=>{
   try{ keep.checked=store("pb_prev_always")==="1"; }catch(e){}
   syncKeep();
   if(running()&&!document.hidden) setTimeout(()=>{ if(running()&&!on) start(true); },1500);   // nach Neuladen der Seite: mit Häkchen von selbst weiter
+})();
+
+// ---- Chat in der kompakten Ansicht: das ⚙ erscheint für 10 Sekunden bei Mausbewegung oder Antippen der Karte ----
+(function(){
+  const c=$("c_chat"); let t=0;
+  const show=()=>{ c.classList.add("showctl"); clearTimeout(t); t=setTimeout(()=>c.classList.remove("showctl"),10000); };
+  c.addEventListener("pointermove",e=>{ if(e.pointerType==="mouse") show(); });
+  c.addEventListener("click",show);
 })();
 
 // ---- Hauptmenüs: Reihenfolge (▲ ▼) und Menüpunkte ausblenden, beides unter Optionen; je Gerät (Browser) gemerkt, nicht auf der Box: Handy und Rechner können verschieden aussehen ----
