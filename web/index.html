@@ -163,6 +163,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 @media(prefers-reduced-motion:reduce){.sig .sigdot{animation:none}}
 @media(min-width:461px){.sig{height:28px}.sig svg{height:28px}.sig .sgs{height:28px;font-size:8px;line-height:9px;min-width:22px;overflow:visible}}      /* Rechner: höherer Verlauf, damit alle drei Zahlen lesbar sind */
 @media(max-width:460px){.sig{gap:5px;margin-left:6px}.sig .sgs{display:none}.sig svg{width:60px}.camdots{gap:4px}.camdots .dot{width:8px;height:8px}}
+.chatbox a.lk{color:var(--accent);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
 .chatbox img.em{height:1.6em;width:auto;vertical-align:middle;margin:0 1px}
 /* Handy: so viele Nachrichten wie möglich auf der Fläche (Zeilenabstand 1,15 statt 1,45, keine Luft über und unter der Nachricht statt 9 px, Uhrzeit und Abzeichen kleiner, Emotes ohne die Zeile zu dehnen) */
 @media(max-width:620px){
@@ -2934,6 +2935,37 @@ $("chat_form").addEventListener("submit",async e=>{
   const BADGE_TIP={broadcaster:"Streamer",moderator:"Moderator",vip:"VIP",subscriber:"Abonnent",founder:"Abonnent (Gründer)",staff:"Twitch-Mitarbeiter",partner:"Partner"};
   let modOn=false, me="";
   const MAXLINES=200, EMOTE="https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/1.0";
+  const LINK_RE=/(?:https?:\/\/|www\.)[^\s<>"']+|(?:[a-z0-9-]+\.)+(?:com|net|org|de|tv|gg|io|be|me|co|app|ly|to|fm|ch|at|eu|info|live|dev|xyz|uk|us|ru|fr|nl|es|it|pl)(?![\w-])(?:\/[^\s<>"']*)?/gi;
+  function linkTo(raw){                                                                                  // Adresse aus dem Chat prüfen: nur http(s); angezeigt wird der echte Rechnername (Punycode), nicht beliebiger Text
+    let u; try{ u=new URL(/^https?:\/\//i.test(raw)?raw:"https://"+raw); }catch(e){ return null; }
+    if(u.protocol!=="https:"&&u.protocol!=="http:") return null; if(u.username||u.password) return null;
+    const a=document.createElement("a"); a.className="lk"; a.href=u.href; a.target="_blank"; for(const v of ["noopener","noreferrer","nofollow"]) a.relList.add(v); a.title=u.href;
+    let t=u.hostname.replace(/^www\./,"")+(u.pathname==="/"?"":u.pathname)+u.search; if(t.length>40) t=t.slice(0,39)+"…"; a.textContent=t; return a;
+  }
+  function addText(mt,str){                                                                              // Text einsetzen, Adressen als Link (öffnet in neuem Tab), nie als HTML
+    let last=0; LINK_RE.lastIndex=0; let x;
+    while((x=LINK_RE.exec(str))){
+      let raw=x[0]; const trail=raw.match(/[.,;:!?)\]}'"]+$/); if(trail) raw=raw.slice(0,raw.length-trail[0].length);
+      if(x.index>0&&!/^(?:https?:\/\/|www\.)/i.test(raw)&&/[\w@.\/-]/.test(str[x.index-1])) continue;               // Rechnername ohne https mitten in einem Wort (name@mail.de, a.b.com/x) ist kein Link
+      const a=raw?linkTo(raw):null; if(!a) continue;
+      if(x.index>last) mt.appendChild(document.createTextNode(str.slice(last,x.index)));
+      mt.appendChild(a); last=x.index+raw.length; LINK_RE.lastIndex=last;
+    }
+    if(last<str.length) mt.appendChild(document.createTextNode(str.slice(last)));
+  }
+  function fillText(mt,m){                                                                                 // Text mit Emotes als Bild füllen (auch später, wenn die Emotes des Schreibers nachgeladen sind)
+    const cp=Array.from(m.text||""), sl=(a,b)=>cp.slice(a,b).join(""); let pos=0;                           // Stellen zählen Zeichen (Code Points), nicht UTF-16-Einheiten
+    for(const e of (m.emotes||[])){                                        // Emotes als Bild, der Rest als Text (nie als HTML)
+      if(e[1]<pos||e[2]>=cp.length) continue;
+      if(e[1]>pos) addText(mt,sl(pos,e[1]));
+      // 7TV, BTTV, FFZ: fertige Adresse vom Server (nur diese drei Hosts); Twitch: Kennung
+      const im=document.createElement("img"); im.className="em"; im.alt=sl(e[1],e[2]+1); im.loading="lazy"; im.src=/^https:\/\/(cdn\.betterttv\.net|cdn\.7tv\.app|cdn\.frankerfacez\.com)\//.test(e[0])?e[0]:EMOTE.replace("%s",encodeURIComponent(e[0])); mt.appendChild(im);
+      const et=document.createElement("span"); et.className="emt"; et.textContent=sl(e[1],e[2]+1); mt.appendChild(et);
+      im.onerror=()=>{ im.style.display="none"; et.style.display="inline"; };                               // Bild nicht ladbar (Netz, gesperrt): der Name bleibt als Text
+      pos=e[2]+1;
+    }
+    if(pos<cp.length) addText(mt,sl(pos));
+  }
   function line(m){
     const d=document.createElement("div"); d.className="cm "+(m.type||"msg");
     const tm=document.createElement("span"); tm.className="ct"; const dt=new Date((m.t||0)*1000);                         // Uhrzeit der Nachricht (Ortszeit des Geräts)
@@ -2943,17 +2975,7 @@ $("chat_form").addEventListener("submit",async e=>{
     for(const bn of (m.badges||[])){ const bg=document.createElement("span"); bg.className="bdg "+bn; bg.textContent=BADGE_TXT[bn]||bn; bg.title=BADGE_TIP[bn]||bn; body.appendChild(bg); }
     if(m.name){ const n=document.createElement("span"); n.className="cn"; n.textContent=m.name; n.translate=false; if(/^#[0-9a-fA-F]{6}$/.test(m.color||"")) n.style.setProperty("--nc",m.color); body.appendChild(n); }
     const mt=document.createElement("span"); mt.translate=false; body.appendChild(mt);                      // Text der Zuschauer wird nie übersetzt (sonst würde aus "Hilfe" "Help")
-    const cp=Array.from(m.text||""), sl=(a,b)=>cp.slice(a,b).join(""); let pos=0;                           // Stellen zählen Zeichen (Code Points), nicht UTF-16-Einheiten
-    for(const e of (m.emotes||[])){                                        // Emotes als Bild, der Rest als Text (nie als HTML)
-      if(e[1]<pos||e[2]>=cp.length) continue;
-      if(e[1]>pos) mt.appendChild(document.createTextNode(sl(pos,e[1])));
-      // 7TV, BTTV, FFZ: fertige Adresse vom Server (nur diese drei Hosts); Twitch: Kennung
-      const im=document.createElement("img"); im.className="em"; im.alt=sl(e[1],e[2]+1); im.loading="lazy"; im.src=/^https:\/\/(cdn\.betterttv\.net|cdn\.7tv\.app|cdn\.frankerfacez\.com)\//.test(e[0])?e[0]:EMOTE.replace("%s",encodeURIComponent(e[0])); mt.appendChild(im);
-      const et=document.createElement("span"); et.className="emt"; et.textContent=sl(e[1],e[2]+1); mt.appendChild(et);
-      im.onerror=()=>{ im.style.display="none"; et.style.display="inline"; };                               // Bild nicht ladbar (Netz, gesperrt): der Name bleibt als Text
-      pos=e[2]+1;
-    }
-    if(pos<cp.length) mt.appendChild(document.createTextNode(sl(pos)));
+    fillText(mt,m); d._mt=mt; d._txt=m.text||"";
     if(m.bits&&!m.ev){ const b=document.createElement("span"); b.className="bt"; b.textContent=m.bits+" Bits"; body.appendChild(b); }
     if(m.ev){                                                                                              // besonderes Ereignis: Kopfzeile mit Art und Menge
       const k=m.ev.k, n=m.ev.n||0;
@@ -2983,6 +3005,7 @@ $("chat_form").addEventListener("submit",async e=>{
   function notice(text){ const d=document.createElement("div"); d.className="cm notice"; const t=document.createElement("span"); t.className="ct"; const n=new Date();
     t.textContent=String(n.getHours()).padStart(2,"0")+":"+String(n.getMinutes()).padStart(2,"0"); const b=document.createElement("div"); b.className="cb"; b.textContent=text; d.appendChild(t); d.appendChild(b); box.appendChild(d); shown++; }
   function metaEvent(m){                                                                                 // Löschung, Timeout oder Bann, auch von anderen Moderatoren
+    if(m.type==="emotes"){ for(const x of box.querySelectorAll(".cm[data-mid]")) if(x.dataset.mid===m.mid&&x._mt){ x._mt.textContent=""; fillText(x._mt,{text:x._txt,emotes:m.emotes}); } return; }
     if(m.type==="del"){ for(const x of box.querySelectorAll(".cm[data-mid]")) if(x.dataset.mid===m.mid) x.classList.add("gone"); return; }
     if(m.type==="clear"){
       if(!m.uid){ notice("Der Chat wurde geleert."); return; }
