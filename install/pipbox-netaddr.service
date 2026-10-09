@@ -1,0 +1,8 @@
+[Unit]
+Description=IRL4YOU BOX Netzadress-Helfer (nur eine feste Zusatzadresse je LAN-Karte)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-netaddr.py
+TimeoutStartSec=1min

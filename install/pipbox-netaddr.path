@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX Netzadress-Helfer
+
+[Path]
+PathExists=/var/lib/pipbox/netaddr-request
+Unit=pipbox-netaddr.service
+
+[Install]
+WantedBy=multi-user.target
