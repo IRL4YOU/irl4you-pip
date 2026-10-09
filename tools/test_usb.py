@@ -194,5 +194,98 @@ class Outages(unittest.TestCase):
         self.assertEqual([a["kind"] for a in w.alerts([], err)], ["hdmi"])
 
 
+BOOT_LOG = """2026-10-09T21:21:12,000000+00:00 usb 5-1.4: new high-speed USB device number 4 using xhci-hcd
+2026-10-09T21:21:12,500000+00:00 usb 5-1.4: New USB device found, idVendor=a69c, idProduct=5721, bcdDevice= 1.00
+2026-10-09T21:21:37,043013+00:00 usb 5-1.4: USB disconnect, device number 4
+2026-10-09T21:21:38,300000+00:00 usb 5-1.4: new high-speed USB device number 5 using xhci-hcd
+2026-10-09T21:21:38,410582+00:00 usb 5-1.4: New USB device found, idVendor=a69c, idProduct=8d80, bcdDevice= 1.00
+2026-10-09T21:21:38,410618+00:00 usb 5-1.4: Product: AIC Wlan
+2026-10-09T21:21:40,883493+00:00 usb 5-1.4: USB disconnect, device number 5
+2026-10-09T21:21:41,612494+00:00 usb 5-1.4: new high-speed USB device number 6 using xhci-hcd
+2026-10-09T21:21:41,726855+00:00 usb 5-1.4: New USB device found, idVendor=a69c, idProduct=8d81, bcdDevice= 1.00
+2026-10-09T21:21:41,726882+00:00 usb 5-1.4: Product: AIC 8800D80
+2026-10-09T21:30:00,000000+00:00 usb 5-1.4: USB disconnect, device number 6
+2026-10-09T21:30:04,000000+00:00 usb 5-1.4: new high-speed USB device number 7 using xhci-hcd
+"""
+
+
+def boot_watch(text, now, up, path=None):
+    """Uhr und Betriebszeit von Hand: Die Box ist um 21:21:12 UTC gestartet (Issue #58, Protokoll von Bittersweet1987)."""
+    t = [now]
+    w = server.UsbWatch(path or tempfile.mktemp(), runner=lambda: text, clock=lambda: t[0], uptime=lambda: up[0])
+    return w, t
+
+
+class Issue58(unittest.TestCase):
+    BOOT = 1791580872.0                                   # 2026-10-09 21:21:12 UTC
+
+    def test_reconnects_right_after_the_start_are_not_failures(self):
+        up = [180.0]
+        w, _ = boot_watch(BOOT_LOG, self.BOOT + 180.0, up)
+        ev = w._parse(BOOT_LOG)
+        self.assertEqual([round(e["t"] - self.BOOT) for e in ev], [528])                 # nur die Trennung um 21:30; 25 s und 29 s nach dem Start zählen nicht
+
+    def test_grace_ends_after_two_minutes(self):
+        up = [300.0]
+        text = "2026-10-09T21:23:00,000000+00:00 usb 5-1.4: USB disconnect, device number 6\n"       # 108 s nach dem Start: noch in der Schonzeit
+        w, _ = boot_watch(text, self.BOOT + 300.0, up)
+        self.assertEqual(w._parse(text), [])
+        text2 = "2026-10-09T21:23:20,000000+00:00 usb 5-1.4: USB disconnect, device number 6\n"      # 128 s: zählt
+        self.assertEqual(len(w._parse(text2)), 1)
+
+    def test_alert_names_the_device_and_the_port(self):
+        w, t = boot_watch(BOOT_LOG, self.BOOT + 700.0, [700.0])
+        al = w.alerts()
+        self.assertEqual(len(al), 1)
+        self.assertEqual((al[0]["name"], al[0]["port"], al[0]["ids"]), ("AIC 8800D80", "5-1.4", "a69c:8d81"))
+        self.assertTrue(al[0]["back"])                                                    # um 21:30:04 wieder erkannt
+
+    def test_alert_without_a_known_name_is_still_valid(self):
+        text = "2026-10-09T21:40:00,000000+00:00 usb 9-9: USB disconnect, device number 4\n"
+        w, _ = boot_watch(text, self.BOOT + 2000.0, [2000.0])
+        al = w.alerts()
+        self.assertEqual((al[0]["name"], al[0]["ids"], al[0]["port"]), ("", "", "9-9"))
+
+    def test_alert_goes_away_five_minutes_after_the_device_is_back(self):
+        w, t = boot_watch(BOOT_LOG, self.BOOT + 700.0, [700.0])
+        self.assertEqual(server.UsbWatch.BACK_SHOW, 300.0)
+        self.assertEqual(len(w.alerts()), 1)
+        back = w.events[0]["back"]
+        t[0] = back + 299
+        w.last = t[0]
+        self.assertEqual(len(w.alerts()), 1)
+        t[0] = back + 301
+        w.last = t[0]
+        self.assertEqual(w.alerts(), [])
+
+    def test_events_from_before_the_restart_do_not_come_back(self):
+        path = tempfile.mktemp()
+        old = [{"t": self.BOOT - 40, "port": "5-1.4", "cat": "other", "why": "gone", "name": "AIC 8800D80"}]
+        with open(path, "w") as f:
+            json.dump(old, f)
+        w, _ = boot_watch("", self.BOOT + 60.0, [60.0], path)
+        self.assertEqual(w.events, [])                                                    # sofort nach dem Start keine Meldung von vorher
+        self.assertEqual(w.alerts(), [])
+
+    def test_service_restart_without_reboot_keeps_the_events(self):
+        path = tempfile.mktemp()
+        ev = [{"t": self.BOOT + 500, "port": "5-1.4", "cat": "wlan", "why": "gone"}]
+        with open(path, "w") as f:
+            json.dump(ev, f)
+        w, _ = boot_watch("", self.BOOT + 900.0, [900.0], path)
+        self.assertEqual(len(w.events), 1)
+
+    def test_page_shows_name_and_port(self):
+        page = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "index.html"), encoding="utf-8").read()
+        self.assertIn('const nm=a.name?` <b translate="no">${esc(a.name)}</b>`:"";', page)
+        self.assertIn('"USB "+a.port', page)
+
+    def test_without_own_clock_the_real_uptime_is_used(self):
+        w = server.UsbWatch(tempfile.mktemp(), runner=lambda: "")
+        self.assertEqual(w.uptime, server.UsbWatch._uptime)
+        w2 = server.UsbWatch(tempfile.mktemp(), runner=lambda: "", clock=lambda: 1.0)
+        self.assertIsNone(w2.uptime())                                                    # Tests mit eigener Uhr: keine Schonzeit
+
+
 if __name__ == "__main__":
     unittest.main()
