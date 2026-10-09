@@ -920,21 +920,6 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
       <div class="ph"><a href="https://github.com/IRL4YOU/irl4you-pip/blob/main/ANLEITUNG-Fernzugriff.md" target="_blank" rel="noopener noreferrer">Ausführliche Anleitung (mit Fehlerhilfe)</a></div></details>
   </details>
 
-  <details class="card wide" id="c_layout"><summary><span class="sumh">Optionen</span></summary>
-    <div class="ph" style="margin-top:0">Hier legen Sie fest, welche Menüpunkte angezeigt werden (Haken weg = ausgeblendet). Ausgeblendet wird nur die Anzeige, an den Einstellungen ändert sich nichts. Die Reihenfolge der Hauptmenüs legen Sie darunter fest. Auswahl und Reihenfolge gelten für alle Geräte an dieser Box.</div>
-    <details class="subsec" id="opt_design"><summary>Design</summary>
-      <div class="ph" style="margin-top:0">Wählen Sie das Aussehen der Oberfläche. Die Auswahl gilt für diesen Browser. Hell oder dunkel stellen Sie wie bisher oben in der Kopfleiste ein.</div>
-      <div id="design_list" class="designs" role="radiogroup" aria-label="Design"></div>
-    </details>
-    <details class="subsec" id="opt_menus"><summary>Menüpunkte anzeigen</summary>
-      <div id="lay_list" class="optlist"></div>
-      <div class="actions"><button type="button" id="lay_showall" class="sec">Alle einblenden</button></div>
-    </details>
-    <details class="subsec" id="opt_order"><summary>Reihenfolge der Hauptmenüs</summary>
-      <div id="ord_list" class="optlist"></div>
-      <div class="actions"><button type="button" id="lay_reset" class="sec">Reihenfolge zurücksetzen</button></div>
-    </details>
-  </details>
 
   <details class="card wide" id="swcard">
     <summary><span class="sumh">Software-Update (IRL4YOU BOX)</span><span id="sw_badge" class="badge ok">…</span></summary>
@@ -985,20 +970,6 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <label class="logopt"><input type="radio" name="logmode" value="ausfuehrlich"> <b>Ausführlich</b>: Protokolle dauerhaft auf der Karte (Journal höchstens 30 MB und 7 Tage, Zustandsprotokoll höchstens 4 MB, alle 10 Sekunden). Für die Fehlersuche, zum Beispiel wenn sich die Box von selbst ausschaltet.</label>
     <div id="logmsg" class="ph"></div>
   </details>
-  <details class="card wide" id="c_report"><summary><span class="sumh">Problem melden / Wunsch äußern</span></summary>
-    <div class="ph" style="margin-top:0">Bereitet auf GitHub ein fertig ausgefülltes Formular vor (Titel und Beschreibung sind schon eingetragen). Du meldest dich dort mit deinem eigenen GitHub-Konto an und klickst auf „Submit new issue“. Die Box sendet selbst nichts.</div>
-    <label class="logopt"><input type="radio" name="rp_kind" value="issue" checked> <b>Problem</b> (ISSUE): Titel ist Pflicht, die Beschreibung ist freiwillig. Du bekommst eine Support-Nummer.</label>
-    <label class="logopt"><input type="radio" name="rp_kind" value="feature"> <b>Wunsch</b> (FEATURE): Titel und Beschreibung sind Pflicht. Du bekommst ebenfalls eine Nummer.</label>
-    <input id="rp_title" type="text" maxlength="100" placeholder="Titel" aria-label="Titel" autocomplete="off">
-    <textarea id="rp_desc" rows="5" maxlength="2000" placeholder="Beschreibung" aria-label="Beschreibung"></textarea>
-    <label class="logopt" id="rp_logrow"><input type="checkbox" id="rp_log"> Bereinigtes Protokoll mitnehmen (wird als Datei geladen, die du auf GitHub anhängst; ohne Passwörter, WLAN-Namen, Adressen und Schlüssel)</label>
-    <div class="actions"><button id="rp_go" type="button">Formular vorbereiten</button> <span id="rp_msg" class="muted"></span></div>
-    <div id="rp_out" class="ph" hidden></div>
-    <div class="sech">Meine Fälle</div>
-    <div class="ph" style="margin-top:0">Deine Support-Nummern mit Datum. „Erledigt“ gilt nur hier auf der Box; das Issue auf GitHub schließt du selbst (oder der Entwickler anhand der Nummer).</div>
-    <div id="rp_cases"></div>
-    <div class="ph"><a id="rp_issues" href="https://github.com/IRL4YOU/irl4you-pip/issues" target="_blank" rel="noopener noreferrer">Alle Issues auf GitHub ansehen</a></div>
-  </details>
   <details class="card wide" id="c_bk"><summary><span class="sumh">Einstellungen sichern</span></summary>
     <div class="sech">Sichern</div>
     <label class="logopt"><input type="checkbox" id="bk_secrets" checked> <b>Passwörter mitnehmen</b> (WLAN, Hotspot, DJI, Stream-ID). Dann immer mit einem Passwort verschlüsselt.</label>
@@ -1021,6 +992,35 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div class="actions"><button id="dev_toggle" type="button" class="warnbtn" disabled>SSH einschalten</button> <button id="dev_pw" type="button" class="sec">Passwort anzeigen</button> <button id="dev_reset" type="button" class="sec">Passwort zurücksetzen</button></div>
     <div id="dev_msg" class="ph" role="status"></div>
     <div id="dev_pw_out" class="ph sens" role="status"></div>
+  </details>
+  <details class="card wide" id="c_layout"><summary><span class="sumh">Optionen</span></summary>
+    <div class="ph" style="margin-top:0">Hier legen Sie fest, welche Menüpunkte angezeigt werden (Haken weg = ausgeblendet). Ausgeblendet wird nur die Anzeige, an den Einstellungen ändert sich nichts. Die Reihenfolge der Hauptmenüs legen Sie darunter fest. Auswahl und Reihenfolge gelten für alle Geräte an dieser Box.</div>
+    <details class="subsec" id="opt_design"><summary>Design</summary>
+      <div class="ph" style="margin-top:0">Wählen Sie das Aussehen der Oberfläche. Die Auswahl gilt für diesen Browser. Hell oder dunkel stellen Sie wie bisher oben in der Kopfleiste ein.</div>
+      <div id="design_list" class="designs" role="radiogroup" aria-label="Design"></div>
+    </details>
+    <details class="subsec" id="opt_menus"><summary>Menüpunkte anzeigen</summary>
+      <div id="lay_list" class="optlist"></div>
+      <div class="actions"><button type="button" id="lay_showall" class="sec">Alle einblenden</button></div>
+    </details>
+    <details class="subsec" id="opt_order"><summary>Reihenfolge der Hauptmenüs</summary>
+      <div id="ord_list" class="optlist"></div>
+      <div class="actions"><button type="button" id="lay_reset" class="sec">Reihenfolge zurücksetzen</button></div>
+    </details>
+  </details>
+  <details class="card wide" id="c_report"><summary><span class="sumh">Problem melden / Wunsch äußern</span></summary>
+    <div class="ph" style="margin-top:0">Bereitet auf GitHub ein fertig ausgefülltes Formular vor (Titel und Beschreibung sind schon eingetragen). Du meldest dich dort mit deinem eigenen GitHub-Konto an und klickst auf „Submit new issue“. Die Box sendet selbst nichts.</div>
+    <label class="logopt"><input type="radio" name="rp_kind" value="issue" checked> <b>Problem</b> (ISSUE): Titel ist Pflicht, die Beschreibung ist freiwillig. Du bekommst eine Support-Nummer.</label>
+    <label class="logopt"><input type="radio" name="rp_kind" value="feature"> <b>Wunsch</b> (FEATURE): Titel und Beschreibung sind Pflicht. Du bekommst ebenfalls eine Nummer.</label>
+    <input id="rp_title" type="text" maxlength="100" placeholder="Titel" aria-label="Titel" autocomplete="off">
+    <textarea id="rp_desc" rows="5" maxlength="2000" placeholder="Beschreibung" aria-label="Beschreibung"></textarea>
+    <label class="logopt" id="rp_logrow"><input type="checkbox" id="rp_log"> Bereinigtes Protokoll mitnehmen (wird als Datei geladen, die du auf GitHub anhängst; ohne Passwörter, WLAN-Namen, Adressen und Schlüssel)</label>
+    <div class="actions"><button id="rp_go" type="button">Formular vorbereiten</button> <span id="rp_msg" class="muted"></span></div>
+    <div id="rp_out" class="ph" hidden></div>
+    <div class="sech">Meine Fälle</div>
+    <div class="ph" style="margin-top:0">Deine Support-Nummern mit Datum. „Erledigt“ gilt nur hier auf der Box; das Issue auf GitHub schließt du selbst (oder der Entwickler anhand der Nummer).</div>
+    <div id="rp_cases"></div>
+    <div class="ph"><a id="rp_issues" href="https://github.com/IRL4YOU/irl4you-pip/issues" target="_blank" rel="noopener noreferrer">Alle Issues auf GitHub ansehen</a></div>
   </details>
   <details class="card wide" id="c_power"><summary><span class="sumh">Box ausschalten und abmelden</span></summary>
     <div class="ph" style="margin-top:0">Fährt die Box sauber herunter oder startet sie neu. Wenn die Box ausgeschaltet ist, kann sie über die Oberfläche nicht wieder eingeschaltet werden: dafür den Strom kurz trennen oder die Ein-Taste nutzen. „Abmelden“ beendet die Anmeldung auf diesem Gerät, auch eine mit „Angemeldet bleiben“ gemerkte.</div>
