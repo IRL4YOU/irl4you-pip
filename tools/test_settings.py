@@ -345,16 +345,15 @@ class RoundTrip(unittest.TestCase):
 
 
 class UiParts(unittest.TestCase):
-    """Einstellungen der Oberfläche in der Sicherung: Optionen (Menüs), HDMI-Eingang, Akku-Warnung im Twitch-Chat (ohne Token), Netzwerk der Kameras."""
+    """Einstellungen der Oberfläche in der Sicherung: HDMI-Eingang, Akku-Warnung im Twitch-Chat (ohne Token), Netzwerk der Kameras."""
     IFACES = [{"iface": "eth0", "ip": "192.168.1.5"}, {"iface": "usb0", "ip": "192.168.20.2"}]
     TOKEN = "geheimer-token-" + "x" * 12
 
     def attach(self, box):
-        box.layout = server.UiLayout(box.dir)
         box.twitch = server.TwitchStore(os.path.join(box.dir, "twitch.json"))
         box.netchoice = server.NetChoice(os.path.join(box.dir, "camera-net.json"))
         box.hdmi = server.HdmiService(box.dir, box.cams, True)
-        box.t.layout, box.t.twitch, box.t.netchoice, box.t.hdmi = box.layout, box.twitch, box.netchoice, box.hdmi
+        box.t.twitch, box.t.netchoice, box.t.hdmi = box.twitch, box.netchoice, box.hdmi
         return box
 
     def setUp(self):
@@ -362,7 +361,6 @@ class UiParts(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.box = self.attach(fill(make_box()))
-        self.box.layout.set(["c_chat", "netcard", "c_status"], ["rcard", "sm_btn", "hlp_btn", "opt_design"])
         self.box.hdmi.set({"enabled": True, "bitrate": 6000, "fps": 25, "audio": "none"})
         self.box.twitch.set({"channel": "MeinKanal", "login": "MeinBot", "token": self.TOKEN, "threshold": 15, "message": "Akku leer: {Kamera}", "only_live": False, "enabled": True})
         self.box.netchoice.select("usb0")
@@ -373,7 +371,7 @@ class UiParts(unittest.TestCase):
 
     def test_export_has_the_parts_and_never_the_twitch_token(self):
         d = self.out
-        self.assertEqual(d["layout"], {"order": ["c_chat", "netcard", "c_status"], "hidden": ["rcard", "sm_btn", "hlp_btn", "opt_design"]})
+        self.assertNotIn("layout", d)                                                    # Reihenfolge und Ausblenden gelten je Gerät und stehen nicht auf der Box
         self.assertEqual(d["hdmi"], {"enabled": True, "bitrate": 6000, "fps": 25, "audio": "none", "source": "hdmi", "usb_format": "auto"})
         self.assertEqual(d["camnet"], {"iface": "usb0"})
         self.assertEqual(d["twitch"], {"enabled": True, "channel": "meinkanal", "login": "meinbot", "threshold": 15, "message": "Akku leer: {Kamera}", "only_live": False})
@@ -381,20 +379,17 @@ class UiParts(unittest.TestCase):
         self.assertNotIn("token", json.dumps(d["twitch"]))
 
     def test_nothing_is_exported_that_the_box_does_not_have(self):
-        box = make_box()                                                                 # ohne Optionen, ohne Netzwerkwahl: keine leeren Teile
-        box.layout = server.UiLayout(box.dir)
+        box = make_box()                                                                 # ohne Netzwerkwahl: kein leerer Teil
         box.netchoice = server.NetChoice(os.path.join(box.dir, "camera-net.json"))
-        box.t.layout, box.t.netchoice = box.layout, box.netchoice
+        box.t.netchoice = box.netchoice
         d = box.t.make_document(False)
-        self.assertNotIn("layout", d)
         self.assertNotIn("camnet", d)
 
     def test_import_restores_all_parts(self):
         b = self.fresh()
         b.twitch.set({"login": "meinbot", "token": self.TOKEN})                         # auf dieser Box gibt es ein Token (Anmeldung bleibt dort)
-        res = b.t.apply(self.out, None, ["layout", "hdmi", "twitch", "camnet"])
+        res = b.t.apply(self.out, None, ["hdmi", "twitch", "camnet"])
         self.assertTrue(all(r["ok"] for r in res["results"]), res)
-        self.assertEqual(b.layout.get(), {"set": True, "order": ["c_chat", "netcard", "c_status"], "hidden": ["rcard", "sm_btn", "hlp_btn", "opt_design"]})
         self.assertEqual({k: b.hdmi.status()["settings"][k] for k in ("enabled", "bitrate", "fps", "audio")}, {"enabled": True, "bitrate": 6000, "fps": 25, "audio": "none"})
         t = b.twitch.data
         self.assertEqual((t["enabled"], t["channel"], t["threshold"], t["message"], t["only_live"], t["token"]), (True, "meinkanal", 15, "Akku leer: {Kamera}", False, self.TOKEN))
@@ -419,30 +414,31 @@ class UiParts(unittest.TestCase):
 
     def test_bad_values_are_refused_per_part(self):
         b = self.fresh()
-        bad = dict(self.out, layout={"order": ["../x"], "hidden": []}, hdmi={"enabled": True, "bitrate": 1, "fps": 99, "audio": "none"},
+        bad = dict(self.out, hdmi={"enabled": True, "bitrate": 1, "fps": 99, "audio": "none"},
                    twitch=dict(self.out["twitch"], threshold=99), camnet={"iface": "../etc"})
         p = {s["id"]: s for s in b.t.preview(bad, None)["sections"]}
-        for sid in ("layout", "hdmi", "twitch", "camnet"):
+        for sid in ("hdmi", "twitch", "camnet"):
             self.assertFalse(p[sid]["ok"], sid)
         with self.assertRaisesRegex(ValueError, "Nichts zum Einspielen"):                   # nichts Gültiges übrig: es wird nichts verändert
-            b.t.apply(bad, None, ["layout", "hdmi", "twitch", "camnet"])
-        self.assertFalse(b.layout.get()["set"])
+            b.t.apply(bad, None, ["hdmi", "twitch", "camnet"])
         self.assertEqual(b.twitch.data["threshold"], 10)
 
     def test_old_files_without_these_parts_still_work(self):
         b = self.fresh()
-        old = {k: v for k, v in self.out.items() if k not in ("layout", "hdmi", "twitch", "camnet")}
+        old = {k: v for k, v in self.out.items() if k not in ("hdmi", "twitch", "camnet")}
         ids = [s["id"] for s in b.t.preview(old, None)["sections"]]
         self.assertTrue({"cameras", "pipeline", "srtla"} <= set(ids))
-        self.assertFalse({"layout", "hdmi", "twitch", "camnet"} & set(ids))
+        self.assertFalse({"hdmi", "twitch", "camnet"} & set(ids))
 
-    def test_undo_brings_the_options_back(self):
+    def test_old_files_with_the_menu_options_ignore_them(self):
+        """Frühere Sicherungen enthielten die Menüeinstellung der Oberfläche; sie gilt jetzt je Gerät und wird nicht mehr eingespielt (und nicht angezeigt)."""
         b = self.fresh()
-        b.layout.set(["c_logs"], ["c_bk"])
-        b.t.apply(self.out, None, ["layout"])
-        self.assertEqual(b.layout.get()["hidden"], ["rcard", "sm_btn", "hlp_btn", "opt_design"])
-        b.t.restore()
-        self.assertEqual(b.layout.get(), {"set": True, "order": ["c_logs"], "hidden": ["c_bk"]})
+        old = dict(self.out, layout={"order": ["c_chat"], "hidden": ["rcard"]})
+        ids = [s["id"] for s in b.t.preview(old, None)["sections"]]
+        self.assertNotIn("layout", ids)
+        res = b.t.apply(old, None, None)
+        self.assertNotIn("layout", [r["id"] for r in res["results"]])
+        self.assertNotIn("layout", dict(server.SETTINGS_SECTIONS))
 
 
 class RenamedThings(unittest.TestCase):
