@@ -13,11 +13,11 @@ import subprocess
 SYSFS_USB = "/sys/bus/usb/devices"
 SYSFS_BT = "/sys/class/bluetooth"
 SYSFS_NET = "/sys/class/net"
-BTDRIVER_STATUS = "/run/pipbox-btdriver/status.json"     # schreibt der Root-Helfer pipbox-btdriver.py (Treiber für Realtek-Sticks)
+BTDRIVER_STATUS = "/run/pipbox-btdriver/status.json"     # schreibt der Root-Helfer pipbox-btdriver.py (Treiber für Realtek- und Barrot-Sticks)
 BARROT_VENDOR = "33fa"      # Barrot Technology (z. B. UGREEN Bluetooth 5.4 und 6.0, Modell CM748)
-BARROT_HINT = ("Dieser Stick hat einen BARROT-Chip (zum Beispiel UGREEN Bluetooth 5.4 oder 6.0). Der Kernel dieser BELABOX (5.10) "
-               "unterstützt ihn nicht: Der Chip bleibt beim Start hängen, es entsteht kein Bluetooth-Adapter. Ein Update dieses Pakets "
-               "kann das nicht beheben (laut Berichten enthalten erst Linux ab 6.18 und die Langzeitzweige ab 6.12.58 und 6.6.117 die Korrektur). "
+BARROT_HINT = ("Dieser Stick hat einen BARROT-Chip (zum Beispiel UGREEN Bluetooth 5.4 oder 6.0). Der Kernel dieser BELABOX (5.10) startet ihn nicht von allein. "
+               "Die Box richtet dafür beim Einstecken selbst einen Treiber ein (dauert wenige Minuten, nie während einer Übertragung). "
+               "Steht diese Meldung danach noch da, ließ sich der Treiber nicht einrichten (siehe die Meldung zum Treiber): "
                "Bitte einen Stick mit Realtek-Chip RTL8761B verwenden, zum Beispiel TP-Link UB500 oder ASUS USB-BT500.")
 
 

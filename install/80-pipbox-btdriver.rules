@@ -1,4 +1,4 @@
-# Löst beim Einstecken eines Realtek-Bluetooth-Sticks, den der Kernel 5.10 nicht kennt, den Treiberbau aus (pipbox-btdriver.service).
+# Löst beim Einstecken eines Bluetooth-Sticks (Realtek oder Barrot), den der Kernel 5.10 nicht richtig kennt, den Treiberbau aus (pipbox-btdriver.service).
 # Der Dienst prüft selbst, ob etwas zu tun ist (Kernel, Werkzeuge, keine Übertragung). Rückweg: Datei löschen.
 
 # Realtek RTL8761B (0bda:8771)
@@ -11,5 +11,9 @@ ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="23
 ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2550", ATTR{idProduct}=="8761", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-btdriver.service"
 # Realtek RTL8761B (2b89:8761)
 ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2b89", ATTR{idProduct}=="8761", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-btdriver.service"
+# UGREEN BT6.0 Adapter (Barrot, 33fa:0012)
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="33fa", ATTR{idProduct}=="0012", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-btdriver.service"
+# Barrot Bluetooth-Stick (33fa:0010)
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="33fa", ATTR{idProduct}=="0010", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-btdriver.service"
 # Mercusys MA530 (Realtek RTL8761B)
 ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2c4e", ATTR{idProduct}=="0115", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-btdriver.service"
