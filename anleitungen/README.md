@@ -10,6 +10,7 @@ Kurze Anleitungen für Anwender. Der Stand ist **Beta**: Was noch nicht mit echt
 | Twitch-Chat, Moderation, Ereignisse, Akku-Warnung mit Bot-Konto | [ANLEITUNG-Twitch-Chat.md](ANLEITUNG-Twitch-Chat.md) |
 | Installation (ein Befehl, mit Systemupdate), Updates, Sichern, Protokolle, Fehler melden, feste Zusatzadresse | [ANLEITUNG-Betrieb.md](ANLEITUNG-Betrieb.md) |
 | Fernzugriff von unterwegs über Tailscale | [../ANLEITUNG-Fernzugriff.md](../ANLEITUNG-Fernzugriff.md) |
+| Hardware: Bluetooth-Stick, WLAN-Stick, WLAN der Kameras | [ANLEITUNG-Hardware.md](ANLEITUNG-Hardware.md) |
 
 Zum Aufbau der Software siehe [../KONZEPT.md](../KONZEPT.md), zu den Änderungen [../CHANGELOG.md](../CHANGELOG.md).
 
