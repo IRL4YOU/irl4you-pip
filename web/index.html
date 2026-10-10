@@ -1810,8 +1810,22 @@ $("netsel").addEventListener("change",async e=>{ netBusy=true;
   netBusy=false; if(!r.ok) $("djierr").textContent=(await r.json()).error; netRender(); tick(); });
 
 let srtlaEdit=null, srtlaData=null;
+// Streamer-Schlüssel: bleibt in diesem Browser (nie auf der Box im Klartext). Wer sich hier bei Twitch anmeldet, bekommt damit die Befehle des Kanalinhabers (/vip, /mod,
+// /raid, /title ...); ein anderer Browser mit dem Link zur Box hat den Schlüssel nicht und kann sie nicht benutzen.
+let pbOwnerMem="";
+function pbOwnerKey(){
+  try{ const k=localStorage.getItem("pb_owner_key"); if(k&&/^[A-Za-z0-9_-]{32,128}$/.test(k)) return k; }catch(e){}
+  if(pbOwnerMem) return pbOwnerMem;
+  const b=new Uint8Array(32); crypto.getRandomValues(b); let t=""; b.forEach(x=>t+=String.fromCharCode(x));
+  const k=btoa(t).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  pbOwnerMem=k; try{ localStorage.setItem("pb_owner_key",k); }catch(e){}
+  return k;
+}
 async function srtlaCall(method,url,body){
-  const r=await fetch(url,{method,headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+  const hdr={"Content-Type":"application/json"};
+  if(url.indexOf("/api/chat/")===0) hdr["x-pb-owner"]=pbOwnerKey();
+  if(url==="/api/twitch/login"&&body&&body.action==="start") body.owner=pbOwnerKey();
+  const r=await fetch(url,{method,headers:hdr,body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||"Fehler"); return j;
 }
 // Zugriff auf die Oberfläche über fremde WLANs sperren (Issue #25)
@@ -3034,9 +3048,9 @@ function twAccRender(a){
   if(!wait&&twAccPoll){ clearInterval(twAccPoll); twAccPoll=null; if(typeof twLoad==="function") twLoad(); }
 }
 async function twAccLoad(){ try{ twAccRender(await srtlaCall("GET","/api/twitch/login")); }catch(e){} }
-$("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start"})); }catch(x){ $("tw_acc_t").textContent=x.message; } });
+$("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // alle Rechte auf einmal: einmal bei Twitch bestätigen
 $("tw_acc_mod").addEventListener("click",async()=>{
-  try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:{action:"start",mod:true})); }      // Rechte schon da: sofort an; sonst einmal bei Twitch bestätigen
+  try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:{action:"start",all:true})); }      // Rechte (Moderation samt Befehlen) schon da: sofort an; sonst einmal bei Twitch alle auf einmal bestätigen
   catch(x){ $("chat_err").textContent=x.message; } });
 $("tw_acc_ev").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",events:true})); }catch(x){ $("chat_err").textContent=x.message; } });         // einmal bei Twitch bestätigen (Follows und Kanalpunkte)
 $("tw_acc_modoff").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"mod",on:false})); }catch(x){ $("chat_err").textContent=x.message; } });
