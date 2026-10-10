@@ -68,8 +68,14 @@ SOFTWARE.
 
 Der Ordner `bluetooth-src/` enthält **unveränderte** Quelldateien des Linux-Kernels v5.10.160 (`drivers/bluetooth/btusb.c`, `btintel.h`, `btbcm.h`, `btrtl.h`) unter der
 **GPL-2.0** (Lizenztext in `bluetooth-src/COPYING`). Sie gehören nicht zur MIT-Lizenz dieses Projekts. `install/pipbox-btdriver.py` baut daraus auf der Box das Modul `btusb` mit einigen
-zusätzlichen USB-Kennungen für Realtek-Sticks; die einzige Änderung am Quelltext sind zusätzliche Tabellenzeilen, die der Helfer beim Bau einfügt. Das so gebaute Modul steht wie der Kernel
+zusätzlichen USB-Kennungen für Realtek- und Barrot-Sticks (zum Beispiel UGREEN); die Änderungen am Quelltext sind zusätzliche Tabellenzeilen und für Barrot-Sticks zwei kleine Prüfungen gegen ein überzähliges Byte (eine davon dem Linux-Kernel-Commit 7722d6fb54 nachempfunden), die der Helfer beim Bau einfügt. Das so gebaute Modul steht wie der Kernel
 unter der GPL-2.0; der Quelltext dazu ist dieser Ordner samt `pipbox-btdriver.py`.
+
+## WLAN-Treiber AIC8800D80 (GPL-2.0, nicht in diesem Repository)
+
+Für den USB-WLAN-Stick UGREEN AX900 (Chip AIC8800D80) holt `install/pipbox-wlandriver.py` auf der Box **einmalig** den Treiber `shenmintao/aic8800d80` von github.com (fester Stand
+`1d1b8ff`, Zweig `legacy-mcu1`, **GPL-2.0**, mit der Firmware des Herstellers) und baut ihn dort. Der Treiber und die Firmware sind **nicht Teil dieses Repositories** und nicht unter der MIT-Lizenz; sie unterliegen
+den Lizenzen ihrer Urheber. Der Helfer prüft den Stand gegen eine feste SHA-256-Summe. Der Dienst dazu stammt von Bittersweet1987.
 
 ## BELABOX
 
@@ -107,6 +113,7 @@ Das Passwort wird nur an `nmcli` übergeben und von diesem Projekt nicht gespeic
 - **GPL-3.0**: die Patches in `belacoder/` und das daraus gebaute Programm.
 - **AGPL-3.0**: die Patches in `srtla/` und das daraus gebaute Programm.
 - **GPL-2.0**: die unveränderten Kernel-Quellen in `bluetooth-src/`.
+- **GPL-2.0** (nicht im Repository): der WLAN-Treiber AIC8800D80, den die Box bei Bedarf selbst holt.
 
 Die GPL-/AGPL-Teile sind eigene Dateien (Patches, Bauskripte); der Upstream-Quelltext wird beim Bauen von GitHub geholt und ist hier mit
 Commit genannt. Das MIT-Bauteil in `gst/` wird zur Laufzeit von GStreamer (LGPL) geladen und enthält keinen GPL-Code. Keine Rechtsberatung.

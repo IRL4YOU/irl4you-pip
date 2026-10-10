@@ -37,6 +37,7 @@ Geräte, die in Ihrem Tailscale-Konto angemeldet sind, kommen an die Box. Die An
 | Anmeldelink abgelaufen | In der Karte „Neuen Anmeldelink holen“. |
 | Verbunden, aber keine Seite | In der Karte prüfen, ob „freigegeben“ dasteht. Sonst „Oberfläche im privaten Netz freigeben“. |
 | Box zeigt „getrennt“ | „Verbinden“ klicken (keine neue Anmeldung nötig). |
+| Neue oder neu geflashte Speicherkarte | Tailscale (Anmeldung und Freigaben) ist **nicht in der Sicherung** der Einstellungen und kommt beim Einspielen nicht mit. Die Box ist für Tailscale ein **neues Gerät**: Einrichtung wie oben wiederholen („Verbinden“, Link öffnen, anmelden), danach die Freigabe wieder einschalten. Das alte Gerät der früheren Karte in der Tailscale-Verwaltung (login.tailscale.com, Maschinen) entfernen, sonst stehen zwei Boxen in der Liste, und der neue Gerätename bekommt eine Zahl angehängt. Nach dem Einspielen einer Sicherung erinnert der Hinweis „Nach dem Einspielen noch zu erledigen“ daran. |
 
 ## Sicherheit
 
