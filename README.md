@@ -1,8 +1,8 @@
 # IRL4YOU PIP / IRL4YOU BOX
 
-**Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
+**Webseite:** [irl4you.de](https://irl4you.de) (Anleitungen, Server, Rechner, Blog) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.228 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
+**Version 0.9.229 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
 Twitch-Chat und Fernzugriff, ohne die Original-Oberfläche anzufassen. Sie läuft **getrennt** davon.
 
 > **Beta heißt:** Es läuft im Alltag, aber nicht alles ist lange und unterwegs geprüft (siehe „Stand“). Neue Versionen kommen oft; zurück auf eine frühere geht in der Oberfläche.
@@ -35,6 +35,15 @@ Weitere Details: [ANLEITUNG-Betrieb.md](anleitungen/ANLEITUNG-Betrieb.md).
 - [Fernzugriff über Tailscale](ANLEITUNG-Fernzugriff.md)
 - [Hardware](anleitungen/ANLEITUNG-Hardware.md) (Bluetooth- und WLAN-Stick, WLAN der Kameras)
 - Aufbau der Software: [KONZEPT.md](KONZEPT.md) · Änderungen: [CHANGELOG.md](CHANGELOG.md), ältere in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md)
+
+## Mehr auf irl4you.de
+
+- **Die BOX:** [Vorstellung](https://irl4you.de/irl4you-box.html) · [Neuigkeiten](https://irl4you.de/blog/irl4you-box-pip-0-9-16.html) · [Changelog der Webseite](https://irl4you.de/changelog.html)
+- **BELABOX:** [einrichten](https://irl4you.de/belabox-einrichten.html) · [Remote UI selbst hosten](https://irl4you.de/belabox-remote-ui.html) · [Netzwerk-Overlay](https://irl4you.de/belabox-netzwerk-overlay.html)
+- **Server:** [SRTLA-Server mit Docker](https://irl4you.de/srtla-server-docker.html) · [Relay-Server](https://irl4you.de/relay-server.html) · [RTMP-Server](https://irl4you.de/rtmp-server-einrichten.html)
+- **Hardware:** [Überblick](https://irl4you.de/streaming-hardware.html) · [Actioncams](https://irl4you.de/actioncams-irl-streaming.html) · [Router und Modems](https://irl4you.de/router-modems-irl-streaming.html) · [Stromversorgung](https://irl4you.de/stromversorgung-irl.html)
+- **Software:** [Moblin](https://irl4you.de/moblin.html) · [IRL Pro](https://irl4you.de/irl-pro.html) · [OBS](https://irl4you.de/obs.html) · [NOALBS](https://irl4you.de/noalbs.html)
+- **Hilfen:** [IRL-Setup-Finder](https://irl4you.de/irl-setup-finder.html) · [Checkliste](https://irl4you.de/irl-stream-checkliste.html) · [Fehlerdiagnose](https://irl4you.de/irl-fehlerdiagnose.html) · [Alle Themen](https://irl4you.de/)
 
 ## Was es kann
 

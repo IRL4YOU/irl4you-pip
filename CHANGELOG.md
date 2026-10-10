@@ -2,6 +2,9 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 0.9.229 (Beta)
+- **README und Anleitungen verlinken die Webseite irl4you.de (Wunsch des Nutzers):** neuer kurzer Abschnitt „Mehr auf irl4you.de“ mit Links zur BOX-Seite, zum Blog, zu BELABOX, Servern, Hardware, Software und den Hilfen; die Kopfzeile nennt, was es dort gibt. Keine Programmänderung.
+
 ## 0.9.228 (Beta)
 - **Hinweis, wenn der Bildaufbau fehlt (Wunsch des Nutzers).** Ist eine Kamera hinzugefügt, aber noch kein Bildaufbau gespeichert, ist „Live gehen“ grau. Bisher stand der Grund nur klein als Text. Jetzt zeigt die Live-Karte einen auffälligen Hinweis („Live geht erst, wenn der Bildaufbau fertig ist: Hauptkamera wählen und ‚Bildaufbau speichern‘“) mit dem Knopf **Zum Bildaufbau**, der die Karte öffnet und hinscrollt. Der Hinweis verschwindet, sobald ein Bildaufbau gespeichert ist.
 - Die Statusabfrage der Sendung meldet dafür `no_layout`. Tests: `tools/test_ui_layout.py` (40). Neue Texte nur Deutsch und Englisch.
