@@ -399,6 +399,7 @@ button.foldm{font-size:17px;line-height:1;padding:3px 10px}
   header{padding:5px 8px;gap:4px}header h1{font-size:13px}header .hdr{gap:4px}header .hdr button{padding:3px 7px}
 }
 #rcard a.btnlink{display:inline-block;padding:8px 12px;border-radius:8px;background:var(--bar);color:#0f172a;font-weight:600;text-decoration:none}
+#rcard #r_https a.btnlink{background:var(--warn);color:#0f172a;font-weight:700;padding:10px 16px}
 #r_apps a.btnlink{background:transparent;color:var(--text);border:1px solid var(--line);font-weight:400}
 #r_url{word-break:break-all}
 #rcard ol{margin:6px 0 0 18px;padding:0;color:var(--muted);font-size:13px}
@@ -925,6 +926,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div id="r_login" hidden><a id="r_loginlink" class="btnlink" target="_blank" rel="noopener noreferrer" href="#">Bei Tailscale anmelden</a>
       <div class="ph">Der Link öffnet Tailscale. Melden Sie sich mit Ihrem Konto an (z. B. GitHub oder Google) und klicken Sie dort auf „Connect“. Danach hier einen Moment warten.</div></div>
     <div id="r_url_row" class="row" hidden><span>Adresse im privaten Netz</span><span><a id="r_url" target="_blank" rel="noopener noreferrer" href="#"></a> <button id="r_copy" type="button" class="sec" style="padding:2px 8px;font-size:12px">Kopieren</button></span></div>
+    <div id="r_https" class="pending" hidden><b>Für die Freigabe muss HTTPS im Tailscale-Konto einmal freigeschaltet sein.</b> Dort „MagicDNS“ und „HTTPS Certificates“ einschalten, danach hier „Oberfläche im privaten Netz freigeben“ drücken.<div style="margin-top:8px"><a id="r_httpslink" class="btnlink" href="https://login.tailscale.com/admin/dns" target="_blank" rel="noopener noreferrer">Tailscale-Einstellungen öffnen</a></div></div>
     <div id="r_warn" class="err" hidden>Achtung: „Funnel“ ist an, die Oberfläche ist öffentlich im Internet erreichbar. Mit „Freigabe beenden“ abschalten.</div>
     <div class="actions" id="r_actions"></div>
     <div id="r_msg" class="ph"></div>
@@ -2694,6 +2696,8 @@ async function rLoad(){
   if(d.installed&&d.connected){ for(const [k,v] of [["Gerätename",d.name],["Adresse im Tailscale-Netz",d.ip],["Tailscale-Netz",d.tailnet]]){ if(!v) continue; const r=document.createElement("div"); r.className="row"; const a=document.createElement("span"); a.textContent=k; const b=document.createElement("b"); b.textContent=v; r.append(a,b); info.append(r); } }
   const login=d.login_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.login_url);
   $("r_login").hidden=!login; if(login) $("r_loginlink").href=d.login_url;
+  $("r_https").hidden=!(d.installed&&d.connected&&!d.serve);
+  { const hu=d.hint_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.hint_url); $("r_httpslink").href=hu?d.hint_url:"https://login.tailscale.com/admin/dns"; }                                           // verbunden, aber noch nicht freigegeben: der Link, wo HTTPS einmalig freigeschaltet wird
   const ur=$("r_url_row"); ur.hidden=!(d.connected&&d.serve&&d.url); if(!ur.hidden){ $("r_url").textContent=d.url; $("r_url").href=d.url; }
   { const w=$("r_warn"); w.hidden=!d.funnel;
     if(d.funnel) w.textContent="Achtung: Die Oberfläche ist öffentlich im Internet erreichbar (Funnel). Das bleibt so, auch nach einem Neustart der Box, bis Sie die Freigabe mit „Öffentliche Freigabe beenden“ abschalten."; }
@@ -2726,7 +2730,7 @@ async function rLoad(){
   let msg=d.message||"";
   if(!d.helper_installed) msg="Der Fernzugriff-Helfer ist nicht installiert. Bitte install.sh einmal erneut ausführen.";
   else if(rBusy) msg=(d.step||"Arbeite")+" …";
-  if(d.hint_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.hint_url)){ msg+=" "; $("r_msg").textContent=msg; const a=document.createElement("a"); a.href=d.hint_url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Tailscale-Seite öffnen"; $("r_msg").append(a); }
+  if(d.hint_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.hint_url)&&$("r_https").hidden){ msg+=" "; $("r_msg").textContent=msg; const a=document.createElement("a"); a.href=d.hint_url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Tailscale-Seite öffnen"; $("r_msg").append(a); }
   else $("r_msg").textContent=msg;
   $("r_msg").style.color=d.state==="failed"?"var(--crit)":"";
 }
