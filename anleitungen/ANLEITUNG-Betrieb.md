@@ -153,3 +153,7 @@ In den ersten 30 Sekunden nach dem Start wird nichts bewertet. Zwischen zwei Ein
 | Nach einem Neustart ist die feste Zusatzadresse weg | Neues Protokoll laden (Karte Protokolle) und an das Issue hängen: Der Abschnitt „Netzwerk beim Start“ zeigt Adressen (fest oder per DHCP), Netzdateien und die Meldungen von ifupdown, ifplugd, DHCP und des Skripts `pipbox-extra-ip`. |
 | SSH-Passwort unbekannt | Karte Entwickler: **Passwort anzeigen** oder **Passwort zurücksetzen**. |
 | Seite in fremdem WLAN nicht erreichbar | Ist "Über fremde WLANs sperren" an? Dann nur über Tailscale, Ethernet, eigenen Hotspot oder USB gehen. |
+
+---
+
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de)

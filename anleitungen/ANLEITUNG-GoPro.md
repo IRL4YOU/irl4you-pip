@@ -74,3 +74,7 @@ Passwörter, Schlüssel, Adressen und MAC-Adressen werden vorher durch Platzhalt
 
 - **Kein Akkustand und keine Steuerung von der Box aus.** Die Box spricht mit der GoPro nicht per Bluetooth (das gibt es nur für DJI-Kameras). Start und Stop machst du an der Kamera oder in der GoPro-App.
 - Die Labs-Codes sind **nur mit einer Hero 8 geprüft**. Hero 9 bis 13 sollten nach der Labs-Dokumentation gehen, sind hier aber nicht getestet; Rückmeldungen helfen.
+
+---
+
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de)

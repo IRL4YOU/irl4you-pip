@@ -46,3 +46,7 @@ DJI-Kameras setzen im WLAN gelegentlich für einige Sekunden aus. Was bei uns ha
 - **Sendewege nicht im Kamerafunk.** Lag der Hotspot eines Handys als Sendeweg auf demselben 5-GHz-Kanal wie das Kamera-WLAN, stiegen Laufzeitspitzen und Neuübertragungen
   (Beobachtung, nicht bewiesen). Besser: Sendewege **per Kabel** (USB-Tethering, Router per Ethernet) oder auf einem anderen Band.
 - Die **Ampeln** in der Karte Status zeigen, welche Kamera im Bild ist und welcher Sendeweg trägt (Erklärung beim Darüberfahren).
+
+---
+
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de)
