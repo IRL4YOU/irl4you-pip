@@ -85,12 +85,25 @@ Die Moderation ist **aus**, bis du sie einschaltest. Dein Konto muss **Streamer 
    Twitch lehnt manches ab, zum Beispiel VIP für jemanden, der schon VIP oder Moderator ist, oder wenn das VIP-Limit erreicht ist.
    Die Meldung steht dann unter dem Eingabefeld.
 
-**Wichtig – Befehle des Kanalinhabers:** `/vip`, `/mod`, `/raid`, `/marker`, `/title` und die übrigen Befehle „nur Kanalinhaber“ gehen **nur in dem
-Browser, in dem du dich bei Twitch angemeldet hast**. Der Browser erzeugt dabei einen Zufallsschlüssel und behält ihn bei sich; die Box speichert nur
-einen Fingerabdruck davon. Gibst du den Link zur Box an jemanden weiter (zum Beispiel einen Moderator, der bei den Kameras hilft), kann er diese
-Befehle damit **nicht** benutzen. Willst du sie in einem zweiten Browser (zum Beispiel am Handy) nutzen, melde dich dort ebenfalls bei Twitch an
-(höchstens fünf Browser). **Abmelden** löscht alle Schlüssel. Hinweis: Löschen, Timeout, Bann und das Schreiben im Chat laufen noch mit deinem Konto,
-auch in anderen Browsern.
+**Wichtig – wer mit welchem Konto schreibt und moderiert:** Auf der Box ist **ein** Twitch-Konto angemeldet, das des Streamers.
+Die Box merkt sich, **in welchem Browser** sich der Streamer angemeldet hat: Der Browser erzeugt dabei einen Zufallsschlüssel
+und behält ihn bei sich, die Box speichert nur einen Fingerabdruck davon.
+
+- **Im Browser des Streamers** geht alles: Schreiben, Löschen, Timeout, Bann und alle Befehle, auch die „nur Kanalinhaber“
+  (`/vip`, `/mod`, `/raid`, `/marker`, `/title`, `/game`). Ein zweiter Browser des Streamers (zum Beispiel das Handy):
+  **Ich bin der Streamer** antippen und bei Twitch **dasselbe Konto** bestätigen (höchstens fünf Browser).
+  **Abmelden** (Zahnrad) löscht alle Schlüssel.
+- **In jedem anderen Browser** (zum Beispiel bei einem Moderator, der dir bei den Kameras hilft und den Link zur Box hat)
+  kann man den Chat nur **lesen**. Schreiben und Moderieren sind aus. Die Einstellungen für Kameras und die Box darf er
+  weiter benutzen.
+- **Moderator:** **Als Moderator anmelden** antippen und bei Twitch mit dem **eigenen Konto** bestätigen. Er bekommt nur Moderatorenrechte
+  (Schreiben, Löschen, Timeout, Bann, `/clear`, `/slow`, `/followers`, `/subscribers`, `/emoteonly`, `/announce`) und darf nur,
+  was er bei Twitch im Kanal als Moderator darf. Die Befehle des Kanalinhabers bleiben für ihn gesperrt. Seine Anmeldung liegt
+  getrennt von der des Streamers auf der Box (höchstens zwölf Moderatoren), **Abmelden** löscht nur seine eigene.
+- Ein Fremder, der sich als „Ich bin der Streamer“ ausgeben will, scheitert: Die Box übernimmt die Anmeldung nur, wenn Twitch
+  **dasselbe Konto** wie das des Streamers bestätigt. Das Konto der Box ersetzt er damit nie.
+
+Das Schreiben ist für alle zusammen auf eine Nachricht je Sekunde begrenzt.
 
 **Ausschalten:** Zahnrad, **Moderation ausschalten**. Die ⋯ und die Befehle sind sofort weg; **Moderation einschalten**
 geht danach ohne neue Bestätigung. Twitch erlaubt aber nicht, einem Zugang Rechte wieder wegzunehmen. Sie fallen
@@ -111,7 +124,7 @@ Die Moderation bleibt, falls eingeschaltet, erhalten.
 
 Fällt der Akku einer per Bluetooth verbundenen **DJI-Kamera** unter die Schwelle, schreibt die Box eine Nachricht in
 den Chat. Eine Kamera nur am HDMI-Kabel meldet keinen Akku; hier hilft der Schalter „Nur Akkustand lesen“ in der
-Karte der DJI-Kamera.
+Karte der DJI-Kamera. Das gilt auch für eine Kamera, die selbst per RTMP sendet (zum Beispiel die Osmo Pocket 3).
 
 **Einrichten:** Karte **Kameras**, Untermenü **Akku-Warnung im Twitch-Chat (nur bei DJI)**.
 

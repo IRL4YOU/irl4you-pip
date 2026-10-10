@@ -33,7 +33,7 @@ Gut zu wissen:
 
 Die Box koppelt DJI-Kameras selbst, übergibt ihnen ein WLAN und das RTMP-Ziel und startet den Stream.
 Die Oberfläche nennt diese Modelle: Osmo Action 3, 4, 5 Pro, 6, Osmo 360, Osmo Pocket 3 und 4.
-Mit Action 4, Action 5 Pro und Action 6 haben wir gearbeitet. **Pocket 3: nur im Modus „Nur Akkustand lesen“ geprüft** (die Kamera sendet selbst per RTMP, die Box zeigt Akku und Ladesymbol); Stream-Start über die Box ist bei ihr und bei weiteren Modellen noch nicht mit echter Kamera geprüft.
+Mit Action 4, Action 5 Pro und Action 6 haben wir gearbeitet. **Pocket 3: geprüft** (10. Oktober 2026). Sie sendet per **RTMP** an die Box, die Box liest per Bluetooth **Akkustand und Ladezustand** mit (Schalter „Nur Akkustand lesen“, Abschnitt unten). Dass die Box die Pocket 3 selbst koppelt und den Stream startet, ist nicht ausprobiert; bei weiteren Modellen ist auch das noch nicht mit echter Kamera geprüft.
 
 ### Suchen und koppeln
 
@@ -124,7 +124,9 @@ Wenn es sonst klemmt: Kamera ausschalten, USB abziehen, Webcam-Modus wählen, ne
 
 Sendet eine DJI-Kamera per HDMI, kannst du sie zusätzlich per Bluetooth koppeln und in ihrer Karte **Nur Akkustand lesen
 (Kamera sendet per HDMI)** einschalten. Dann liest die Box nur den Akkustand (für den Status und die Twitch-Warnung).
-Mit einer echten Action 5 geprüft; **mit der Action 6 noch nicht geprüft**.
+Das gilt auch für eine Kamera, die **selbst per RTMP** sendet (zum Beispiel die Osmo Pocket 3): Die Box hält dann nur die Bluetooth-Verbindung, fasst WLAN und Stream nicht an und zeigt neben dem Akkustand mit 🔌, ob die Kamera am Ladekabel hängt.
+Mit einer echten Action 5 (HDMI) und einer echten Pocket 3 (RTMP) geprüft; **mit der Action 6 noch nicht geprüft**.
+Die Kamera darf dabei nicht mit dem Handy oder der DJI-App per Bluetooth verbunden sein (sie nimmt nur eine Verbindung an).
 
 ## 4. Kamera-Ampel und Hinweise bei Ausfall
 
