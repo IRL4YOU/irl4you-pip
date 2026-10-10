@@ -5111,10 +5111,19 @@ class TwitchLogin:
     CLIENT_ID = "a9w1hzb4d6nu70re8wxt6rpyxths35"
     ID_BASE = "https://id.twitch.tv/oauth2/"
     SCOPES = "chat:read chat:edit user:write:chat"                       # Lesen und Schreiben im Chat (user:write:chat: Senden über die Twitch-Schnittstelle mit Rückmeldung)
-    MOD_SCOPES = "moderator:manage:banned_users moderator:manage:chat_messages"
+    CMD_SCOPES = ("channel:manage:vips channel:manage:moderators moderator:manage:chat_settings moderator:manage:announcements "
+                  "channel:manage:raids channel:manage:broadcast")           # Chat-Befehle: VIP, Moderatoren, Chat-Einstellungen, Ankündigung, Raid, Marker, Titel und Kategorie
+    MOD_BASE = "moderator:manage:banned_users moderator:manage:chat_messages"
+    MOD_SCOPES = MOD_BASE + " " + CMD_SCOPES                                 # Moderation = Löschen, Timeout, Bann UND alle Befehle: wer sie einschaltet, bestätigt alles auf einmal
     EVENT_SCOPES = "moderator:read:followers channel:read:redemptions"          # Follows und Kanalpunkte-Einlösungen (EventSub); nur, wenn der Nutzer die Ereignisse einschaltet
-    SCOPES_MOD = "chat:read chat:edit user:write:chat moderator:manage:banned_users moderator:manage:chat_messages"      # nur, wenn der Nutzer die Moderation einschaltet
+    SCOPES_MOD = "chat:read chat:edit user:write:chat " + MOD_SCOPES      # nur, wenn der Nutzer die Moderation einschaltet
     GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+    # Streamer-Schlüssel: Jeder Browser, in dem sich der Streamer bei Twitch anmeldet, erzeugt einen Zufallsschlüssel und behält ihn nur bei sich (localStorage). Die Box
+    # speichert davon nur den SHA-256-Wert (höchstens MAX_OWNERS Browser). Befehle, die der Kanalinhaber ausführt (VIP, Moderatoren, Raid, Marker, Titel, Kategorie),
+    # gehen nur mit einem Schlüssel, dessen Wert hier steht: Wer nur den Link zur Box bekommt (zum Beispiel ein Moderator), kann sie damit nicht benutzen.
+    OWNER_RE = re.compile(r"[0-9a-f]{64}")
+    KEY_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
+    MAX_OWNERS = 5
     REFRESH_BEFORE = 600                       # Sekunden vor dem Ablauf erneuern
     KEEP_EVERY = 30.0
     ERR_NET = "Keine Verbindung zu Twitch"
@@ -5136,7 +5145,8 @@ class TwitchLogin:
             if isinstance(saved, dict) and isinstance(saved.get("access"), str) and isinstance(saved.get("refresh"), str):
                 self.tokens = {"access": saved["access"], "refresh": saved["refresh"], "expires_at": float(saved.get("expires_at", 0)),
                                "login": str(saved.get("login", ""))[:25], "user_id": str(saved.get("user_id", ""))[:20],
-                               "scopes": [str(x)[:60] for x in saved.get("scopes", [])][:30], "mod_off": saved.get("mod_off") is True}
+                               "scopes": [str(x)[:60] for x in saved.get("scopes", [])][:30], "mod_off": saved.get("mod_off") is True,
+                               "owners": [x for x in saved.get("owners", []) if isinstance(x, str) and self.OWNER_RE.fullmatch(x)][:self.MAX_OWNERS]}
                 self.state = "angemeldet"
         except (OSError, ValueError, TypeError):
             pass
@@ -5189,7 +5199,7 @@ class TwitchLogin:
                 self._demo_step()
         t, p, state = self.tokens, self.pending, self.state                # nur lesen: nie hinter einer laufenden Anfrage an Twitch warten
         scopes = list((t or {}).get("scopes", []))
-        has = "moderator:manage:banned_users" in scopes and "moderator:manage:chat_messages" in scopes
+        has = bool(self.MOD_SCOPES) and all(x in scopes for x in self.MOD_SCOPES.split())             # Moderation samt Befehlen: ältere Anmeldungen ohne die Befehlsrechte brauchen einmal "Moderation einschalten"
         ev = all(x in scopes for x in self.EVENT_SCOPES.split())
         out = {"state": state, "login": (t or {}).get("login", ""), "scopes": scopes, "error": self.error,
                "mod": has and not (t or {}).get("mod_off"),           # Moderation ist an: Rechte vorhanden und nicht von Hand ausgeschaltet
@@ -5228,28 +5238,45 @@ class TwitchLogin:
         return ""
 
     # ---- Anmelden
-    def scopes_for(self, mod=False, events=False):
-        """Die Rechte für eine neue Anmeldung: immer die Grundrechte, Moderation und Ereignisse nur auf Wunsch, und was der Zugang schon hat, bleibt erhalten
-        (wer die Ereignisse einschaltet, verliert die Moderation nicht, und umgekehrt)."""
+    def scopes_for(self, mod=False, events=False, everything=False):
+        """Die Rechte für eine neue Anmeldung: immer die Grundrechte, Moderation (samt Befehlen) und Ereignisse nur auf Wunsch (alles auf einmal mit everything), und
+        was der Zugang schon hat, bleibt erhalten (wer die Ereignisse einschaltet, verliert die Moderation nicht, und umgekehrt)."""
         want = self.SCOPES.split()
         have = set(((self.tokens or {}).get("scopes")) or [])
+        if everything:
+            mod = events = True
         for flag, group in ((mod, self.MOD_SCOPES), (events, self.EVENT_SCOPES)):
             for sc in group.split():
                 if (flag or sc in have) and sc not in want:
                     want.append(sc)
         return " ".join(want)
 
-    def start(self, mod=False, events=False):
-        scopes = self.scopes_for(mod, events)
+    @classmethod
+    def owner_hash(cls, key):
+        """SHA-256 des Schlüssels oder None, wenn er nicht der Form entspricht."""
+        if not isinstance(key, str) or not cls.KEY_RE.fullmatch(key):
+            return None
+        return hashlib.sha256(key.encode("ascii")).hexdigest()
+
+    def is_owner(self, key):
+        """Gehört dieser Schlüssel zu einem Browser, in dem sich der Streamer angemeldet hat?"""
+        h = self.owner_hash(key)
+        t = self.tokens
+        return bool(h and t and h in (t.get("owners") or []))
+
+    def start(self, mod=False, events=False, everything=False, owner_key=None):
+        scopes = self.scopes_for(mod, events, everything)
+        owner = self.owner_hash(owner_key)
         with self.lock:
-            if self.state == "wartet" and self.pending and self.pending["expires_at"] > self.clock() and self.pending.get("scopes") == scopes:
+            if (self.state == "wartet" and self.pending and self.pending["expires_at"] > self.clock() and self.pending.get("scopes") == scopes
+                    and self.pending.get("owner") == owner):                          # ein anderer Browser (anderer Schlüssel) beginnt eine neue Anmeldung: der Schlüssel gehört dem, der sie bestätigt
                 return self.status()
             self.gen += 1
             gen = self.gen
             self.error = ""
             if self.demo:
                 self.pending = {"device_code": "demo", "user_code": "ABCD-EFGH", "uri": "https://www.twitch.tv/activate?device-code=ABCDEFGH",
-                                "expires_at": self.clock() + 1800, "interval": 5, "since": self.clock(), "scopes": scopes}
+                                "expires_at": self.clock() + 1800, "interval": 5, "since": self.clock(), "scopes": scopes, "owner": owner}
                 self.state = "wartet"
                 return self.status()
             st, d = self._call(self.base + "device", {"client_id": self.client_id, "scopes": scopes})
@@ -5265,7 +5292,7 @@ class TwitchLogin:
             if not re.match(r"https://(www\.|id\.)?twitch\.tv/", uri):
                 uri = "https://www.twitch.tv/activate"                              # nur Twitch-Adressen als Link und QR-Code
             self.pending = {"device_code": d["device_code"], "user_code": d["user_code"][:20], "uri": uri,
-                            "expires_at": self.clock() + expires, "interval": interval, "scopes": scopes}
+                            "expires_at": self.clock() + expires, "interval": interval, "scopes": scopes, "owner": owner}
             self.state = "wartet"
         threading.Thread(target=self._poll, args=(gen,), daemon=True).start()
         return self.status()
@@ -5321,8 +5348,10 @@ class TwitchLogin:
         except (TypeError, ValueError):
             expires = 14400.0
         old = self.tokens or {}
+        pend = (self.pending or {}).get("owner")                     # Schlüssel des Browsers, der diese Anmeldung gestartet hat (beim Erneuern: keiner)
         t = {"access": d["access_token"], "refresh": d["refresh_token"], "expires_at": self.clock() + expires, "scopes": scopes,
-             "login": old.get("login", ""), "user_id": old.get("user_id", ""), "mod_off": old.get("mod_off") is True}
+             "login": old.get("login", ""), "user_id": old.get("user_id", ""), "mod_off": old.get("mod_off") is True,
+             "owners": list(old.get("owners") or [])}
         werr = False
         try:
             self._write(t)                                           # sofort: der alte Erneuerungsschlüssel ist ab jetzt ungültig, der neue darf nie verloren gehen
@@ -5333,7 +5362,12 @@ class TwitchLogin:
         if st == 200 and isinstance(v.get("login"), str):
             new = (v["login"][:25].lower(), str(v.get("user_id", ""))[:20], [str(x)[:60] for x in v["scopes"]][:30] if isinstance(v.get("scopes"), list) else scopes)
             changed = new != (t["login"], t["user_id"], t["scopes"])
+            if t["login"] and new[0] != t["login"]:
+                t["owners"] = []                                     # anderes Konto: die Schlüssel des früheren gelten nicht mehr
             t["login"], t["user_id"], t["scopes"] = new
+        if pend and pend not in t["owners"]:
+            t["owners"] = (t["owners"] + [pend])[-self.MAX_OWNERS:]
+            changed = True
         self.tokens = t                                              # erst jetzt sichtbar: nie mit leerem Namen oder leerer Konto-Kennung
         self.pending, self.state, self.error = None, "angemeldet", ""
         if changed:
@@ -5391,7 +5425,7 @@ class TwitchLogin:
             t = self.tokens
             if not t:
                 raise ValueError("Zuerst mit Twitch anmelden")
-            has = "moderator:manage:banned_users" in t.get("scopes", []) and "moderator:manage:chat_messages" in t.get("scopes", [])
+            has = bool(self.MOD_SCOPES) and all(x in t.get("scopes", []) for x in self.MOD_SCOPES.split())
             if on and not has:
                 raise ValueError("Moderation braucht eine neue Anmeldung bei Twitch")
             t["mod_off"] = not on
@@ -5424,7 +5458,7 @@ class TwitchLogin:
     def _demo_step(self):
         if self.state == "wartet" and self.pending and self.clock() - self.pending.get("since", 0) > 6:
             self.tokens = {"access": "demo", "refresh": "demo", "expires_at": self.clock() + 14400, "login": "demo_streamer", "user_id": "1",
-                           "scopes": (self.pending.get("scopes") or self.SCOPES).split()}
+                           "scopes": (self.pending.get("scopes") or self.SCOPES).split(), "owners": [self.pending["owner"]] if self.pending.get("owner") else []}
             self.pending, self.state = None, "angemeldet"
 
 
@@ -6148,6 +6182,22 @@ class TwitchMod:
     ERR_FORBIDDEN = "Dazu fehlt die Berechtigung (Moderator im Kanal?)"
     ERR_OTHER = "Twitch hat die Anfrage nicht angenommen"
     ERR_UNSURE = "Verbindung gestört, unklar ob es angekommen ist"
+    ERR_RIGHTS = "Dafür fehlt ein Recht: bitte „Moderation einschalten“ und bei Twitch bestätigen"
+    ERR_OWNER = "Das darf nur der Kanalinhaber (im eigenen Kanal)"
+    ERR_BROWSER = "Das geht nur in dem Browser, in dem sich der Streamer bei Twitch angemeldet hat (dort einmal neu anmelden)"
+    ERR_NOTFOUND = "Twitch findet das nicht (läuft der Stream?)"
+    # Befehl -> nötiges Recht; die mit OWNER_ONLY gelten nur im eigenen Kanal (Kanalinhaber), die anderen auch für Moderatoren
+    CMD_SCOPE = {"vip": "channel:manage:vips", "unvip": "channel:manage:vips", "mod": "channel:manage:moderators", "unmod": "channel:manage:moderators",
+                 "clear": "moderator:manage:chat_messages", "slow": "moderator:manage:chat_settings", "slowoff": "moderator:manage:chat_settings",
+                 "followers": "moderator:manage:chat_settings", "followersoff": "moderator:manage:chat_settings",
+                 "subscribers": "moderator:manage:chat_settings", "subscribersoff": "moderator:manage:chat_settings",
+                 "emoteonly": "moderator:manage:chat_settings", "emoteonlyoff": "moderator:manage:chat_settings",
+                 "announce": "moderator:manage:announcements", "raid": "channel:manage:raids", "unraid": "channel:manage:raids",
+                 "marker": "channel:manage:broadcast", "title": "channel:manage:broadcast", "game": "channel:manage:broadcast"}
+    OWNER_ONLY = ("vip", "unvip", "mod", "unmod", "raid", "unraid", "marker", "title", "game")
+    SETTINGS = {"slowoff": ("slow_mode", "Langsamer Modus aus"), "followersoff": ("follower_mode", "Nur Follower aus"),
+                "subscribersoff": ("subscriber_mode", "Nur Abonnenten aus"), "emoteonlyoff": ("emote_mode", "Nur Emotes aus"),
+                "subscribers": ("subscriber_mode", "Nur Abonnenten an"), "emoteonly": ("emote_mode", "Nur Emotes an")}
 
     def __init__(self, store, account, api_base=None, client_id=None, demo_reader=None, demo=False, paths=None):
         self.store, self.account = store, account
@@ -6189,8 +6239,10 @@ class TwitchMod:
             raise ValueError(self.ERR_AUTH)
         if status == 403:
             raise ValueError(self.ERR_FORBIDDEN)
+        if status == 404:
+            raise ValueError(self.ERR_NOTFOUND)
         msg = TwitchReader._clean(str(out.get("message", "")), 120)
-        raise ValueError(msg if status == 400 and msg else self.ERR_OTHER)
+        raise ValueError(msg if status in (400, 409, 422, 425) and msg else self.ERR_OTHER)
 
     def _context(self):
         """(Kanal-Kennung, Moderator-Kennung): der Kanal aus den Einstellungen, der Moderator ist das angemeldete Konto."""
@@ -6220,11 +6272,14 @@ class TwitchMod:
             self.ids[login] = str(rows[0]["id"])
             return self.ids[login]
 
-    def do(self, req):
-        """req: {"action": "delete"|"timeout"|"ban"|"unban", "message_id" | "user_id" | "user", "seconds", "reason"}."""
+    def do(self, req, owner_key=None):
+        """req: {"action": "delete"|"timeout"|"ban"|"unban", "message_id" | "user_id" | "user", "seconds", "reason"} oder ein Befehl aus CMD_SCOPE.
+        owner_key: Streamer-Schlüssel des Browsers; ohne ihn gehen die Befehle des Kanalinhabers (OWNER_ONLY) nicht."""
         if not isinstance(req, dict):
             raise ValueError("Ungültige Anfrage")
         act = req.get("action")
+        if act in self.CMD_SCOPE:
+            return self._extra(act, req, owner_key)
         if act not in ("delete", "timeout", "ban", "unban"):
             raise ValueError("Ungültige Anfrage")
         if self.demo:
@@ -6254,6 +6309,72 @@ class TwitchMod:
         self._call("POST", "moderation/bans", base, {"data": data})
         return {"ok": True, "action": act, "user_id": uid, "message": "Timeout" if act == "timeout" else "Gebannt"}
 
+    def _extra(self, act, req, owner_key=None):
+        """Befehle über die Twitch-Schnittstelle: VIP, Moderatoren, Chat leeren und -Einstellungen, Ankündigung, Raid, Marker, Titel und Kategorie."""
+        if self.demo:
+            return self._demo(act, req)
+        bc, me = self._context()
+        if self.CMD_SCOPE[act] not in (self.account.status().get("scopes") or []):
+            raise ValueError(self.ERR_RIGHTS)
+        if act in self.OWNER_ONLY:
+            if bc != me:
+                raise ValueError(self.ERR_OWNER)
+            if not self.account.is_owner(owner_key):
+                raise ValueError(self.ERR_BROWSER)
+        base = {"broadcaster_id": bc, "moderator_id": me}
+        text = TwitchReader._clean(str(req.get("text") or ""), 500).strip()
+        if act in ("vip", "unvip", "mod", "unmod"):
+            path = "channels/vips" if act in ("vip", "unvip") else "moderation/moderators"
+            self._call("POST" if act in ("vip", "mod") else "DELETE", path, {"broadcaster_id": bc, "user_id": self._target(req)})
+            msg = {"vip": "VIP vergeben", "unvip": "VIP entfernt", "mod": "Moderator ernannt", "unmod": "Moderator entfernt"}[act]
+        elif act == "clear":
+            self._call("DELETE", "moderation/chat", base)
+            msg = "Chat geleert"
+        elif act in ("slow", "followers"):
+            try:
+                n = int(req.get("number")) if req.get("number") is not None else None
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError("Die Zahl ist ungültig")
+            if act == "slow":
+                n = 30 if n is None else max(3, min(120, n))
+                body, msg = {"slow_mode": True, "slow_mode_wait_time": n}, "Langsamer Modus an (%d Sekunden)" % n
+            else:
+                n = 0 if n is None else max(0, min(129600, n))
+                body, msg = {"follower_mode": True, "follower_mode_duration": n}, ("Nur Follower an" if n == 0 else "Nur Follower an (seit %d Minuten)" % n)
+            self._call("PATCH", "chat/settings", base, body)
+        elif act in self.SETTINGS:
+            key, msg = self.SETTINGS[act]
+            self._call("PATCH", "chat/settings", base, {key: not act.endswith("off")})
+        elif act == "announce":
+            if not text:
+                raise ValueError("Der Text fehlt")
+            self._call("POST", "chat/announcements", base, {"message": text, "color": "primary"})
+            msg = "Ankündigung gesendet"
+        elif act == "raid":
+            self._call("POST", "raids", {"from_broadcaster_id": bc, "to_broadcaster_id": self._target(req)})
+            msg = "Raid gestartet"
+        elif act == "unraid":
+            self._call("DELETE", "raids", {"broadcaster_id": bc})
+            msg = "Raid abgebrochen"
+        elif act == "marker":
+            self._call("POST", "streams/markers", None, {"user_id": bc, "description": text[:140]})
+            msg = "Marker gesetzt"
+        elif act == "title":
+            if not text:
+                raise ValueError("Der Text fehlt")
+            self._call("PATCH", "channels", {"broadcaster_id": bc}, {"title": text[:140]})
+            msg = "Titel geändert"
+        else:                                                                               # game
+            if not text:
+                raise ValueError("Der Name der Kategorie fehlt")
+            rows = self._call("GET", "games", {"name": text[:140]}).get("data")
+            row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else {}
+            if not str(row.get("id", "")).isdigit():
+                raise ValueError("Diese Kategorie gibt es nicht")
+            self._call("PATCH", "channels", {"broadcaster_id": bc}, {"game_id": str(row["id"])})
+            msg = "Kategorie geändert"
+        return {"ok": True, "action": act, "message": msg}
+
     def _target(self, req):
         uid = req.get("user_id")
         if isinstance(uid, str) and _ascii_digits(uid) and len(uid) <= 20:
@@ -6263,6 +6384,8 @@ class TwitchMod:
         raise ValueError("Ungültige Anfrage")
 
     def _demo(self, act, req):
+        if act in self.CMD_SCOPE:
+            return {"ok": True, "action": act, "message": "Demo: Befehl ausgeführt"}
         if act == "delete" and self.demo_reader is not None and isinstance(req.get("message_id"), str):
             self.demo_reader._add({"type": "del", "meta": True, "mid": req["message_id"], "text": "", "emotes": []})
         if act in ("timeout", "ban") and self.demo_reader is not None and _ascii_digits(str(req.get("user_id") or "")):
@@ -6274,9 +6397,16 @@ class TwitchMod:
 
 class TwitchSender:
     """Nachrichten des Streamers aus der Oberfläche in den Chat (über das angemeldete Twitch-Konto, sonst Bot-Konto und Token von Hand). Höchstens eine
-    Nachricht je Sekunde. Befehle mit "/" oder "." am Anfang werden nie als Text gesendet: "/ban Name [Grund]", "/timeout Name [Sekunden] [Grund]" und
-    "/unban Name" gehen als Moderation über die Twitch-Schnittstelle (TwitchMod), alles andere wird abgelehnt."""
+    Nachricht je Sekunde. Befehle mit "/" oder "." am Anfang werden nie als Text gesendet: "/ban Name [Grund]", "/timeout Name [Sekunden] [Grund]",
+    "/unban Name" und die weiteren Befehle (VIP, Moderatoren, Chat leeren und -Einstellungen, Ankündigung, Raid, Marker, Titel, Kategorie) gehen als Moderation
+    über die Twitch-Schnittstelle (TwitchMod), alles andere wird abgelehnt."""
     COMMANDS = ("ban", "timeout", "unban")
+    NAMED = ("vip", "unvip", "mod", "unmod", "raid")                     # Befehl Name
+    PLAIN = ("clear", "slowoff", "followersoff", "subscribers", "subscribersoff", "emoteonly", "emoteonlyoff", "unraid")   # Befehl ohne Angabe
+    NUMBER = ("slow", "followers")                                       # Befehl [Zahl]: Sekunden beziehungsweise Minuten
+    TEXT = ("announce", "title", "game")                                 # Befehl Text (Pflicht)
+    HELP = ("Befehle: /ban, /timeout, /unban, /vip, /unvip, /mod, /unmod, /clear, /slow, /slowoff, /followers, /followersoff, /subscribers, /subscribersoff, "
+            "/emoteonly, /emoteonlyoff, /announce, /raid, /unraid, /marker, /title, /game")
     MIN_GAP = 1.0
 
     def __init__(self, store, chat=None, clock=time.monotonic, demo_reader=None, mod=None, helix=None):
@@ -6285,32 +6415,48 @@ class TwitchSender:
         self.last = -1e9
         self.lock = threading.Lock()
 
-    def _command(self, t):
+    def _command(self, t, owner_key=None):
         parts = t[1:].split()
         cmd = parts[0].lower() if t[0] == "/" and parts else ""
-        if cmd not in self.COMMANDS or len(parts) < 2 or self.mod is None:
-            raise ValueError("Befehle: /ban Name, /timeout Name [Sekunden], /unban Name")
+        known = self.COMMANDS + self.NAMED + self.PLAIN + self.NUMBER + self.TEXT + ("marker",)
+        if cmd not in known or self.mod is None:
+            raise ValueError(self.HELP)
+        if cmd in self.COMMANDS + self.NAMED + self.TEXT and len(parts) < 2:
+            raise ValueError(self.HELP)
         with self.lock:
             now = self.clock()
             if now - self.last < self.MIN_GAP:
                 raise ValueError("Bitte kurz warten")
             self.last = now
-        req = {"action": cmd, "user": parts[1]}
-        rest = parts[2:]
-        if cmd == "timeout" and rest and _ascii_digits(rest[0]):
-            req["seconds"] = int(rest[0])
-            rest = rest[1:]
-        if cmd != "unban" and rest:
-            req["reason"] = " ".join(rest)
-        out = self.mod.do(req)
-        return {"ok": True, "message": "%s: %s" % (out.get("message", ""), parts[1].lstrip("@"))}
+        if cmd in self.COMMANDS:
+            req = {"action": cmd, "user": parts[1]}
+            rest = parts[2:]
+            if cmd == "timeout" and rest and _ascii_digits(rest[0]):
+                req["seconds"] = int(rest[0])
+                rest = rest[1:]
+            if cmd != "unban" and rest:
+                req["reason"] = " ".join(rest)
+            out = self.mod.do(req, owner_key)
+            return {"ok": True, "message": "%s: %s" % (out.get("message", ""), parts[1].lstrip("@"))}
+        req = {"action": cmd}
+        if cmd in self.NAMED:
+            req["user"] = parts[1]
+        elif cmd in self.NUMBER and len(parts) > 1:
+            if not _ascii_digits(parts[1]):
+                raise ValueError("Die Zahl ist ungültig")
+            req["number"] = int(parts[1])
+        elif cmd in self.TEXT or cmd == "marker":
+            req["text"] = " ".join(parts[1:])
+        out = self.mod.do(req, owner_key)
+        who = ": " + parts[1].lstrip("@") if cmd in self.NAMED else ""
+        return {"ok": True, "message": out.get("message", "") + who}
 
-    def say(self, text):
+    def say(self, text, owner_key=None):
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Nachricht fehlt")
         t = text.strip()
         if t[0] in "/.":
-            return self._command(t)
+            return self._command(t, owner_key)
         cfg = self.store.settings()
         if not (cfg["login"] and cfg["token"] and cfg["channel"]):
             raise ValueError("Zuerst mit Twitch anmelden")
@@ -8670,7 +8816,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/twitch/login":
                 act = d.get("action")
                 if act == "start":
-                    return self.reply(200, self.twitchlogin.start(mod=d.get("mod") is True, events=d.get("events") is True))
+                    return self.reply(200, self.twitchlogin.start(mod=d.get("mod") is True, events=d.get("events") is True,
+                                                                       everything=d.get("all") is True,
+                                                                       owner_key=d.get("owner")))
                 if act == "cancel":
                     return self.reply(200, self.twitchlogin.cancel())
                 if act == "mod" and isinstance(d.get("on"), bool):
@@ -8691,9 +8839,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(200, r)
                 return self.reply(400, {"error": "Ungültige Anfrage"})
             if path == "/api/chat/mod":
-                return self.reply(200, self.chatmod.do(d))
+                return self.reply(200, self.chatmod.do(d, self.headers.get("x-pb-owner", "")))
             if path == "/api/chat/send":
-                return self.reply(200, self.chatsender.say(d.get("text")))
+                return self.reply(200, self.chatsender.say(d.get("text"), self.headers.get("x-pb-owner", "")))
             if path == "/api/twitch":
                 return self.reply(200, self.twitch.save(d))
             if path == "/api/twitch/test":
