@@ -5486,8 +5486,9 @@ class TwitchBotLogin(TwitchLogin):
 
 
 class TwitchModLogin(TwitchLogin):
-    """Eigenes Twitch-Konto eines Moderators (oder anderer Helfer), der sich in seinem Browser anmeldet: Lesen und Schreiben im Chat und die Moderatorenrechte
-    (Löschen, Timeout, Bann, Chat-Einstellungen, Ankündigung), nichts vom Kanalinhaber (kein VIP, Raid, Titel) und keine Ereignisse. Eine Datei je Browser."""
+    """Eigenes Twitch-Konto eines Zuschauers oder Moderators, der sich in seinem Browser anmeldet: Zuschauer nur Lesen und Schreiben im Chat, Moderatoren
+    zusätzlich die Moderatorenrechte (Löschen, Timeout, Bann, Chat-Einstellungen, Ankündigung); nichts vom Kanalinhaber (kein VIP, Raid, Titel) und keine
+    Ereignisse. Eine Datei je Browser."""
     MOD_SCOPES = "moderator:manage:banned_users moderator:manage:chat_messages moderator:manage:chat_settings moderator:manage:announcements"
     EVENT_SCOPES = CMD_SCOPES = ""
     DEMO_LOGIN = "demo_moderator"
@@ -5532,7 +5533,9 @@ class ModSessions:
                 s = self.items[h] = self._make(h)
             return s
 
-    def start(self, key):
+    def start(self, key, mod=True):
+        """mod=False: normale Zuschauer-Anmeldung (nur Lesen und Schreiben im Chat); mod=True: zusätzlich die Moderatorenrechte. Wer sich später als Moderator
+        anmeldet, behält, was er schon hat."""
         h = TwitchLogin.owner_hash(key)
         if not h:
             raise ValueError("Dieser Browser kann sich nicht anmelden")
@@ -5542,7 +5545,7 @@ class ModSessions:
                 if self._count() >= self.MAX and not os.path.exists(self._path(h)):
                     raise ValueError("Es sind schon zu viele Moderatoren angemeldet")
                 s = self.items[h] = self._make(h)
-        return s.start(mod=True, owner_key=key)
+        return s.start(mod=bool(mod), owner_key=key)
 
     def logout(self, key):
         s = self.get(key)
@@ -5559,13 +5562,38 @@ class ModSessions:
 
 
 class TwitchAccounts:
-    """Welches Twitch-Konto gilt in welchem Browser? "owner": der Browser des Streamers (sein Schlüssel steht bei der Anmeldung der Box; solange noch niemand
-    angemeldet ist, kann sich jeder als Erster anmelden und wird es), "mod": ein Browser mit eigener Moderatoren-Anmeldung, "none": sonst. Aus "none" lässt sich
-    nur lesen. Die Oberfläche bekommt immer die Lage des eigenen Browsers (status), nie die Zugangsdaten."""
+    """Welches Twitch-Konto gilt in welchem Browser, und was darf es? "owner": der Browser des Streamers (sein Schlüssel steht bei der Anmeldung der Box; solange
+    noch niemand angemeldet ist, kann sich jeder als Erster anmelden und wird es), "mod": ein Browser mit eigener Anmeldung eines Moderators, "user": ein Browser
+    mit eigener Zuschauer-Anmeldung (schreiben, nicht moderieren), "none": sonst, nur lesen. Ob ein angemeldeter "Moderator" im Kanal wirklich einer ist, fragt die
+    Box (mit dem Konto des Streamers) höchstens alle fünf Minuten bei Twitch nach (check); weiß sie es nicht, gelten die angemeldeten Rechte. Die Oberfläche bekommt
+    immer die Lage des eigenen Browsers (status), nie die Zugangsdaten."""
     NONE_STATUS = {"state": "aus", "login": "", "scopes": [], "error": "", "mod": False, "mod_scope": False, "events": False, "helix_chat": False}
+    CHECK_TTL = 300.0
 
-    def __init__(self, box, sessions):
-        self.box, self.sessions = box, sessions
+    def __init__(self, box, sessions, check=None, clock=time.time):
+        self.box, self.sessions, self.check, self.clock = box, sessions, check, clock
+        self.known = {}                                                # Kennung -> (Zeitpunkt, True/False/None)
+        self.lock = threading.Lock()
+
+    def _is_channel_mod(self, acct):
+        """True/False, ob dieses Konto im Kanal Moderator ist; None, wenn unbekannt."""
+        if self.check is None:
+            return None
+        uid = acct.user_id()
+        now = self.clock()
+        with self.lock:
+            hit = self.known.get(uid)
+            if hit and now - hit[0] < self.CHECK_TTL:
+                return hit[1]
+        try:
+            ans = self.check(uid)
+        except Exception:
+            ans = None
+        with self.lock:
+            if len(self.known) > 100:
+                self.known.clear()
+            self.known[uid] = (now, ans)
+        return ans
 
     def pick(self, key):
         if not self.box.ready() or self.box.is_owner(key):
@@ -5574,7 +5602,9 @@ class TwitchAccounts:
         if s is not None and self.sessions.demo:
             s.status()                                                  # Vorschau-Modus: die Anmeldung läuft nur beim Abfragen weiter
         if s is not None and s.ready():
-            return "mod", s
+            if s.status()["mod"] and self._is_channel_mod(s) is not False:
+                return "mod", s
+            return "user", s
         return "none", None
 
     def status(self, key):
@@ -5582,8 +5612,10 @@ class TwitchAccounts:
         boxlogin = self.box.login()
         if role == "owner":
             st = self.box.status()
-        elif role == "mod":
+        elif role in ("mod", "user"):
             st = acct.status()
+            if role == "user":
+                st["mod"] = False                                       # (auch wenn die Rechte da sind: im Kanal kein Moderator)
         else:
             h = TwitchLogin.owner_hash(key)
             s = self.sessions.get(key)
@@ -6375,6 +6407,21 @@ class TwitchMod:
         msg = TwitchReader._clean(str(out.get("message", "")), 120)
         raise ValueError(msg if status in (400, 409, 422, 425) and msg else self.ERR_OTHER)
 
+    def is_moderator(self, uid):
+        """Ist dieses Konto Moderator im Kanal? Fragt mit dem Konto des Streamers (nur im eigenen Kanal möglich). None, wenn das nicht geht oder Twitch nicht antwortet."""
+        if self.demo:
+            return True
+        try:
+            bc, me = self._context()
+            if bc != me or not _ascii_digits(str(uid)):
+                return None
+            if "channel:manage:moderators" not in (self.account.status().get("scopes") or []):
+                return None
+            rows = self._call("GET", "moderation/moderators", {"broadcaster_id": bc, "user_id": str(uid)}).get("data")
+        except ValueError:
+            return None
+        return bool(isinstance(rows, list) and rows)
+
     def view(self, account):
         """Dieselbe Moderation mit einem anderen Konto (zum Beispiel dem eines Moderators in seinem Browser): gleiche Wege, gleicher Kanal, eigene Rechte."""
         import copy
@@ -6589,13 +6636,15 @@ class TwitchSender:
         who = ": " + parts[1].lstrip("@") if cmd in self.NAMED else ""
         return {"ok": True, "message": out.get("message", "") + who}
 
-    def say_as(self, mod, helix, text, owner_key=None):
+    def say_as(self, mod, helix, text, owner_key=None, commands=True):
         """Nachricht oder Befehl mit einem anderen Konto als dem der Box (Moderator in seinem Browser): Befehle über dessen Moderation, Text über dessen Zugang zur
         Twitch-Schnittstelle (nie über das Konto des Streamers, nie über IRC)."""
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Nachricht fehlt")
         t = text.strip()
         if t[0] in "/.":
+            if not commands:
+                raise ValueError("Befehle gibt es nur für den Streamer und Moderatoren")
             return self._command(t, owner_key, mod)
         if not helix.account.ready():
             raise ValueError("Zuerst mit Twitch anmelden")
@@ -8446,7 +8495,8 @@ def controller_action(fn, pipeline, cams, send):
 
 
 class Handler(BaseHTTPRequestHandler):
-    ERR_NO_ACCOUNT = "Zum Schreiben und Moderieren bitte in diesem Browser bei Twitch anmelden (Moderator: „Als Moderator anmelden“)"
+    ERR_NO_ACCOUNT = "Zum Schreiben und Moderieren bitte in diesem Browser bei Twitch anmelden (Zuschauer oder Moderator)"
+    ERR_NOT_MOD = "Moderieren dürfen nur der Streamer und Moderatoren dieses Kanals"
     timeout = 15              # eine Verbindung, die so lange nichts sendet, wird beendet (Issue #25: halb offene Anfragen blieben ewig offen)
     BODY_SECONDS = 15.0       # so lange darf der Inhalt einer Anfrage insgesamt brauchen (nicht nur je Teilstück)
     REQUEST_SECONDS = 15.0    # Gesamtfrist für Kopfzeilen und Inhalt zusammen; danach wird die Verbindung getrennt (ein Byte alle paar Sekunden hielt sie offen)
@@ -8981,8 +9031,8 @@ class Handler(BaseHTTPRequestHandler):
                 act = d.get("action")
                 key = d.get("owner") or self.headers.get("x-pb-owner", "")
                 if act == "start":
-                    if d.get("as") == "mod":                                      # eigenes Konto (Moderator): getrennt vom Konto des Streamers
-                        self.twitchsessions.start(key)
+                    if d.get("as") in ("mod", "user"):                            # eigenes Konto (Moderator oder Zuschauer): getrennt vom Konto des Streamers
+                        self.twitchsessions.start(key, mod=d.get("as") == "mod")
                     else:                                                         # Konto des Streamers; ist die Box schon angemeldet, gilt es nur, wenn Twitch dasselbe Konto bestätigt
                         claim = self.twitchlogin.ready() and not self.twitchlogin.is_owner(key)
                         self.twitchlogin.start(mod=d.get("mod") is True, events=d.get("events") is True, everything=d.get("all") is True, owner_key=key, claim=claim)
@@ -9005,7 +9055,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/twitch/logout":
                 key = d.get("owner") or self.headers.get("x-pb-owner", "")
                 role, acct = self.twitchaccounts.pick(key)
-                if role == "mod":
+                if role in ("mod", "user"):
                     self.twitchsessions.logout(key)                               # nur die eigene Anmeldung; das Konto des Streamers bleibt
                 elif role == "owner":
                     self.twitchlogin.logout()
@@ -9029,6 +9079,8 @@ class Handler(BaseHTTPRequestHandler):
                 role, acct = self.twitchaccounts.pick(key)
                 if role == "none":
                     return self.reply(400, {"error": self.ERR_NO_ACCOUNT})
+                if role == "user":
+                    return self.reply(400, {"error": self.ERR_NOT_MOD})
                 return self.reply(200, (self.chatmod if role == "owner" else self.chatmod.view(acct)).do(d, key))
             if path == "/api/chat/send":
                 key = self.headers.get("x-pb-owner", "")
@@ -9038,7 +9090,7 @@ class Handler(BaseHTTPRequestHandler):
                 if role == "owner":
                     return self.reply(200, self.chatsender.say(d.get("text"), key))
                 mv = self.chatmod.view(acct)
-                return self.reply(200, self.chatsender.say_as(mv, HelixChat(acct, mv), d.get("text"), key))
+                return self.reply(200, self.chatsender.say_as(mv, HelixChat(acct, mv), d.get("text"), key, commands=role == "mod"))
             if path == "/api/twitch":
                 return self.reply(200, self.twitch.save(d))
             if path == "/api/twitch/test":
@@ -9165,7 +9217,7 @@ def main():
     Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
     Handler.twitchbot = TwitchBotLogin(os.path.join(args.state, "twitch-bot-login.json"), demo=args.demo, paths=Handler.chatpaths)
     Handler.twitchsessions = ModSessions(args.state, demo=args.demo, paths=Handler.chatpaths)         # eigene Anmeldungen der Moderatoren, je Browser
-    Handler.twitchaccounts = TwitchAccounts(Handler.twitchlogin, Handler.twitchsessions)
+    Handler.twitchaccounts = TwitchAccounts(Handler.twitchlogin, Handler.twitchsessions)             # (check folgt, sobald chatmod da ist)
     Handler.twitch.store.bot = Handler.twitchbot                                      # angemeldetes Bot-Konto schreibt die Akku-Meldung (nur sie)
     if not args.demo:
         threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
@@ -9174,6 +9226,7 @@ def main():
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
     Handler.chathelix = HelixChat(Handler.twitchlogin, Handler.chatmod)
     Handler.chatsender = TwitchSender(Handler.twitch.store, chat=TwitchChat(paths=Handler.chatpaths), demo_reader=Handler.chatreader if args.demo else None, mod=Handler.chatmod, helix=Handler.chathelix)
+    Handler.twitchaccounts.check = Handler.chatmod.is_moderator                                          # ob ein angemeldeter Moderator im Kanal wirklich einer ist
     Handler.chatevents = TwitchEvents(Handler.twitch.store, Handler.twitchlogin, Handler.chatmod, Handler.chatreader, paths=Handler.chatpaths)
     if not args.demo:
         Handler.chatreader.events = Handler.chatevents       # liest den Kanal der Twitch-Karte (dieselben Einstellungen)
