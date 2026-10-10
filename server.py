@@ -7001,6 +7001,7 @@ class SettingsTransfer:
         self.cams, self.pipeline, self.srtla, self.autostart = cams, pipeline, srtla, autostart
         self.names, self.djisvc, self.wifi, self.send, self.demo = names, djisvc, wifi, send, demo
         self.progress = {"state": "idle"}                  # für die Fortschrittsanzeige beim Einspielen (GET /api/settings/progress)
+        self.iface_map = {}                                # {Name in der Sicherung: Name auf dieser Box} der letzten Prüfung (gleiche MAC, anderer Name)
         self.hdmi = self.twitch = self.netchoice = None          # werden nach dem Start gesetzt (entstehen später oder fehlen in Tests)
         self.backup_dir = os.path.join(state_dir, "backup")
         self.backup_path = os.path.join(self.backup_dir, "vor-einspielen.json")
@@ -7040,6 +7041,7 @@ class SettingsTransfer:
                 e["password"] = h["password"]
             hs[iface] = e
         doc["hotspots"] = hs
+        doc["ifaces"] = self.local_macs()                                      # Name -> MAC: beim Einspielen auf einer anderen Karte werden die Namen anhand der MAC zugeordnet
         if self.hdmi is not None:
             try:
                 st = self.hdmi.status()
@@ -7320,9 +7322,65 @@ class SettingsTransfer:
             out.append({"ssid": ssid, "password": pw, "hidden": n.get("hidden") is True, "open": open_net, "security": "none" if open_net else sec})
         return {"networks": out}, notes
 
+    @staticmethod
+    def local_macs():
+        """Netzwerkkarten dieser Box mit ihrer MAC-Adresse: {Name: mac}. Die Namen (eth0, eth1) können nach dem Neu-Flashen oder Neustart vertauscht sein, die MAC nicht."""
+        out = {}
+        try:
+            for n in sorted(os.listdir("/sys/class/net")):
+                if n == "lo" or not IFACE_NAME_RE.match(n):
+                    continue
+                m = (read("/sys/class/net/%s/address" % n, "") or "").strip().lower()
+                if re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", m) and m != "00:00:00:00:00:00":
+                    out[n] = m
+        except OSError:
+            pass
+        return out
+
+    def _iface_map(self, doc):
+        """Welche Namen aus der Sicherung heißen auf dieser Box anders? {alter Name: neuer Name}, über gleiche MAC-Adresse (nur Karten, die es hier gibt)."""
+        old = doc.get("ifaces")
+        if not isinstance(old, dict):
+            return {}
+        mine = {mac: name for name, mac in self.local_macs().items()}
+        out = {}
+        for name, mac in old.items():
+            if isinstance(name, str) and IFACE_NAME_RE.match(name) and isinstance(mac, str) and mine.get(mac.lower()) not in (None, name):
+                out[name] = mine[mac.lower()]
+        return out
+
+    @staticmethod
+    def _remap_ifaces(doc, m):
+        """Kopie der Sicherung mit den Kartennamen nach m (gleichzeitig ersetzt, damit ein Tausch eth0 <-> eth1 klappt)."""
+        d = json.loads(json.dumps(doc))
+        r = lambda n: m.get(n, n) if isinstance(n, str) else n
+        for c in d.get("cameras", []) if isinstance(d.get("cameras"), list) else []:
+            if isinstance(c, dict) and c.get("iface"):
+                c["iface"] = r(c["iface"])
+        if isinstance(d.get("camnet"), dict) and d["camnet"].get("iface"):
+            d["camnet"]["iface"] = r(d["camnet"]["iface"])
+        st = d.get("srtla", {}).get("settings") if isinstance(d.get("srtla"), dict) else None
+        if isinstance(st, dict):
+            if isinstance(st.get("uplinks"), list):
+                st["uplinks"] = [r(u) for u in st["uplinks"]]
+            if isinstance(st.get("min_share"), dict):
+                st["min_share"] = {r(k): v for k, v in st["min_share"].items()}
+        if isinstance(d.get("hotspots"), dict):
+            d["hotspots"] = {r(k): v for k, v in d["hotspots"].items()}
+        if isinstance(d.get("dji"), list):
+            for e in d["dji"]:
+                if isinstance(e, dict) and e.get("wifi_ifname"):
+                    e["wifi_ifname"] = r(e["wifi_ifname"])
+        if isinstance(d.get("names"), dict):
+            d["names"] = {("net:" + r(k[4:]) if isinstance(k, str) and k.startswith("net:") else k): v for k, v in d["names"].items()}
+        return d
+
     def clean(self, doc):
         """Alle Teile der Einstellungen prüfen. Gibt (geprüfte Teile, Bericht) zurück; ein ungültiger Teil fällt mit Begründung heraus."""
         clean, report, labels = {}, [], dict(SETTINGS_SECTIONS)
+        self.iface_map = self._iface_map(doc)
+        if self.iface_map:
+            doc = self._remap_ifaces(doc, self.iface_map)
         for sid, label in SETTINGS_SECTIONS:
             if sid not in doc:
                 continue
@@ -7416,6 +7474,9 @@ class SettingsTransfer:
                     results.append({"id": sid, "label": labels[sid], "ok": False, "message": str(e) or type(e).__name__})
         finally:
             self.progress = {"state": "done", "done": total, "total": total, "label": ""}
+        if self.iface_map:                                                          # die Netzwerkkarten heißen hier anders: gesagt wird es, damit niemand rätselt
+            results.insert(0, {"id": "ifaces", "label": "Netzwerkkarten", "ok": True,
+                               "message": "Namen der Netzwerkkarten anhand der MAC-Adressen angepasst: %s" % ", ".join("%s → %s" % (a, b) for a, b in sorted(self.iface_map.items()))})
         if "cameras" in wanted and "dji" in wanted:
             self._restore_camera_names(clean["cameras"])
         for r in report:
