@@ -33,7 +33,7 @@ Gut zu wissen:
 
 Die Box koppelt DJI-Kameras selbst, übergibt ihnen ein WLAN und das RTMP-Ziel und startet den Stream.
 Die Oberfläche nennt diese Modelle: Osmo Action 3, 4, 5 Pro, 6, Osmo 360, Osmo Pocket 3 und 4.
-Mit Action 4, Action 5 Pro und Action 6 haben wir gearbeitet. **Pocket 3 und weitere Modelle: noch nicht mit echter Kamera geprüft.**
+Mit Action 4, Action 5 Pro und Action 6 haben wir gearbeitet. **Pocket 3: nur im Modus „Nur Akkustand lesen“ geprüft** (die Kamera sendet selbst per RTMP, die Box zeigt Akku und Ladesymbol); Stream-Start über die Box ist bei ihr und bei weiteren Modellen noch nicht mit echter Kamera geprüft.
 
 ### Suchen und koppeln
 
