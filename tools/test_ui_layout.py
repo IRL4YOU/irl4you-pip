@@ -288,6 +288,13 @@ class ImportProgress(unittest.TestCase):
         self.assertIn('$("live_topipe").addEventListener("click"', PAGE)
         self.assertIn('out["no_layout"] = not active and not self.pipeline.cfg.get("main")', open(os.path.join(ROOT, "server.py"), encoding="utf-8").read())
 
+    def test_remote_card_always_links_to_the_tailscale_https_switch(self):
+        """Fernzugriff: Ist die Box verbunden, aber noch nicht freigegeben, steht ein fester Link zu den Tailscale-Einstellungen da, wo HTTPS einmal freigeschaltet wird (ein Nutzer fand den Weg nicht)."""
+        self.assertIn('<a id="r_httpslink" class="btnlink" href="https://login.tailscale.com/admin/dns" target="_blank" rel="noopener noreferrer">Tailscale-Einstellungen öffnen</a>', PAGE)
+        self.assertIn("#rcard #r_https a.btnlink{background:var(--warn)", PAGE)                    # fett, in der Warnfarbe
+        self.assertIn('$("r_https").hidden=!(d.installed&&d.connected&&!d.serve);', PAGE)
+        self.assertIn("Für die Freigabe muss HTTPS im Tailscale-Konto einmal freigeschaltet sein.</b>", PAGE)
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
