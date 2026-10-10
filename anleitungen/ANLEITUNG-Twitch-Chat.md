@@ -59,12 +59,38 @@ Die Moderation ist **aus**, bis du sie einschaltest. Dein Konto muss **Streamer 
 
 1. Tippe auf das **Zahnrad (⚙)** und dann auf **Moderation einschalten**.
 2. Twitch fragt einmal nach **neuen Rechten**. Bestätige sie wie bei der Anmeldung (Code und Link, Abschnitt 1).
+   Es sind **alle Rechte auf einmal** (Löschen, Bann, Befehle wie VIP und Raid, dazu die Ereignisse aus Abschnitt 5).
    Danach steht hinter dem Zahnrad „Angemeldet als … · Moderation an“.
 3. An den Nachrichten **anderer** Zuschauer erscheint ein **⋯**. Dahinter findest du: **Löschen**, **Alle löschen**
    (räumt alle Nachrichten der Person ab), **Timeout 10 Min**, **Timeout 1 Std** und **Bannen**.
 4. Es gibt keine Rückfrage, dafür nach Timeout und Bann **Rückgängig** (kurz sichtbar). Bei „Alle löschen“ gibt es
    kein Rückgängig.
-5. Im Eingabefeld gehen auch `/ban Name`, `/timeout Name [Sekunden]` und `/unban Name`.
+5. Im Eingabefeld gehen auch Befehle. Sie laufen über die Schnittstelle von Twitch und landen nie als Text im Chat:
+
+   | Befehl | Wirkung |
+   |---|---|
+   | `/ban Name`, `/timeout Name [Sekunden]`, `/unban Name` | Bann, Timeout, Bann aufheben |
+   | `/clear` | Chat leeren |
+   | `/slow [Sekunden]`, `/slowoff` | Langsamer Modus (3 bis 120 Sekunden, Standard 30) |
+   | `/followers [Minuten]`, `/followersoff` | nur Follower (Standard: alle Follower) |
+   | `/subscribers`, `/subscribersoff` | nur Abonnenten |
+   | `/emoteonly`, `/emoteonlyoff` | nur Emotes |
+   | `/announce Text` | hervorgehobene Ankündigung |
+   | `/vip Name`, `/unvip Name` | VIP geben und nehmen (nur Kanalinhaber) |
+   | `/mod Name`, `/unmod Name` | Moderator ernennen und entfernen (nur Kanalinhaber) |
+   | `/raid Name`, `/unraid` | Raid starten und abbrechen (nur Kanalinhaber) |
+   | `/marker [Text]` | Marker im laufenden Stream setzen (nur Kanalinhaber, Stream muss live sein) |
+   | `/title Text`, `/game Kategorie` | Titel und Kategorie ändern (nur Kanalinhaber) |
+
+   Twitch lehnt manches ab, zum Beispiel VIP für jemanden, der schon VIP oder Moderator ist, oder wenn das VIP-Limit erreicht ist.
+   Die Meldung steht dann unter dem Eingabefeld.
+
+**Wichtig – Befehle des Kanalinhabers:** `/vip`, `/mod`, `/raid`, `/marker`, `/title` und die übrigen Befehle „nur Kanalinhaber“ gehen **nur in dem
+Browser, in dem du dich bei Twitch angemeldet hast**. Der Browser erzeugt dabei einen Zufallsschlüssel und behält ihn bei sich; die Box speichert nur
+einen Fingerabdruck davon. Gibst du den Link zur Box an jemanden weiter (zum Beispiel einen Moderator, der bei den Kameras hilft), kann er diese
+Befehle damit **nicht** benutzen. Willst du sie in einem zweiten Browser (zum Beispiel am Handy) nutzen, melde dich dort ebenfalls bei Twitch an
+(höchstens fünf Browser). **Abmelden** löscht alle Schlüssel. Hinweis: Löschen, Timeout, Bann und das Schreiben im Chat laufen noch mit deinem Konto,
+auch in anderen Browsern.
 
 **Ausschalten:** Zahnrad, **Moderation ausschalten**. Die ⋯ und die Befehle sind sofort weg; **Moderation einschalten**
 geht danach ohne neue Bestätigung. Twitch erlaubt aber nicht, einem Zugang Rechte wieder wegzunehmen. Sie fallen
