@@ -218,6 +218,12 @@ class ImportProgress(unittest.TestCase):
         self.assertIn('go.hidden=wait||on||!!a.need_channel;', PAGE)
         self.assertIn('srtlaCall("POST","/api/twitch",{channel:v})', PAGE)
 
+    def test_main_category_arrow_has_its_own_colour(self):
+        """Der Pfeil vor einer Hauptkategorie (Kartentitel) ist bernsteinfarben, die Unterpunkte behalten ihre Farbe (Wunsch des Nutzers, ohne Platz zu verbrauchen)."""
+        self.assertIn("details.card>summary .sumh::before,html[data-design] details.card>summary .sumh::before{color:var(--warn);border-color:var(--warn)}", PAGE)
+        self.assertIn("details.card>summary .sumh{font-size:12px;font-weight:600;", PAGE)                   # die Überschrift der Hauptkategorie minimal fetter
+        self.assertNotRegex(PAGE, r"\.subsec>summary::before\{[^}]*var\(--warn\)")                 # Unterpunkte nicht in derselben Farbe
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
