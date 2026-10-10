@@ -990,6 +990,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div class="actions"><input type="file" id="bk_file" accept=".json,application/json"></div>
     <div id="bk_ipwrow" class="wform bkform" hidden><label class="muted">Passwort der Datei<input type="password" id="bk_ipw" autocomplete="off" maxlength="128"></label><div class="actions"><button id="bk_open" type="button" class="sec">Öffnen</button></div></div>
     <div id="bk_plan" class="bkplan" hidden></div>
+    <div id="bk_prog" class="prog" hidden><div class="bar"><i></i></div><div class="progline"><span><b class="progpct"></b> <span class="progtxt"></span></span><span class="progel muted"></span></div></div>
     <div id="bk_imsg" class="ph bkres" role="status"></div>
     <div class="actions"><button id="bk_restore" type="button" class="sec" hidden>Letzten Stand zurückholen</button> <button id="bk_reload" type="button" class="sec" hidden>Seite neu laden</button></div>
   </details>
@@ -3794,13 +3795,23 @@ function bkResults(r){
   $("bk_reload").hidden=false;
   [typeof srtlaLoad==="function"&&srtlaLoad,typeof pipeLoad==="function"&&pipeLoad,typeof wifiLoad==="function"&&wifiLoad,typeof djiLoad==="function"&&djiLoad].forEach(f=>{ try{ f&&f(); }catch(e){} });
 }
+// Fortschrittsanzeige beim Einspielen und Zurückholen (wie beim Software-Update): der Server meldet, welcher Teil gerade dran ist
+async function bkWithProgress(fn){
+  const t0=Date.now(); progSet("bk_prog",true,3,"Der Stand davor wird gesichert",t0);
+  const poll=setInterval(async()=>{
+    try{ const p=await srtlaCall("GET","/api/settings/progress");
+      if(p.state==="running"&&p.total) progSet("bk_prog",true,Math.max(5,Math.round(p.done*100/p.total)),p.label?`Einspielen: ${p.label} (${p.done+1} von ${p.total})`:"Der Stand davor wird gesichert"); }catch(e){}
+  },600);
+  try{ return await fn(); }
+  finally{ clearInterval(poll); progSet("bk_prog",true,100,"Fertig"); setTimeout(()=>progSet("bk_prog",false),2500); }
+}
 document.addEventListener("click",async e=>{
   if(e.target.id==="bk_go"){
     const secs=[...document.querySelectorAll("#bk_plan input[data-sec]:checked")].map(i=>i.dataset.sec);
     if(!secs.length){ $("bk_imsg").textContent="Bitte mindestens einen Teil wählen."; return; }
     if(!confirm("Die gewählten Teile ersetzen die jetzigen Einstellungen. Der Stand davor wird gesichert.\n\nEinspielen?")) return;
     e.target.disabled=true; $("bk_imsg").textContent="Wird eingespielt …";
-    try{ const r=await srtlaCall("POST","/api/settings/import",{document:bkDoc,password:bkPw||undefined,sections:secs}); bkResults(r); bkReset(); $("bk_file").value=""; }
+    try{ const r=await bkWithProgress(()=>srtlaCall("POST","/api/settings/import",{document:bkDoc,password:bkPw||undefined,sections:secs})); bkResults(r); bkReset(); $("bk_file").value=""; }
     catch(x){ $("bk_imsg").textContent="Fehler: "+x.message; e.target.disabled=false; }
     bkLoad();
   }
@@ -3808,7 +3819,7 @@ document.addEventListener("click",async e=>{
 $("bk_restore").addEventListener("click",async()=>{
   if(!confirm("Stand vor dem letzten Einspielen zurückholen? Die jetzigen Einstellungen werden ersetzt.")) return;
   $("bk_imsg").textContent="Wird zurückgeholt …";
-  try{ bkResults(await srtlaCall("POST","/api/settings/restore",{})); }catch(x){ $("bk_imsg").textContent="Fehler: "+x.message; }
+  try{ bkResults(await bkWithProgress(()=>srtlaCall("POST","/api/settings/restore",{}))); }catch(x){ $("bk_imsg").textContent="Fehler: "+x.message; }
   bkLoad();
 });
 $("bk_reload").addEventListener("click",()=>location.reload());
