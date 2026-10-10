@@ -992,6 +992,14 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div id="bk_plan" class="bkplan" hidden></div>
     <div id="bk_prog" class="prog" hidden><div class="bar"><i></i></div><div class="progline"><span><b class="progpct"></b> <span class="progtxt"></span></span><span class="progel muted"></span></div></div>
     <div id="bk_imsg" class="ph bkres" role="status"></div>
+    <div id="bk_todo" class="bktodo" hidden>
+      <div class="sech">Nach dem Einspielen noch zu erledigen</div>
+      <label class="logopt"><input type="checkbox" data-todo="dji"> <b>DJI-Kameras:</b> einmal neu koppeln und verbinden (die Bluetooth-Kopplung ist nicht in der Sicherung).</label>
+      <label class="logopt"><input type="checkbox" data-todo="twitch"> <b>Twitch:</b> in der Karte Chat neu anmelden (Anmeldung und Token sind nicht in der Sicherung).</label>
+      <label class="logopt"><input type="checkbox" data-todo="tailscale"> <b>Tailscale:</b> in der Karte Fernzugriff neu verbinden und die Freigabe wieder einschalten.</label>
+      <label class="logopt"><input type="checkbox" data-todo="net"> <b>Sendewege und Netzwerk für Kameras prüfen:</b> Heißen die Netzwerkkarten auf dieser Box anders (eth0, eth1), stimmen die Einstellungen nicht.</label>
+      <div class="ph">Dein Browser merkt sich die Haken. Sind alle gesetzt, verschwindet dieser Hinweis.</div>
+    </div>
     <div class="actions"><button id="bk_restore" type="button" class="sec" hidden>Letzten Stand zurückholen</button> <button id="bk_reload" type="button" class="sec" hidden>Seite neu laden</button></div>
   </details>
   <details class="card wide" id="c_dev"><summary><span class="sumh">Entwickler</span><span id="dev_badge" class="badge">…</span></summary>
@@ -3790,7 +3798,25 @@ async function bkPreview(){
 }
 $("bk_open").addEventListener("click",bkPreview);
 $("bk_ipw").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); bkPreview(); } });
+// Hinweis nach dem Einspielen: Was die Sicherung nicht enthält und der Nutzer noch erledigen muss (Haken merkt der Browser, alle gesetzt: weg)
+const BK_TODO="pb_bk_todo";
+function bkTodoState(){ try{ const v=JSON.parse(localStorage.getItem(BK_TODO)||"null"); return v&&typeof v==="object"?v:null; }catch(e){ return null; } }
+function bkTodoSave(v){ try{ if(v) localStorage.setItem(BK_TODO,JSON.stringify(v)); else localStorage.removeItem(BK_TODO); }catch(e){} }
+function bkTodoRender(){
+  const box=$("bk_todo"), st=bkTodoState(); if(!box) return;
+  box.hidden=!st;
+  if(st) box.querySelectorAll("input[data-todo]").forEach(i=>{ i.checked=!!(st.done||{})[i.dataset.todo]; });
+}
+function bkTodoShow(){ if(!bkTodoState()) bkTodoSave({done:{}}); bkTodoRender(); }
+$("bk_todo").addEventListener("change",e=>{
+  const i=e.target.closest("input[data-todo]"); if(!i) return;
+  const st=bkTodoState()||{done:{}}; st.done=st.done||{}; st.done[i.dataset.todo]=i.checked;
+  const all=[...$("bk_todo").querySelectorAll("input[data-todo]")].every(x=>st.done[x.dataset.todo]);
+  bkTodoSave(all?null:st); if(all) setTimeout(bkTodoRender,600); else bkTodoRender();
+});
+bkTodoRender();
 function bkResults(r){
+  bkTodoShow();
   setHtml($("bk_imsg"),(r.results||[]).map(x=>`<div class="${x.ok?"bkok":"bkbad"}">${x.ok?"✓":"✗"} <b>${esc(x.label)}</b>: ${esc(x.message)}</div>`).join(""));
   $("bk_reload").hidden=false;
   [typeof srtlaLoad==="function"&&srtlaLoad,typeof pipeLoad==="function"&&pipeLoad,typeof wifiLoad==="function"&&wifiLoad,typeof djiLoad==="function"&&djiLoad].forEach(f=>{ try{ f&&f(); }catch(e){} });
