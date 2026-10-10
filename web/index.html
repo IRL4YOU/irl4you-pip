@@ -128,6 +128,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 .chatbox.o-s{font-size:13px}.chatbox.o-l{font-size:18px}
 .chatform{display:flex;gap:8px;margin-top:10px}.chatform input{flex:1;min-width:0}
 .twacc{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:14px}
+.twch input{flex:1 1 150px;min-width:120px;max-width:240px;min-height:30px}
 .twcode{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:0 0 10px;padding:10px;border:1px solid var(--line);border-radius:12px}
 .twcode svg{width:150px;height:150px;border-radius:6px}
 .twcode_big{font-size:26px;font-weight:700;letter-spacing:.14em;font-variant-numeric:tabular-nums}
@@ -634,7 +635,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </details>
 
   <details class="card wide" id="c_chat" open><summary><span class="sumh">Chat</span><span id="net_sig" class="sig" role="img" aria-label="Verbindung: keine Messung" title="Verbindung: keine Messung"><i class="sigdot"></i><span class="sgs" aria-hidden="true"><span id="sg_max">10</span><span id="sg_mid">5,5</span><span id="sg_min">1</span></span><svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H80M0 10H80M0 19H80"></path><polyline id="net_line" points=""></polyline></svg><span id="sg_val" class="sgv"></span></span><span id="cam_dots" class="camdots" role="img"></span><button type="button" id="chat_opt" class="sec small chatoptbtn" aria-expanded="false" title="Konto und Ansicht des Chats" aria-label="Konto und Ansicht des Chats">⚙</button></summary>
-    <div class="twacc" id="tw_chrow" hidden><span id="tw_ch_t" class="muted"></span><span id="tw_ch_form" hidden><input id="tw_ch_in" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Kanal"> <button type="button" id="tw_ch_save" class="sec small">Speichern</button></span></div>
+    <div class="twacc twch" id="tw_chrow"><label class="muted" for="tw_ch_in">Kanal (Konto, auf dem gestreamt wird)</label><input id="tw_ch_in" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="button" id="tw_ch_save" class="sec small">Speichern</button><span id="tw_ch_t" class="muted"></span></div>
     <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button><button type="button" id="tw_acc_asmod" class="sec small" hidden>Als Moderator anmelden</button><button type="button" id="tw_acc_owner" class="sec small" hidden>Ich bin der Streamer</button></div>
     <div id="chat_optbox" class="chatopts" hidden>
       <div class="accrow" id="tw_accpanel" hidden><span id="tw_acc_t2" class="muted" translate="no"></span><span id="tw_acc_ev_on" class="muted" hidden>Ereignisse an</span><button type="button" id="tw_acc_mod" class="sec small" hidden>Moderation einschalten</button><button type="button" id="tw_acc_modoff" class="sec small" hidden>Moderation ausschalten</button><button type="button" id="tw_acc_ev" class="sec small" hidden>Ereignisse einschalten</button><button type="button" id="tw_acc_out" class="sec small">Abmelden</button></div>
@@ -3036,8 +3037,8 @@ function twAccRender(a){
   if(!a) return;
   const t=$("tw_acc_t"), go=$("tw_acc_go"), code=$("tw_acc_code"), on=a.state==="angemeldet";
   twAcc=a; const wait=a.state==="wartet", other=a.role==="none"&&!!a.streamer;            // other: der Streamer ist ein anderer: hier nur lesen, bis man sich selbst anmeldet
-  $("tw_chrow").hidden=!(a.streamer||a.need_channel); $("tw_ch_form").hidden=!a.need_channel;                   // oben steht der Kanal (wie bei der Akku-Warnung); fehlt er, lässt er sich hier eintragen
-  $("tw_ch_t").textContent=a.streamer?`Kanal (Konto, auf dem gestreamt wird): ${a.streamer}`:(a.need_channel?"Zuerst eintragen, auf welchem Konto gestreamt wird:":"");
+  if($("tw_ch_in")!==document.activeElement) $("tw_ch_in").value=a.streamer||"";                              // oben im Chat steht dasselbe Feld wie bei der Akku-Warnung (nie vorbelegt); er legt fest, wer Streamer ist
+  $("tw_ch_t").textContent=a.need_channel?"Zuerst eintragen, dann anmelden.":"";
   go.textContent=other?"Als Zuschauer anmelden":"Mit Twitch anmelden"; $("tw_acc_owner").hidden=!(other&&!wait&&!on); $("tw_acc_asmod").hidden=!(other&&!wait&&!on);
   $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod); $("tw_acc_ev").hidden=!(on&&!a.events);
   code.hidden=!wait; go.hidden=wait||on||!!a.need_channel;
