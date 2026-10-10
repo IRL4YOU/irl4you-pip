@@ -765,14 +765,14 @@ class IfaceMemory:
             json.dump(cur, f)
         os.replace(tmp, self.path)
 
-    def reconcile(self, srtla, netchoice, cams):
+    def reconcile(self, srtla, netchoice, cams, wifi=None, names=None):
         """Einmal abgleichen. Gibt {alter Name: neuer Name} zurück (leer, wenn nichts zu tun war)."""
         cur = SettingsTransfer.local_macs()
         last = self._last()
         by_mac = {m: n for n, m in cur.items()}
         mapping = {name: by_mac[mac] for name, mac in last.items() if cur.get(name) != mac and by_mac.get(mac) not in (None, name)}
         if mapping:
-            self._apply(mapping, srtla, netchoice, cams)
+            self._apply(mapping, srtla, netchoice, cams, wifi, names)
             print("iface_macs:", ", ".join("%s->%s" % kv for kv in sorted(mapping.items())), flush=True)           # Journal: welche Namen getauscht waren
         if cur != last:
             try:
@@ -782,7 +782,7 @@ class IfaceMemory:
         return mapping
 
     @staticmethod
-    def _apply(m, srtla, netchoice, cams):
+    def _apply(m, srtla, netchoice, cams, wifi=None, names=None):
         r = lambda n: m.get(n, n)
         with srtla.lock:
             st = srtla.data.get("settings") or {}
@@ -805,11 +805,32 @@ class IfaceMemory:
                     changed = True
             if changed:
                 cams.save()
+        if wifi is not None and not getattr(wifi, "demo", False):                  # Hotspot-Einstellungen je WLAN-Karte (hotspot.json)
+            hs = wifi.hotspots()
+            if any(k in m for k in hs):
+                out = {r(k): v for k, v in hs.items()}
+                tmp = wifi.hs_file + ".tmp"
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    json.dump(out, f)
+                os.replace(tmp, wifi.hs_file)
+        if names is not None:                                                       # eigene Namen der Verbindungen und Sticks, die an einem Kartennamen hängen
+            with names.lock:
+                d = names._all()
+                out = {}
+                for k, v in d.items():
+                    pre = k[:3] if k.startswith("if:") else (k[:4] if k.startswith("net:") else "")
+                    out[pre + r(k[len(pre):]) if pre else k] = v
+                if out != d:
+                    tmp = names.path + ".tmp"
+                    with open(tmp, "w") as f:
+                        json.dump(out, f)
+                    os.replace(tmp, names.path)
 
-    def run(self, srtla, netchoice, cams, every=30):
+    def run(self, srtla, netchoice, cams, wifi=None, names=None, every=30):
         while True:
             try:
-                self.reconcile(srtla, netchoice, cams)
+                self.reconcile(srtla, netchoice, cams, wifi, names)
             except Exception as e:                                        # nie die Oberfläche mitnehmen
                 print("iface_macs:", type(e).__name__, flush=True)
             time.sleep(every)
@@ -7447,7 +7468,8 @@ class SettingsTransfer:
                 if isinstance(e, dict) and e.get("wifi_ifname"):
                     e["wifi_ifname"] = r(e["wifi_ifname"])
         if isinstance(d.get("names"), dict):
-            d["names"] = {("net:" + r(k[4:]) if isinstance(k, str) and k.startswith("net:") else k): v for k, v in d["names"].items()}
+            d["names"] = {("net:" + r(k[4:]) if isinstance(k, str) and k.startswith("net:") else ("if:" + r(k[3:]) if isinstance(k, str) and k.startswith("if:") else k)): v
+                          for k, v in d["names"].items()}
         return d
 
     def clean(self, doc):
@@ -8789,10 +8811,10 @@ def main():
     if not args.demo:
         mem = IfaceMemory(os.path.join(args.state, "iface-macs.json"))
         try:
-            mem.reconcile(Handler.srtla, Handler.netchoice, Handler.cams)          # gleich beim Start, bevor jemand sendet
+            mem.reconcile(Handler.srtla, Handler.netchoice, Handler.cams, Handler.wifi, Handler.names)          # gleich beim Start, bevor jemand sendet
         except Exception as e:
             print("iface_macs:", type(e).__name__, flush=True)
-        threading.Thread(target=mem.run, args=(Handler.srtla, Handler.netchoice, Handler.cams), daemon=True).start()
+        threading.Thread(target=mem.run, args=(Handler.srtla, Handler.netchoice, Handler.cams, Handler.wifi, Handler.names), daemon=True).start()
     Handler.twitch = TwitchNotifier(TwitchStore(os.path.join(args.state, "twitch.json")), Handler.djisvc, Handler.cams, Handler.send, chat=TwitchChat(paths=Handler.chatpaths), demo=args.demo)
     Handler.twitchlogin = TwitchLogin(os.path.join(args.state, "twitch-login.json"), demo=args.demo, paths=Handler.chatpaths)
     Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
