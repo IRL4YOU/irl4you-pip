@@ -3690,7 +3690,7 @@ class SwUpdate:
     API = "https://api.github.com/repos/IRL4YOU/irl4you-pip/releases?per_page=30"
     STATUS = "/run/pipbox-swupdate/status.json"
     BACKUP = "/var/lib/pipbox-backup"
-    STAGE = "Beta"
+    STAGE = ""
     CHANGELOG_MAX = 600_000          # die ganze Datei (heute rund 130 KB; früher nur die ersten 60 KB: ältere Versionen fehlten schon)
     HISTORY_TTL = 30 * 60
 
