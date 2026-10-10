@@ -93,13 +93,20 @@ und behält ihn bei sich, die Box speichert nur einen Fingerabdruck davon.
   (`/vip`, `/mod`, `/raid`, `/marker`, `/title`, `/game`). Ein zweiter Browser des Streamers (zum Beispiel das Handy):
   **Ich bin der Streamer** antippen und bei Twitch **dasselbe Konto** bestätigen (höchstens fünf Browser).
   **Abmelden** (Zahnrad) löscht alle Schlüssel.
-- **In jedem anderen Browser** (zum Beispiel bei einem Moderator, der dir bei den Kameras hilft und den Link zur Box hat)
-  kann man den Chat nur **lesen**. Schreiben und Moderieren sind aus. Die Einstellungen für Kameras und die Box darf er
-  weiter benutzen.
-- **Moderator:** **Als Moderator anmelden** antippen und bei Twitch mit dem **eigenen Konto** bestätigen. Er bekommt nur Moderatorenrechte
-  (Schreiben, Löschen, Timeout, Bann, `/clear`, `/slow`, `/followers`, `/subscribers`, `/emoteonly`, `/announce`) und darf nur,
-  was er bei Twitch im Kanal als Moderator darf. Die Befehle des Kanalinhabers bleiben für ihn gesperrt. Seine Anmeldung liegt
-  getrennt von der des Streamers auf der Box (höchstens zwölf Moderatoren), **Abmelden** löscht nur seine eigene.
+- **In jedem anderen Browser** (zum Beispiel bei einem Helfer, der dir bei den Kameras hilft und den Link zur Box hat) kann man den Chat
+  zunächst nur **lesen**. Schreiben und Moderieren sind aus. Die Einstellungen für Kameras und die Box darf er weiter benutzen.
+  Wer mehr will, meldet sich **mit dem eigenen Twitch-Konto** an. Es gibt drei Wege, je nachdem, wer er ist:
+  - **Als Zuschauer anmelden:** ganz normale Anmeldung wie bei einem Zuschauer. Er darf im Chat **schreiben** (als er selbst),
+    sonst nichts. Bei Twitch werden dafür nur die Chat-Rechte abgefragt, keine zum Moderieren.
+  - **Als Moderator anmelden:** zusätzlich die Moderatorenrechte (Löschen, Timeout, Bann, `/clear`, `/slow`, `/followers`,
+    `/subscribers`, `/emoteonly`, `/announce`). Er darf nur, was er bei Twitch im Kanal als Moderator darf. Die Box fragt bei
+    Twitch nach (mit dem Konto des Streamers, höchstens alle fünf Minuten), ob er im Kanal **wirklich Moderator** ist; wenn nicht,
+    bleibt er Zuschauer. Kann die Box nicht nachfragen (zum Beispiel wenn der Chat nicht der eigene Kanal des Streamers ist),
+    gelten die angemeldeten Rechte, und Twitch lehnt unerlaubte Aktionen selbst ab. Die Befehle des Kanalinhabers bleiben gesperrt.
+    Wer sich zuerst als Zuschauer angemeldet hat, kann später **Moderation einschalten** (die Rechte kommen dazu).
+  - **Ich bin der Streamer:** nur für den Streamer (zum Beispiel am Handy): Twitch muss **dasselbe Konto** wie das der Box bestätigen.
+  Die Anmeldung jedes Helfers liegt getrennt von der des Streamers auf der Box (höchstens zwölf Browser), **Abmelden** (Zahnrad)
+  löscht nur seine eigene.
 - Ein Fremder, der sich als „Ich bin der Streamer“ ausgeben will, scheitert: Die Box übernimmt die Anmeldung nur, wenn Twitch
   **dasselbe Konto** wie das des Streamers bestätigt. Das Konto der Box ersetzt er damit nie.
 
