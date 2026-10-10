@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.200 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Vorschau des gesendeten Bildes, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
+**Version 0.9.201 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Vorschau des gesendeten Bildes, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
 
 > **Beta heißt:** Es läuft im Alltag, aber noch nicht alles ist über lange Zeit und unterwegs geprüft (siehe "Was noch fehlt oder ungetestet ist"). Neue Versionen gibt es oft; zurück auf eine frühere Version geht in der Oberfläche.
 
@@ -14,7 +14,16 @@ Terminal auf der Box (SSH oder Tastatur). Nicht während einer Übertragung inst
 **Schritt 1: BELABOX-Passwort.** Hat die BELABOX noch kein Passwort (frisches Image), zuerst in der BELABOX-Oberfläche
 (`http://<Adresse der Box>/`) eines festlegen. Die Oberfläche dieses Pakets meldet sich mit demselben Passwort an; einen eigenen Setup-Code gibt es nicht. Mit dem Haken "Angemeldet bleiben" bleibt die Anmeldung 30 Tage bestehen, auch über Updates hinweg.
 
-**Schritt 2: Installieren.** Auf der Box im Terminal:
+**Schritt 2: Installieren.** Auf der Box im Terminal, alles in einem Befehl: Er lädt das Paket, aktualisiert zuerst das Grundsystem
+(nur ein Fortschrittsbalken, die Paketliste steht im Protokoll), installiert dann die IRL4YOU BOX (eine Zeile je Schritt) und meldet am
+Ende „Alles fehlerfrei installiert“ oder die Hinweise, die es gab. Das vollständige Protokoll liegt danach in `~/install-ausgabe.txt`.
+
+```sh
+cd /tmp && rm -rf irl4you-pip-main irl4you-pip.tar.gz && wget -q -O irl4you-pip.tar.gz https://github.com/IRL4YOU/irl4you-pip/archive/refs/heads/main.tar.gz && tar xzf irl4you-pip.tar.gz && cd irl4you-pip-main && sudo sh install/setup.sh
+```
+
+Ohne das Systemupdate (nur das Zusatzpaket): `sudo sh install/setup.sh --ohne-systemupdate`. Bringt das Systemupdate einen neuen Kernel mit,
+sagt das Skript am Ende, dass die Box neu gestartet werden soll (`sudo reboot`). Wer es klassisch und mit der ganzen Ausgabe möchte:
 
 ```sh
 cd /tmp
