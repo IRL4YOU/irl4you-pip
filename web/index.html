@@ -629,6 +629,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
       <div class="row" style="justify-content:flex-start"><span class="big" id="livestate">–</span><span id="liveup" class="liveup" hidden title="Gesamter Upload über die gewählten Netze"></span></div>
       <div id="swapbar" hidden><div class="sech" style="margin:12px 0 6px">Hauptbild</div><div class="seg" id="swapbtns" role="group" aria-label="Hauptbild wählen"></div></div>
       <div id="livewhy" class="ph"></div>
+      <div id="livehint" class="pending" hidden><span>Live geht erst, wenn der Bildaufbau fertig ist: Hauptkamera wählen und „Bildaufbau speichern“.</span><button type="button" id="live_topipe" class="warnbtn">Zum Bildaufbau</button></div>
       <div id="livepending" class="pending" hidden><span id="livepending_t"></span> <button type="button" id="live_restart" class="warnbtn">Stream neu starten</button><button type="button" id="live_ignore" class="sec">Später</button></div>
       <div id="liveerr" class="err"></div>
       <div id="livehealth" class="livehealth"></div>
@@ -2476,7 +2477,8 @@ async function sendLoad(){
     else st.hidden=true;
   }
   const why=[]; if(d.state==="refused"&&d.message) why.push(d.message);
-  if(!d.active) why.push(...d.reasons);
+  $("livehint").hidden=!(!d.active&&d.no_layout);                                  // Kamera hinzugefügt, aber noch kein Bildaufbau gespeichert: Live ist grau, hier steht der Grund mit Weg dorthin
+  if(!d.active) why.push(...d.reasons.filter(r=>!(d.no_layout&&r==="Kein Bildaufbau gespeichert")));
   if(d.active&&d.failover&&d.failover.waiting) why.push((d.failover.inactive||[]).length?"Keine aktive Kamera sendet, warte auf ein Signal":"Keine Kamera sendet, warte auf ein Signal");
   else if(d.active&&d.failover&&d.failover.degraded){ const nm=k=>(camsByKey[k]||{}).name||k; why.push(`Notbetrieb: es senden ${d.failover.layout.map(nm).join(", ")} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)`); }
   if(d.active&&d.always_note) why.push(d.always_note);
@@ -2492,6 +2494,7 @@ async function askRestart(){
   $("rdlg_t").textContent="Geändert: "+pend.join(", ")+". Das gilt erst nach einem Neustart der Sendung.";
   $("rdlg").showModal();
 }
+$("live_topipe").addEventListener("click",()=>{ const c=$("pipecard"); c.open=true; c.scrollIntoView({behavior:"smooth",block:"start"}); });
 $("live_ignore").addEventListener("click",()=>{ pendIgnored=(sendData&&sendData.pending||[]).join("|"); $("livepending").hidden=true; });   // bis sich etwas Neues ändert
 $("rdlg_go").addEventListener("click",async()=>{ $("rdlg").close(); await restartNow(); });
 async function restartNow(){
