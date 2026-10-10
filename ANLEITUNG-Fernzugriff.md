@@ -80,3 +80,7 @@ Der Dienst der Oberfläche läuft ohne Root-Rechte und darf Tailscale nur lesen.
 Root-Helfer (`pipbox-remote`), der nur feste Stichworte annimmt (installieren, verbinden, trennen, freigeben, Freigabe beenden,
 abmelden) und nie Adressen oder Befehle aus der Oberfläche ausführt. Die Oberfläche wird mit `tailscale serve` (HTTPS, nur im
 privaten Netz) auf `127.0.0.1:8780` weitergeleitet.
+
+---
+
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de)
