@@ -484,6 +484,7 @@ details.card[hidden]{display:none!important}
 #pb_awake[aria-pressed=true]{background:var(--accent);color:#0f172a;border-color:var(--accent)}
 .foot{text-align:center;font-size:12px;color:var(--muted);padding:18px 16px 28px}
 .err{color:var(--crit);font-size:13px;min-height:18px;margin-top:6px}
+.err.okmsg{color:var(--ok)}.err.okmsg::before{content:"\2713  "}
 /* ---- Designs (Optionen > Design): "Standard" ist das bisherige Aussehen ohne Zusatz; Klar und Kompakt setzen html[data-design] und überschreiben Farben, Schrift, Abstände und Formen.
    Die Regeln stehen in :where(), haben also genau die Gewichtung der ursprünglichen Regel und kommen danach: Zustände wie "ausgewählt", "Hauptbild", "stumm" oder "Fehler" behalten ihre Farben. ---- */
 html[data-design]{-webkit-text-size-adjust:100%}
@@ -3082,10 +3083,17 @@ $("twb_cancel").addEventListener("click",()=>twbDo("cancel"));
 $("twb_out").addEventListener("click",()=>twbDo("logout"));
 twbLoad();
 twAccLoad();
+let chatOkTimer=0;
 $("chat_form").addEventListener("submit",async e=>{
   e.preventDefault(); const i=$("chat_in"), err=$("chat_err"), t=i.value.trim(); if(!t) return;
-  $("chat_send").disabled=true; err.textContent="";
-  try{ await srtlaCall("POST","/api/chat/send",{text:t}); i.value=""; }catch(x){ err.textContent=x.message; }
+  $("chat_send").disabled=true; err.textContent=""; err.classList.remove("okmsg");
+  try{
+    const r=await srtlaCall("POST","/api/chat/send",{text:t}); i.value="";
+    if(t[0]==="/"&&r&&r.message){                                                // Befehl: die Antwort (zum Beispiel "VIP vergeben: Name") bleibt einige Sekunden sichtbar
+      err.textContent=r.message; err.classList.add("okmsg");
+      clearTimeout(chatOkTimer); chatOkTimer=setTimeout(()=>{ if(err.classList.contains("okmsg")){ err.textContent=""; err.classList.remove("okmsg"); } },8000);
+    }
+  }catch(x){ err.textContent=x.message; }                                       // bei einem Fehler steht hier, was Twitch ablehnt
   $("chat_send").disabled=false; i.focus();
 });
 
