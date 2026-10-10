@@ -58,4 +58,4 @@ mehrere Netze gleichzeitig) → SRTLA-Server.
 - Frische Installation auf weiteren Boxen und Images (am 10. Oktober 2026 lief `setup.sh` auf einer frischen Karte einer Orange Pi 5 Plus fehlerfrei; die Namen der Netzwerkkarten (`eth0`, `eth1`) können auf einer neuen Karte vertauscht sein).
 - Feinabstimmung der Mindestbitrate für schwankende Mobilfunkleitungen.
 
-Anleitungen und weitere Themen: [irl4you.de](https://irl4you.de), zur BOX [irl4you.de/irl4you-box.html](https://irl4you.de/irl4you-box.html).
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de), zur BOX [irl4you.de/irl4you-box.html](https://irl4you.de/irl4you-box.html).
