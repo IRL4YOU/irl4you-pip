@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.220 (Beta)
+- **Chat: Abzeichen als kleine Symbole statt Wörter (Wunsch des Nutzers).** „STREAMER“ war viel zu breit und verbrauchte Platz. Jetzt steht ein Symbol im farbigen Quadrat: ● Streamer (rot), ⚔ Moderator (grün), ◆ VIP (pink, die Raute), ★ Abonnent (lila), ✱ Twitch-Mitarbeiter, ✔ Partner. Der Name steht weiter als Hinweis beim Darüberfahren. Jedes Abzeichen ist etwa 16 px breit statt bis zu 70 px.
+- Keine neuen Texte. Tests: `tools/test_ui_layout.py` 37.
+
 ## 0.9.219 (Beta)
 - **Nach der Anmeldung verschwindet die Anzeige sanft (Wunsch des Nutzers).** Sobald die Anmeldung bei Twitch durch ist, bleiben Code und „Angemeldet als …“ etwa 3,5 Sekunden stehen und blenden dann aus (Aus- und Einklappen über 0,5 bis 0,6 s). Danach ist nur noch der Chat zu sehen, auch wenn die Überschrift ausgeblendet ist. Beim Laden einer schon angemeldeten Box erscheint nichts davon.
 - **Chat am Rechner: Zeilen schmaler, Text mittig (Meldung des Nutzers).** Mit eingeschalteter Moderation war jede Zeile 41 px hoch und der Text saß oben (8 px darüber, 15 px darunter), weil der ⋯-Knopf 32 px hoch war und der Zeitstempel eine Zeilenhöhe von 1,9 hatte. Jetzt: ⋯ ist 20 px hoch (nicht höher als die Textzeile), Zeitstempel 1,6, Zeilenabstand 1,3 statt 1,45, Emotes dehnen die Zeile nicht, Innenabstand 3 px oben und 2 px unten statt 7 px. Eine einzeilige Nachricht ist etwa 25 statt 41 px hoch, es passen rund 60 % mehr Nachrichten ins Fenster. Handy unverändert.
