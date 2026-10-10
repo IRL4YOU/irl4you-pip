@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.218 (Beta)
+- **Übersetzungen nachgetragen.** Die 9 Texte der Zuschauer-/Moderator-Anmeldung und der Kanal-Eingabe (0.9.213 bis 0.9.215) sind jetzt in allen 12 weiteren Sprachen da (Spanisch, Französisch, Italienisch, Portugiesisch, Niederländisch, Polnisch, Türkisch, Russisch, Chinesisch, Japanisch, Koreanisch, Thai). Maschinell übersetzt, wie die übrigen. Rückstand: 0.
+- Vorgehen ab jetzt (Wunsch des Nutzers): neue Texte je Version nur auf Deutsch und Englisch; die anderen Sprachen kommen im Leerlauf in einem Rutsch.
+- Tests: `tools/test_i18n.py` grün.
+
 ## 0.9.217 (Beta)
 - **Das Feld „Kanal (Konto, auf dem gestreamt wird)“ steht in den Einstellungen, nicht dauerhaft oben (Wunsch des Nutzers).** Es ist jetzt in den Chat-Einstellungen (Zahnrad) mit „Speichern“, dasselbe Feld wie bei der Akku-Warnung. Oben im Chat erscheint es **nur, solange der Kanal noch fehlt** („Zuerst eintragen, dann anmelden.“); ist er eingetragen, verschwindet die Zeile und kostet keinen Platz. Beide Felder zeigen denselben Wert und speichern dieselbe Einstellung. Nie vorbelegt.
 - Tests: `tools/test_ui_layout.py` 33.
