@@ -67,7 +67,7 @@ class FakeTwitch(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/oauth2/validate" and self.headers.get("Authorization", "").startswith("OAuth AT"):
-            return self._send(200, {"client_id": "x", "login": FakeTwitch.state.get("login", "Streamer"), "scopes": FakeTwitch.state.get("scopes", ["chat:read", "chat:edit"]), "user_id": "42", "expires_in": 14000})
+            return self._send(200, {"client_id": "x", "login": FakeTwitch.state.get("login", "Streamer"), "scopes": FakeTwitch.state.get("scopes", ["chat:read", "chat:edit"]), "user_id": FakeTwitch.state.get("user_id", "42"), "expires_in": 14000})
         self._send(401, {"status": 401, "message": "invalid access token"})
 
 
@@ -332,7 +332,8 @@ KEY = "A" * 20 + "b" * 20                                                       
 KEY2 = "Z" * 40                                                                  # ein anderer Browser
 
 
-class Moderation(Base):
+class HelixBase(Base):
+    """Fake-Twitch (Anmeldung) und Fake-Helix (Schnittstelle) auf 127.0.0.1."""
     def setUp(self):
         super().setUp()
         FakeHelix.log, FakeHelix.status = [], 204
@@ -355,6 +356,8 @@ class Moderation(Base):
         self.wait(tl, "angemeldet")
         return server.TwitchMod(st, tl, api_base="http://127.0.0.1:%d/helix/" % self.hx.server_address[1], client_id="testclient"), tl
 
+
+class Moderation(HelixBase):
     def test_needs_sign_in_and_the_moderation_rights(self):
         st = server.TwitchStore(os.path.join(self.dir, "twitch.json"))
         tl = self.make()
@@ -579,6 +582,142 @@ class Moderation(Base):
             with self.assertRaises(ValueError):
                 go(bad)
         self.assertEqual(chat.sent, [])                                                  # nie als Text im Chat
+
+
+KEY3 = "Y" * 40
+KEY4 = "X" * 40
+
+
+class Moderators(HelixBase):
+    """Moderatoren melden sich in ihrem Browser mit dem eigenen Twitch-Konto an: eigene Rechte, nie das Konto des Streamers."""
+
+    def setUp(self):
+        super().setUp()
+        self.sessions = server.ModSessions(self.dir, id_base=self.base, client_id="testclient", clock=lambda: self.now[0], sleep=lambda s: time.sleep(0.01))
+
+    def box(self, channel="bob"):
+        FakeTwitch.state["login"], FakeTwitch.state["user_id"] = "Streamer", "42"
+        m, tl = self.mod(channel=channel, everything=True)
+        self.accounts = server.TwitchAccounts(tl, self.sessions)
+        return m, tl
+
+    def moderator(self, key, login="Modfrau", uid="99"):
+        FakeTwitch.state["login"], FakeTwitch.state["user_id"] = login, uid
+        self.sessions.start(key)
+        s = self.sessions.get(key)
+        self.wait(s, "angemeldet")
+        return s
+
+    def until(self, fn, secs=5):
+        end = time.time() + secs
+        while time.time() < end and not fn():
+            time.sleep(0.02)
+        self.assertTrue(fn())
+
+    def test_a_moderator_asks_only_for_moderator_rights(self):
+        m, tl = self.box()
+        self.moderator(KEY2)
+        dev = [f for p, f in FakeTwitch.state["seen"] if p == "/oauth2/device"][-1]
+        got = dev["scopes"].split()
+        for sc in ("chat:read", "chat:edit", "user:write:chat", "moderator:manage:banned_users", "moderator:manage:chat_messages",
+                   "moderator:manage:chat_settings", "moderator:manage:announcements"):
+            self.assertIn(sc, got)
+        for sc in server.TwitchLogin.CMD_SCOPES.split() + server.TwitchLogin.EVENT_SCOPES.split():
+            if sc.startswith("channel:") or sc.startswith("moderator:read"):
+                self.assertNotIn(sc, got)                                               # nichts vom Kanalinhaber, keine Ereignisse
+
+    def test_each_browser_gets_its_own_account(self):
+        m, tl = self.box()
+        s = self.moderator(KEY2)
+        self.assertEqual(self.accounts.pick(KEY), ("owner", tl))                        # der Browser des Streamers
+        self.assertEqual(self.accounts.pick(KEY2), ("mod", s))                          # ein Moderator mit eigener Anmeldung
+        self.assertEqual(self.accounts.pick(KEY3), ("none", None))                      # nur den Link: nur lesen
+        self.assertEqual(self.accounts.pick(None), ("none", None))
+        a, b, c = self.accounts.status(KEY), self.accounts.status(KEY2), self.accounts.status(KEY3)
+        self.assertEqual((a["role"], a["login"], a["mod"], a["box_login"]), ("owner", "streamer", True, "streamer"))
+        self.assertEqual((b["role"], b["login"], b["mod"], b["box_login"]), ("mod", "modfrau", True, "streamer"))
+        self.assertEqual((c["role"], c["state"], c["login"], c["mod"], c["scopes"], c["box_login"]), ("none", "aus", "", False, [], "streamer"))
+        self.assertNotIn("AT1", json.dumps([a, b, c]))
+        tl2 = self.make()
+        self.assertEqual(server.TwitchAccounts(tl2, self.sessions).pick(KEY3)[0], "none")   # ohne Streamer-Schlüssel auch nach einem Neustart nicht
+
+    def test_before_anybody_signed_in_the_first_browser_becomes_the_streamer(self):
+        tl = self.make()
+        acc = server.TwitchAccounts(tl, self.sessions)
+        self.assertEqual(acc.pick(KEY3)[0], "owner")
+
+    def test_a_moderator_moderates_and_writes_with_the_own_account_only(self):
+        m, tl = self.box()
+        s = self.moderator(KEY2)
+        view = m.view(s)
+        FakeHelix.log.clear()
+        view.do({"action": "ban", "user_id": "5"}, KEY2)
+        view.do({"action": "slow"}, KEY2)
+        view.do({"action": "announce", "text": "Hallo"}, KEY2)
+        calls = [x for x in FakeHelix.log if x[0] != "GET"]                              # (der Name des Kanals wird einmal nachgeschlagen)
+        self.assertEqual(calls[0][1], "/helix/moderation/bans?broadcaster_id=777&moderator_id=99")   # Kanal des Streamers, Moderator ist er selbst
+        self.assertIn("broadcaster_id=777&moderator_id=99", calls[1][1])
+        for act in ("vip", "mod", "raid", "marker", "title", "game"):
+            with self.assertRaises(ValueError) as c:
+                view.do({"action": act, "user_id": "5", "text": "x"}, KEY2)
+            self.assertEqual(str(c.exception), server.TwitchMod.ERR_OWNER, act)       # nichts vom Kanalinhaber
+        chat = FakeChat()
+        snd = server.TwitchSender(m.store, chat=chat, clock=lambda: self.now[0], mod=m)
+        self.now[0] += 2
+        FakeHelix.log.clear()
+        self.assertEqual(snd.say_as(view, server.HelixChat(s, view), "Hallo Chat", KEY2)["ok"], True)
+        post = [x for x in FakeHelix.log if x[1] == "/helix/chat/messages"][0]
+        self.assertEqual(json.loads(post[4]), {"broadcaster_id": "777", "sender_id": "99", "message": "Hallo Chat"})   # als er selbst, nicht als Streamer
+        self.assertEqual(chat.sent, [])
+        self.now[0] += 2
+        self.assertEqual(snd.say_as(view, server.HelixChat(s, view), "/clear", KEY2)["message"], "Chat geleert")
+        self.now[0] += 2
+        with self.assertRaises(ValueError) as c:
+            snd.say_as(view, server.HelixChat(s, view), "/vip bob", KEY2)
+        self.assertEqual(str(c.exception), server.TwitchMod.ERR_OWNER)
+
+    def test_signing_in_as_streamer_in_a_new_browser_needs_the_same_twitch_account(self):
+        m, tl = self.box()
+        FakeTwitch.state["login"], FakeTwitch.state["user_id"] = "Streamer", "42"
+        tl.start(mod=True, owner_key=KEY2, claim=True)                                   # das Handy des Streamers
+        self.until(lambda: tl.is_owner(KEY2))
+        self.assertTrue(tl.is_owner(KEY))                                                # der erste Browser bleibt
+        FakeTwitch.state["login"], FakeTwitch.state["user_id"] = "Modfrau", "99"        # jemand mit dem Link bestätigt bei Twitch mit dem eigenen Konto
+        tl.start(mod=True, owner_key=KEY3, claim=True)
+        self.until(lambda: tl.pending is None)
+        self.assertEqual((tl.login(), tl.is_owner(KEY3), tl.is_owner(KEY)), ("streamer", False, True))      # das Konto der Box bleibt
+        self.assertEqual(json.load(open(self.path))["login"], "streamer")                # auch auf der Platte
+        self.assertTrue(FakeTwitch.state.get("revoked"))                                 # der fremde Zugang wurde gleich widerrufen
+        st = self.accounts.status(KEY3)
+        self.assertEqual((st["state"], st["error"]), ("fehler", server.TwitchLogin.ERR_NOT_OWNER))
+        self.assertNotEqual(self.accounts.status(KEY4)["state"], "fehler")             # nur der betroffene Browser sieht den Fehler
+
+    def test_logout_of_a_moderator_keeps_the_streamers_account_and_the_files_are_private(self):
+        m, tl = self.box()
+        s = self.moderator(KEY2)
+        files = [n for n in os.listdir(self.dir) if n.startswith("twitch-mod-")]
+        self.assertEqual(len(files), 1)
+        self.assertNotIn(KEY2, files[0])                                                 # nur der Fingerabdruck steht im Dateinamen
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.dir, files[0])).st_mode), 0o600)
+        again = server.ModSessions(self.dir, id_base=self.base, client_id="testclient")  # nach einem Neustart der Box
+        self.assertEqual(again.get(KEY2).login(), "modfrau")
+        self.assertIsNone(again.get(KEY3))
+        self.sessions.logout(KEY2)
+        self.assertEqual([n for n in os.listdir(self.dir) if n.startswith("twitch-mod-")], [])
+        self.assertEqual(self.accounts.pick(KEY2), ("none", None))
+        self.assertTrue(tl.ready())
+
+    def test_not_too_many_moderators(self):
+        m, tl = self.box()
+        self.sessions.MAX = 2
+        self.moderator(KEY2)
+        self.moderator(KEY3)
+        with self.assertRaises(ValueError):
+            self.sessions.start(KEY4)
+        self.sessions.logout(KEY3)
+        self.sessions.start(KEY4)                                                        # frei geworden
+        with self.assertRaises(ValueError):
+            self.sessions.start("zu kurz")
 
 
 class FakeChat:

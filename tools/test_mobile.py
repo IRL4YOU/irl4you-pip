@@ -63,7 +63,7 @@ class MobileFooter(unittest.TestCase):
         foot = foot[:foot.index("}")]
         self.assertNotRegex(foot, r"-?[0-9]+px -?[0-9]+px [0-9]+px [1-9][0-9]*px var\(--shade\)")
         phone = PAGE[PAGE.index("@media(max-width:620px){\n  header{flex-wrap:nowrap"):]
-        self.assertIn("main{padding-left:8px;padding-right:8px}", phone)                  # schmaler Rand am Handy
+        self.assertIn("main{padding:6px 8px 16px", phone)                                 # schmaler Rand am Handy (8 px)
         self.assertIn("header{flex-wrap:nowrap;padding:6px 10px;gap:6px;width:calc(100% - 16px)}", phone)
 
     def test_footer_is_rounded_and_inset_like_the_header(self):
@@ -101,8 +101,9 @@ var els = {};
 function $(id) { return els[id] || (els[id] = {id: id, hidden: false, dataset: {}, offsetHeight: 120, addEventListener: function () {}}); }
 function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function setHtml(el, h) { el.html = h; }
-var document = {documentElement: {style: {setProperty: function () {}, removeProperty: function () {}}}};
+var document = {documentElement: {style: {setProperty: function () {}, removeProperty: function () {}}, classList: {toggle: function () {}, add: function () {}, remove: function () {}, contains: function () { return false; }}}, addEventListener: function () {}, dispatchEvent: function () {}, querySelector: function () { return {style: {}, classList: {toggle: function () {}, add: function () {}, remove: function () {}, contains: function () { return false; }}, addEventListener: function () {}, offsetHeight: 0, getBoundingClientRect: function () { return {height: 0, top: 0}; }}; }, querySelectorAll: function () { return []; }};
 var window = {addEventListener: function () {}};
+function MutationObserver() { this.observe = function () {}; this.disconnect = function () {}; }
 """
 
 
@@ -366,7 +367,9 @@ class Theme(unittest.TestCase):
 
     def test_no_dark_only_colours_for_text_are_left_in_the_footer(self):
         self.assertNotIn("#e2e8f0", PAGE)
-        self.assertNotIn("#f8fafc", PAGE[PAGE.index("</style>") - 0:])
+        body = PAGE[PAGE.index("</style>"):]
+        body = re.sub(r"<svg.*?</svg>", "", body, flags=re.S)                                   # das Logo im Kopf hat feste Markenfarben
+        self.assertNotIn("#f8fafc", body)
 
     def test_button_in_the_header(self):
         self.assertRegex(PAGE, r'<button type="button" class="sec small" id="theme_btn" aria-label="Hell oder dunkel"')
@@ -458,19 +461,18 @@ class HelpTextMarkup(unittest.TestCase):
     def test_messages_and_labelled_texts_are_never_hidden(self):
         self.assertIn('const HLP_SEL=".card .ph:not([id]):not([role])";', PAGE)             # Meldungen haben eine Kennung oder role="status"
 
-    def test_only_on_phones(self):
-        self.assertRegex(PAGE, r"\.ibtn,\.ibrow\{display:none\}")                              # am Rechner kein "i", alle Texte sichtbar
-        phone = re.search(r"@media\(max-width:620px\)\{\.wform\{grid-template-columns:1fr\}.*?\.hlp:not\(\.open\)\{display:none\}\}", PAGE, re.S)
-        self.assertIsNotNone(phone)
-        self.assertIn(".ibtn{display:inline-block", phone.group(0))
+    def test_help_buttons_on_every_screen_and_can_be_switched_off(self):
+        """Stand seit 0.9.212: Das "i" gibt es auch am Rechner (Hilfetexte erst nach Antippen) und lässt sich in den Optionen ausblenden."""
+        self.assertIn(".hlp:not(.open){display:none}", PAGE)
+        self.assertRegex(PAGE, r"\.ibtn\{display:inline-block")
+        self.assertIn("html.nohelp :is(.ibtn,.ibrow,.helpbtn,.hlp){display:none!important}", PAGE)
 
-    def test_the_card_header_stays_clean_and_the_i_sits_inside_the_open_card(self):
-        i = PAGE.index("const card=head.tagName===\"SUMMARY\";")
+    def test_the_i_sits_next_to_the_heading_and_only_while_the_area_is_open(self):
+        i = PAGE.index('let b=head.querySelector(":scope>.ibtn,:scope>.sumh>.ibtn");')
         block = PAGE[i:PAGE.index("b._hlp.push(ph)", i)]
-        self.assertIn('r.className="ibrow"', block)
-        self.assertIn('head.insertAdjacentElement("afterend",r)', block)                      # eigene Zeile unter dem Kartenkopf, nicht im Kopf
-        self.assertNotIn("sumh", block)                                                      # nichts mehr im Kartennamen
-        self.assertIn(".ibrow{display:block", PAGE)
+        self.assertIn('(head.querySelector(":scope>.sumh")||head).appendChild(b);', block)       # in der Kopfzeile hinter der Überschrift
+        self.assertNotIn('"ibrow"', block)                                                      # keine eigene Zeile darunter
+        self.assertIn("details:not([open])>summary .ibtn{display:none}", PAGE)                  # nur bei aufgeklapptem Bereich
 
     def test_the_i_button_does_not_fold_the_card_and_is_labelled(self):
         i = PAGE.index('document.addEventListener("click",e=>{\n    const b=e.target.closest&&e.target.closest(".ibtn")')

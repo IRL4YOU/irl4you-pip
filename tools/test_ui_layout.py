@@ -187,6 +187,20 @@ class ImportProgress(unittest.TestCase):
         i = PAGE.index('$("chat_form").addEventListener("submit"')
         self.assertIn("catch(x){ err.textContent=x.message; }", PAGE[i:i + 1200])
 
+    def test_help_button_sits_next_to_the_heading_and_only_while_open(self):
+        """Das "i" steht in der Kopfzeile hinter der Überschrift (keine eigene Zeile darunter) und nur bei aufgeklapptem Bereich (Wunsch des Nutzers)."""
+        self.assertIn('(head.querySelector(":scope>.sumh")||head).appendChild(b);', PAGE)
+        self.assertNotIn('r.className="ibrow"', PAGE)
+        self.assertIn("details:not([open])>summary .ibtn{display:none}", PAGE)
+
+    def test_twitch_roles_per_browser_in_the_page(self):
+        """Ohne eigene Anmeldung: nur lesen; Moderator meldet sich selbst an; der Streamer weist sich im neuen Browser aus."""
+        self.assertIn('id="tw_acc_owner"', PAGE)
+        self.assertIn('twAcc&&twAcc.role==="none"?{action:"start",as:"mod"}:{action:"start",all:true}', PAGE)
+        self.assertIn('a.role==="none"&&!!a.box_login', PAGE)
+        self.assertIn('hdr["x-pb-owner"]=pbOwnerKey()', PAGE)
+        self.assertIn('"x-pb-owner":pbOwnerKey()', PAGE)                                    # auch der Chat-Abruf nennt den Schlüssel
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
