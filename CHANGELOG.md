@@ -2,6 +2,10 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 0.9.227 (Beta)
+- **DJI-Kamera: „Netze suchen“ zeigt jetzt den Grund an.** Bisher stand dort nur „keine Netze gefunden“; die eigentliche Meldung erschien nur in der WLAN-Karte weiter oben. Jetzt steht sie direkt unter dem Knopf: **keine WLAN-Karte** (zum Beispiel Box ohne WLAN-Stick, Kamera hängt an einer Netzwerkkarte wie `eth1`; Name und Passwort lassen sich dann von Hand eintragen), Karte ist das Kameranetz, ein Hotspot läuft darauf, eine Sendung oder andere Aktion läuft, oder der WLAN-Helfer fehlt.
+- Tests: `tools/test_ui_layout.py` (neuer Test für die Meldung in der Kamera-Karte). Neue Texte nur Deutsch und Englisch.
+
 ## 0.9.226 (Beta)
 - **README: Die Osmo Pocket 3 steht jetzt in der Liste der getesteten Kameras** (Wunsch des Nutzers; sie fehlte im Satz zum Teststand). Dort sind jetzt Osmo Action 4 (zwei), Action 5 Pro, Action 6, GoPro Hero 8 und die Osmo Pocket 3 genannt. Keine Programmänderung.
 
