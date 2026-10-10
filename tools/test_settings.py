@@ -186,7 +186,7 @@ class Export(unittest.TestCase):
 
     def test_what_is_in_and_what_is_never_in_it(self):
         doc = export_with_wifi(self.box, False)["document"]
-        self.assertEqual({"cameras", "pipeline", "srtla", "autostart", "names", "dji", "hotspots", "wifi"}, set(doc) - {"format", "version", "created", "box_version", "secrets"})
+        self.assertEqual({"cameras", "pipeline", "srtla", "autostart", "names", "dji", "hotspots", "wifi", "ifaces"}, set(doc) - {"format", "version", "created", "box_version", "secrets"})
         text = json.dumps(doc).lower()
         for never in ("sessions", "ssh", "token", "login", "pass_hash", "bela"):
             self.assertNotIn('"%s' % never, text)
@@ -218,6 +218,47 @@ class RoundTrip(unittest.TestCase):
         b = make_box(**kw)
         b.wifi.import_saved = mock.Mock(return_value="2 WLAN-Netze eingespielt")
         return b
+
+    def test_network_cards_are_matched_by_mac_when_their_names_differ(self):
+        """Neue Karte, vertauschte Namen (eth0 <-> eth1, am 10. Oktober 2026 geschehen): Die Einstellungen folgen der MAC-Adresse, nicht dem Namen."""
+        macs_old = {"eth0": "aa:bb:cc:00:00:01", "usb0": "aa:bb:cc:00:00:02"}
+        with mock.patch.object(server.SettingsTransfer, "local_macs", staticmethod(lambda: macs_old)):
+            out = export_with_wifi(self.a, True, PW)["document"]
+        self.assertEqual(self.a.t.read_document(out, PW)[0]["ifaces"], macs_old)           # die (verschlüsselte) Sicherung trägt die MAC-Adressen
+        b = self.fresh()
+        macs_new = {"eth0": "aa:bb:cc:00:00:02", "usb0": "aa:bb:cc:00:00:01"}                  # dieselben Karten, Namen getauscht
+        with mock.patch.object(server.SettingsTransfer, "local_macs", staticmethod(lambda: macs_new)), \
+                mock.patch.object(server, "iface_ips", lambda: [{"iface": "eth0", "ip": "192.168.1.5"}, {"iface": "usb0", "ip": "192.168.20.2"}]):
+            res = b.t.apply(out, PW)
+        self.assertEqual(b.t.iface_map, {"eth0": "usb0", "usb0": "eth0"})
+        self.assertEqual(res["results"][0]["id"], "ifaces")                                  # gesagt wird es auch
+        self.assertIn("eth0 → usb0", res["results"][0]["message"])
+        cam = next(c for c in b.cams.cams if c["key"] == "cam-handy")
+        self.assertEqual(cam.get("iface"), "eth0")                                           # die Kamera hing an der Karte mit der MAC ...02: heute eth0
+
+    def test_no_change_when_names_already_match_or_the_backup_has_no_macs(self):
+        b = self.fresh()
+        same = {"eth0": "aa:bb:cc:00:00:01", "usb0": "aa:bb:cc:00:00:02"}
+        with mock.patch.object(server.SettingsTransfer, "local_macs", staticmethod(lambda: same)):
+            doc = b.t.make_document(False)
+            self.assertEqual(b.t._iface_map(doc), {})                                         # gleiche Namen: nichts zu tun
+            doc.pop("ifaces")
+            self.assertEqual(b.t._iface_map(doc), {})                                         # alte Sicherung ohne MACs: wie bisher
+        self.assertEqual(b.t._iface_map({"ifaces": "kaputt"}), {})
+        self.assertEqual(b.t._iface_map({"ifaces": {"eth9": "aa:bb:cc:00:00:99"}}), {})        # Karte gibt es hier nicht: ausgelassen wie bisher
+
+    def test_remap_swaps_all_places_at_once(self):
+        doc = {"cameras": [{"name": "a", "key": "k", "role": "pip", "iface": "eth0"}], "camnet": {"iface": "eth1"},
+               "srtla": {"settings": {"uplinks": ["eth0", "eth1", "wlan0"], "min_share": {"eth0": 10, "eth1": 20}}},
+               "hotspots": {"wlan1": {"ssid": "x"}}, "dji": [{"addr": "AA", "wifi_ifname": "eth1"}], "names": {"net:eth0": "Router", "usb:1": "Stick"}}
+        out = server.SettingsTransfer._remap_ifaces(doc, {"eth0": "eth1", "eth1": "eth0"})
+        self.assertEqual(out["cameras"][0]["iface"], "eth1")
+        self.assertEqual(out["camnet"]["iface"], "eth0")
+        self.assertEqual(out["srtla"]["settings"]["uplinks"], ["eth1", "eth0", "wlan0"])
+        self.assertEqual(out["srtla"]["settings"]["min_share"], {"eth1": 10, "eth0": 20})
+        self.assertEqual(out["dji"][0]["wifi_ifname"], "eth0")
+        self.assertEqual(out["names"], {"net:eth1": "Router", "usb:1": "Stick"})
+        self.assertEqual(doc["cameras"][0]["iface"], "eth0")                                  # das Original bleibt unverändert
 
     def test_progress_is_reported_part_by_part_and_ends_done(self):
         """Fortschrittsanzeige beim Einspielen: Der Server meldet, welcher Teil dran ist (Wunsch des Nutzers: nicht denken, dass nichts passiert)."""
