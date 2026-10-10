@@ -102,7 +102,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 .cam .top .cr{flex:0 0 auto;margin-left:auto;white-space:nowrap}
 .cam .top .dyn{display:inline-block;min-width:9.6em;text-align:right;font-variant-numeric:tabular-nums}
 .chatbox .cm.gone .cb{text-decoration:line-through;color:var(--muted)}
-.chatbox .bdg{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;line-height:1;padding:2px 4px;margin-right:5px;border-radius:4px;vertical-align:1px;color:#0f172a}
+.chatbox .bdg{display:inline-block;box-sizing:border-box;min-width:16px;text-align:center;font-size:10px;font-weight:700;line-height:1;padding:2px 3px;margin-right:5px;border-radius:4px;vertical-align:1px;color:#0f172a}
 .chatbox .bdg.broadcaster{background:#e91916}.chatbox .bdg.moderator{background:#00ad03}.chatbox .bdg.vip{background:#e005b9;color:#fff}
 .chatbox .bdg.subscriber,.chatbox .bdg.founder{background:#9147ff;color:#fff}.chatbox .bdg.staff,.chatbox .bdg.partner{background:#6b7280;color:#fff}
 .chatbox .cm .mm{opacity:.5;border:0;background:transparent;color:var(--text);cursor:pointer;font-size:18px;line-height:1;padding:0 10px;margin:0 -4px 0 0;min-width:36px;min-height:20px;height:20px;align-self:center}      /* Am Rechner nicht höher als die Textzeile: der Knopf dehnte die Zeile (Text saß oben, unten Luft) */
@@ -3147,7 +3147,7 @@ $("chat_form").addEventListener("submit",async e=>{
     if(i.dataset.opt==="sig"&&i.checked){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); actx.resume(); }catch(x){} }      // iOS: der Ton darf nur in einer Geste starten
     try{ localStorage.setItem(OPT_KEY,JSON.stringify(opt)); }catch(x){} paintOpt(); });
   paintOpt();
-  const BADGE_TXT={broadcaster:"STREAMER",moderator:"MOD",vip:"VIP",subscriber:"SUB",founder:"SUB",staff:"STAFF",partner:"PARTNER"};
+  const BADGE_TXT={broadcaster:"\u25CF",moderator:"\u2694\uFE0E",vip:"\u25C6",subscriber:"\u2605",founder:"\u2605",staff:"\u2731",partner:"\u2714\uFE0E"};            // ein Zeichen im farbigen Quadrat statt eines Wortes (der Name steht beim Darüberfahren): "STREAMER" verbrauchte viel Platz
   const BADGE_TIP={broadcaster:"Streamer",moderator:"Moderator",vip:"VIP",subscriber:"Abonnent",founder:"Abonnent (Gründer)",staff:"Twitch-Mitarbeiter",partner:"Partner"};
   let modOn=false, me="";
   const MAXLINES=200, EMOTE="https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/1.0";
