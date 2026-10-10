@@ -249,6 +249,15 @@ class ImportProgress(unittest.TestCase):
         self.assertIn("min-width:16px;text-align:center;font-size:10px", PAGE)
         self.assertIn("bg.title=BADGE_TIP[bn]||bn", PAGE)
 
+    def test_live_card_shows_state_then_signal_graph_then_megabits_and_phone_rows_are_calmer(self):
+        """Karte "Live": erst "Live", dann der Verlauf (Pulsanzeige), dann die Megabit-Zahl, einheitlich; Handy: Wechsel hell/dunkel zwischen den Chat-Zeilen nur leicht."""
+        self.assertIn("if(sig.parentNode!==up.parentNode) up.before(sig); if(dots.parentNode!==gear.parentNode) gear.before(dots);", PAGE)
+        self.assertIn("setTimeout(placeSig,0);", PAGE)
+        self.assertIn("#livebox .row .sig .sgv{display:none}", PAGE)
+        i = PAGE.index("@media(max-width:620px){\n  .chatbox{max-height:56vh")
+        self.assertIn(".chatbox .cm.alt{background:color-mix(in srgb,var(--text) 3%,transparent)}", PAGE[i:i + 1500])
+        self.assertIn(".chatbox .cm.alt{background:color-mix(in srgb,var(--text) 6%,transparent)", PAGE)      # Rechner unverändert
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
