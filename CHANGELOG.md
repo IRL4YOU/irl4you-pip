@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.215 (Beta)
+- **Chat: das Feld „Kanal (Konto, auf dem gestreamt wird)“ steht oben im Chat (Meldung des Nutzers).** In 0.9.214 stand dort nur eine Textzeile; der Nutzer sah nicht, dass es dieses Feld gibt und wo er es ändert. Jetzt ist es **dasselbe Feld wie bei der Akku-Warnung** (gleiche Einstellung `channel`), immer sichtbar und änderbar mit „Speichern“, nie vorbelegt. Ist es leer, steht „Zuerst eintragen, dann anmelden.“ und der Anmelde-Knopf erscheint erst danach. Der Kanal legt weiter fest, wer Streamer ist (0.9.214).
+- Tests: `tools/test_ui_layout.py` 32. 1 neuer Text nur auf Deutsch und Englisch (Rückstand in den anderen Sprachen: 11).
+
 ## 0.9.214 (Beta)
 - **Der Kanal legt fest, wer Streamer ist (Meldung des Nutzers).** Auf einer leeren Box (zum Beispiel nach dem Abmelden) wurde das Konto der Box, wer sich zuerst anmeldete, auch ein VIP-Konto wie irl4you. Jetzt gilt das Feld **„Kanal (Konto, auf dem gestreamt wird)“** (dasselbe wie bei der Akku-Warnung, `twitch.json`): Nur dieses Konto wird Streamer; ein anderes Konto wird abgelehnt („Das ist nicht das Konto des Streamers dieser Box“), nichts wird gespeichert und der Zugang gleich widerrufen. **Nichts wird vorbelegt:** Ist das Feld leer und niemand angemeldet, steht im Chat ein Eingabefeld „Zuerst eintragen, auf welchem Konto gestreamt wird“ (und die Anmeldung als Streamer meldet „Bitte zuerst eintragen, auf welchem Konto gestreamt wird (Kanal)“).
 - Im Chat steht oben eine Zeile **„Kanal (Konto, auf dem gestreamt wird): …“** (wie bei der Akku-Warnung). Auch bei leerer Box zeigt ein anderer Browser jetzt die Knöpfe Als Zuschauer / Als Moderator / Ich bin der Streamer („Der Streamer (…) ist noch nicht angemeldet“). Bereits angemeldete Boxen ändern sich nicht (das Konto der Box ist dort der Streamer).
