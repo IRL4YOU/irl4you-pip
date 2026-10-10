@@ -71,7 +71,7 @@ Weitere Details: [ANLEITUNG-Betrieb.md](anleitungen/ANLEITUNG-Betrieb.md).
 - **Im Alltag erprobt:** Orange Pi 5 Plus mit vier DJI-Kameras gleichzeitig (zwei **Osmo Action 4**, **Action 5 Pro**, **Action 6**) und einer **GoPro Hero 8**: Hauptbild und drei kleine Bilder bei etwa 11 bis 13 Mbit/s.
   Die Kameras liefen über **Tage am Stück**, zuletzt **47,5 Stunden** im Heimnetz (6. bis 8. Oktober 2026), auf einer frisch geflashten Karte mit `setup.sh` und eingespielter Sicherung.
 - **Twitch** am 10. Oktober 2026 mit echtem Konto getestet: Anmeldung, Chat lesen und schreiben, Moderation. Dazu die **DJI Osmo Pocket 3** (sendet per RTMP an die Box; Akkustand und Ladezustand kommen per Bluetooth dazu).
-- **Noch nicht ausprobiert:** weitere DJI-Modelle, GoPro Hero 9 bis 13 und Starlink. Wer sie benutzt: bitte ein Ticket aufmachen.
+- **Noch nicht ausprobiert:** GoPro Hero 9 bis 13 und Starlink. Wer sie benutzt: bitte ein Ticket aufmachen.
 - **Geplant:** Überblendung beim Wechsel des Hauptbilds.
 - **Sprachen:** außer Deutsch maschinell übersetzt, nicht von Muttersprachlern geprüft (`web/i18n/README.md`).
 
