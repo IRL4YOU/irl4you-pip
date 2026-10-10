@@ -242,6 +242,13 @@ class ImportProgress(unittest.TestCase):
         self.assertIn('go.textContent=other?"Zuschauer":"Mit Twitch anmelden"; $("tw_acc_asmod").textContent="Moderator"; $("tw_acc_owner").textContent="Streamer";', PAGE)
         self.assertIn('classList.toggle("twwho",other&&!wait&&!on)', PAGE)
 
+    def test_chat_badges_are_small_symbols_not_words(self):
+        """Abzeichen im Chat als kleine Symbole im farbigen Quadrat statt Wörtern ("STREAMER" war viel zu breit); der Name steht als Hinweis."""
+        self.assertIn('const BADGE_TXT={broadcaster:"\\u25CF",moderator:"\\u2694\\uFE0E",vip:"\\u25C6",subscriber:"\\u2605"', PAGE)
+        self.assertNotIn('broadcaster:"STREAMER"', PAGE)
+        self.assertIn("min-width:16px;text-align:center;font-size:10px", PAGE)
+        self.assertIn("bg.title=BADGE_TIP[bn]||bn", PAGE)
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
