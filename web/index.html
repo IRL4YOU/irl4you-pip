@@ -737,6 +737,9 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div class="ph" data-hlp>Die Oberfläche ist unverschlüsselt (HTTP). In einem WLAN, in dem die Box nur Gast ist (Hotel, Handy-Hotspot, fremdes Netz), kann dort jeder mitlesen. Ist der Schalter an, antwortet die Box in solchen WLANs nicht. Erreichbar bleiben Ethernet, der Hotspot der Box, USB und Tailscale (HTTPS). Wer sich aussperrt, schaltet den Schalter über Ethernet oder Tailscale wieder aus.</div>
     <div id="ua_info" class="ph"></div>
     <div id="ua_err" class="err"></div>
+    <label class="chk" id="pa_row"><input type="checkbox" id="pa_ext"> Vorschau auch von außen erlauben (verbraucht Upload)</label>
+    <div class="ph" data-hlp id="pa_help">Jede Vorschau braucht rund 1,7 Mbit/s Upload, den die Sendung braucht. Von außen (Tailscale, öffentlicher Link) ist die Vorschau deshalb aus. Mit dem Haken geht sie von außen nur klein (320 Pixel, 10 Bilder pro Sekunde, etwa 0,3 Mbit/s) und für einen Zuschauer zugleich. Im Heimnetz und im WLAN der Box bleibt alles wie es ist. Ändern lässt sich das nur von dort.</div>
+    <div id="pa_err" class="err"></div>
     </details>
   </details>
 
@@ -1844,7 +1847,17 @@ async function srtlaCall(method,url,body){
   const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||"Fehler"); return j;
 }
 // Zugriff auf die Oberfläche über fremde WLANs sperren (Issue #25)
-async function uaLoad(){ try{ const r=await fetch("/api/uiaccess"); if(r.ok) uaRender(await r.json()); }catch(e){} }
+async function uaLoad(){ try{ const r=await fetch("/api/uiaccess"); if(r.ok) uaRender(await r.json()); }catch(e){}
+  try{ const r=await fetch("/api/previewaccess"); if(r.ok) paRender(await r.json()); }catch(e){} }
+function paRender(d){                                                                                 // Vorschau von außen: nur von zu Hause (Heimnetz, WLAN der Box) änderbar
+  const c=$("pa_ext"); if(c!==document.activeElement) c.checked=!!d.external;
+  const local=d.origin!=="extern"; $("pa_row").hidden=!local; if(!local) $("pa_help").hidden=true;
+}
+$("pa_ext").addEventListener("change",async e=>{
+  $("pa_err").textContent="";
+  try{ paRender(await srtlaCall("POST","/api/previewaccess",{external:e.target.checked})); }
+  catch(x){ $("pa_err").textContent=x.message; e.target.checked=!e.target.checked; }
+});
 function uaRender(d){
   const c=$("ua_block"); if(c!==document.activeElement) c.checked=!!d.block_client_wifi;
   const l=d.client_wifi||[];
@@ -3338,7 +3351,7 @@ $("chat_form").addEventListener("submit",async e=>{
   const card=$("c_prev"), btn=$("prev_btn"), img=$("prev_img"), vid=$("prev_vid"), msg=$("prev_msg"), box=$("prev_box"), keep=$("prev_always");
   let on=false, timer=0, wait=0, gen=0, poll=0, abortCtl=null, urlObj="", keepTimer=0, dogTimer=0, mode="", ctlTimer=0;
   const WHY={off:"Die Vorschau gibt es nur, während die Box sendet.", busy:"Es laufen schon so viele Vorschauen, wie die Box zugleich zeigen kann.",
-             "kein-bild":"Es kommt kein Bild. Läuft die Sendung?", missing:"Die Vorschau ist auf dieser Box nicht verfügbar.", gst:"Die Vorschau ist auf dieser Box nicht verfügbar.",
+             "kein-bild":"Es kommt kein Bild. Läuft die Sendung?", extern:"Die Vorschau ist von außen nicht freigegeben. Sie lässt sich zu Hause unter „Zugriff auf diese Oberfläche“ erlauben.", missing:"Die Vorschau ist auf dieser Box nicht verfügbar.", gst:"Die Vorschau ist auf dieser Box nicht verfügbar.",
              root:"Die Vorschau ist auf dieser Box nicht verfügbar.", capture:"Die Vorschau ist auf dieser Box nicht verfügbar."};
   const store=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem(k); if(v===null) localStorage.removeItem(k); else localStorage.setItem(k,v); }catch(e){} return null; };       // nur in diesem Browser (nicht auf der Box)
   const always=()=>keep.checked;
@@ -3377,7 +3390,7 @@ $("chat_form").addEventListener("submit",async e=>{
     let st; try{ const r=await fetch("/api/preview"); st=await r.json(); }catch(e){ st={available:false,why:"missing"}; }
     if(my!==gen) return;
     if(!st.available){ if(running()&&st.why!=="missing") return waiting(); return stop(WHY[st.why]||WHY.missing); }
-    on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent=""; card.classList.add("prevrun");
+    on=true; btn.disabled=false; btn.textContent="Stop"; msg.textContent=st.origin==="extern"?"Vorschau von außen: klein, damit der Upload für die Sendung bleibt.":""; card.classList.add("prevrun");
     playStream(my);                                                                // immer volle 30 Bilder pro Sekunde in 640 × 360: auf dem Handy wie am Rechner gleich
     if(!always()) timer=setTimeout(()=>stop("Die Vorschau ist nach 10 Minuten beendet.",true),Math.max(5,(st.max_seconds||600)-3)*1000);
     clearInterval(poll);
