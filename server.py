@@ -5126,6 +5126,7 @@ class TwitchLogin:
     MAX_OWNERS = 5
     DEMO_LOGIN = "demo_streamer"
     ERR_NOT_OWNER = "Das ist nicht das Konto des Streamers dieser Box"
+    ERR_NO_CHANNEL = "Bitte zuerst eintragen, auf welchem Konto gestreamt wird (Kanal)"
     REFRESH_BEFORE = 600                       # Sekunden vor dem Ablauf erneuern
     KEEP_EVERY = 30.0
     ERR_NET = "Keine Verbindung zu Twitch"
@@ -5267,9 +5268,10 @@ class TwitchLogin:
         t = self.tokens
         return bool(h and t and h in (t.get("owners") or []))
 
-    def start(self, mod=False, events=False, everything=False, owner_key=None, claim=False):
-        """claim: Auf der Box ist schon ein Konto angemeldet und dieser Browser gilt noch nicht als der des Streamers: Die Anmeldung gilt nur, wenn Twitch dasselbe
-        Konto bestätigt (sonst würde jeder mit dem Link das Konto der Box ersetzen)."""
+    def start(self, mod=False, events=False, everything=False, owner_key=None, claim=False, expect=None):
+        """claim: Dieser Browser gilt noch nicht als der des Streamers: Die Anmeldung gilt nur, wenn Twitch das Konto des Streamers bestätigt (sonst würde jeder mit
+        dem Link das Konto der Box ersetzen). Das Konto des Streamers ist expect (der eingetragene Kanal, "Konto, auf dem gestreamt wird"), sonst das schon
+        angemeldete Konto der Box."""
         scopes = self.scopes_for(mod, events, everything)
         owner = self.owner_hash(owner_key)
         with self.lock:
@@ -5283,7 +5285,8 @@ class TwitchLogin:
             self.error = ""
             if self.demo:
                 self.pending = {"device_code": "demo", "user_code": "ABCD-EFGH", "uri": "https://www.twitch.tv/activate?device-code=ABCDEFGH",
-                                "expires_at": self.clock() + 1800, "interval": 5, "since": self.clock(), "scopes": scopes, "owner": owner, "claim": bool(claim)}
+                                "expires_at": self.clock() + 1800, "interval": 5, "since": self.clock(), "scopes": scopes, "owner": owner, "claim": bool(claim),
+                                "expect": str(expect or "").lower()[:25]}
                 self.state = "wartet"
                 return self.status()
             st, d = self._call(self.base + "device", {"client_id": self.client_id, "scopes": scopes})
@@ -5299,7 +5302,8 @@ class TwitchLogin:
             if not re.match(r"https://(www\.|id\.)?twitch\.tv/", uri):
                 uri = "https://www.twitch.tv/activate"                              # nur Twitch-Adressen als Link und QR-Code
             self.pending = {"device_code": d["device_code"], "user_code": d["user_code"][:20], "uri": uri,
-                            "expires_at": self.clock() + expires, "interval": interval, "scopes": scopes, "owner": owner, "claim": bool(claim)}
+                            "expires_at": self.clock() + expires, "interval": interval, "scopes": scopes, "owner": owner, "claim": bool(claim),
+                            "expect": str(expect or "").lower()[:25]}
             self.state = "wartet"
         threading.Thread(target=self._poll, args=(gen,), daemon=True).start()
         return self.status()
@@ -5356,13 +5360,14 @@ class TwitchLogin:
             expires = 14400.0
         old = self.tokens or {}
         pend = (self.pending or {}).get("owner")                     # Schlüssel des Browsers, der diese Anmeldung gestartet hat (beim Erneuern: keiner)
-        if (self.pending or {}).get("claim") and old.get("login"):
+        want = (self.pending or {}).get("expect") or old.get("login")
+        if (self.pending or {}).get("claim") and want:
             st0, v0 = self._call(self.base + "validate", None, {"Authorization": "OAuth " + d["access_token"]})
             who = v0.get("login", "").lower() if st0 == 200 and isinstance(v0.get("login"), str) else ""
-            if who != old["login"]:                                  # ein anderes Konto: nichts übernehmen, den neuen Zugang gleich widerrufen, den alten behalten
+            if who != want:                                  # ein anderes Konto: nichts übernehmen, den neuen Zugang gleich widerrufen, den alten behalten
                 self._call(self.base + "revoke", {"client_id": self.client_id, "token": d["access_token"]})
                 self.claim_fail = {"owner": pend, "error": self.ERR_NOT_OWNER}
-                self.pending, self.state, self.error = None, "angemeldet", ""
+                self.pending, self.state, self.error = None, ("angemeldet" if self.tokens else "aus"), ""
                 return
         t = {"access": d["access_token"], "refresh": d["refresh_token"], "expires_at": self.clock() + expires, "scopes": scopes,
              "login": old.get("login", ""), "user_id": old.get("user_id", ""), "mod_off": old.get("mod_off") is True,
@@ -5570,8 +5575,8 @@ class TwitchAccounts:
     NONE_STATUS = {"state": "aus", "login": "", "scopes": [], "error": "", "mod": False, "mod_scope": False, "events": False, "helix_chat": False}
     CHECK_TTL = 300.0
 
-    def __init__(self, box, sessions, check=None, clock=time.time):
-        self.box, self.sessions, self.check, self.clock = box, sessions, check, clock
+    def __init__(self, box, sessions, check=None, clock=time.time, store=None):
+        self.box, self.sessions, self.check, self.clock, self.store = box, sessions, check, clock, store
         self.known = {}                                                # Kennung -> (Zeitpunkt, True/False/None)
         self.lock = threading.Lock()
 
@@ -5595,9 +5600,23 @@ class TwitchAccounts:
             self.known[uid] = (now, ans)
         return ans
 
+    def streamer_name(self):
+        """Das Konto des Streamers: das angemeldete Konto der Box, sonst der eingetragene Kanal ("Konto, auf dem gestreamt wird", dasselbe Feld wie bei der
+        Akku-Warnung); nichts, wenn beides fehlt. Es wird nie etwas vorbelegt."""
+        name = self.box.login()
+        if name:
+            return name
+        if self.store is not None:
+            with self.store.lock:
+                return str(self.store.data.get("channel") or "").lower()
+        return ""
+
     def pick(self, key):
-        if not self.box.ready() or self.box.is_owner(key):
-            return "owner", self.box
+        if self.box.ready():
+            if self.box.is_owner(key):
+                return "owner", self.box
+        elif not self.streamer_name():
+            return "owner", self.box                                   # noch nichts eingetragen: es lässt sich nur der Kanal eintragen, dann ist der Streamer bekannt
         s = self.sessions.get(key)
         if s is not None and self.sessions.demo:
             s.status()                                                  # Vorschau-Modus: die Anmeldung läuft nur beim Abfragen weiter
@@ -5629,7 +5648,9 @@ class TwitchAccounts:
             cf = self.box.claim_fail
             if cf and h and cf.get("owner") == h and st["state"] != "wartet":
                 st["state"], st["error"] = "fehler", cf["error"]
-        st["role"], st["box_login"] = role, boxlogin
+        name = self.streamer_name()
+        st["role"], st["box_login"], st["streamer"] = role, boxlogin, name
+        st["need_channel"] = bool(role == "owner" and not self.box.ready() and not name)
         return st
 
 
@@ -9033,9 +9054,12 @@ class Handler(BaseHTTPRequestHandler):
                 if act == "start":
                     if d.get("as") in ("mod", "user"):                            # eigenes Konto (Moderator oder Zuschauer): getrennt vom Konto des Streamers
                         self.twitchsessions.start(key, mod=d.get("as") == "mod")
-                    else:                                                         # Konto des Streamers; ist die Box schon angemeldet, gilt es nur, wenn Twitch dasselbe Konto bestätigt
-                        claim = self.twitchlogin.ready() and not self.twitchlogin.is_owner(key)
-                        self.twitchlogin.start(mod=d.get("mod") is True, events=d.get("events") is True, everything=d.get("all") is True, owner_key=key, claim=claim)
+                    else:                                                         # Konto des Streamers: nur das eingetragene Konto (Kanal) oder das schon angemeldete der Box
+                        name = self.twitchaccounts.streamer_name()
+                        if not name:
+                            return self.reply(400, {"error": TwitchLogin.ERR_NO_CHANNEL})
+                        claim = not (self.twitchlogin.ready() and self.twitchlogin.is_owner(key))
+                        self.twitchlogin.start(mod=d.get("mod") is True, events=d.get("events") is True, everything=d.get("all") is True, owner_key=key, claim=claim, expect=name)
                     return self.reply(200, self.twitchaccounts.status(key))
                 if act == "cancel":
                     s = self.twitchsessions.get(key)
@@ -9217,7 +9241,7 @@ def main():
     Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
     Handler.twitchbot = TwitchBotLogin(os.path.join(args.state, "twitch-bot-login.json"), demo=args.demo, paths=Handler.chatpaths)
     Handler.twitchsessions = ModSessions(args.state, demo=args.demo, paths=Handler.chatpaths)         # eigene Anmeldungen der Moderatoren, je Browser
-    Handler.twitchaccounts = TwitchAccounts(Handler.twitchlogin, Handler.twitchsessions)             # (check folgt, sobald chatmod da ist)
+    Handler.twitchaccounts = TwitchAccounts(Handler.twitchlogin, Handler.twitchsessions, store=Handler.twitch.store)             # (check folgt, sobald chatmod da ist)
     Handler.twitch.store.bot = Handler.twitchbot                                      # angemeldetes Bot-Konto schreibt die Akku-Meldung (nur sie)
     if not args.demo:
         threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
