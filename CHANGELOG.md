@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.208 (Beta)
+- **Sicherung: Aufklapper „Was wird gesichert?“ vor dem Herunterladen (Wunsch des Nutzers).** In der Karte „Einstellungen sichern“ steht über dem Knopf „Datei herunterladen“ eine Liste in zwei Spalten (am Handy untereinander): **Ist in der Sicherung** (Kameras und Netzwerkkarte, Bildaufbau und Sendeeinstellungen, SRTLA-Server, Sendewege/Kameranetz/Hotspots mit MAC-Zuordnung, WLAN-Netze, DJI-Kameras, HDMI-Eingang, Automatischer Start, eigene Namen, Twitch-Einstellungen; Passwörter und Stream-ID nur mit dem Haken) und **Ist nicht dabei** (Bluetooth-Kopplung der DJI-Kameras, Twitch-Anmeldung und Token, Tailscale, feste Zusatzadresse, Protokolle und Mitschnitte).
+- 17 neue Texte in allen 14 Sprachen. Tests: `tools/test_ui_layout.py` 29 (Liste steht über dem Knopf, deckt alle Teile ab, „nicht dabei“ stimmt mit `make_document` überein).
+
 ## 0.9.207 (Beta)
 - **Netzwerkkarten folgen der MAC: Hotspots und eigene Namen kommen mit (Wunsch des Nutzers: „alles mitnehmen, was geht“).** Zusätzlich zu Sendewegen, Kameranetz und Kamera-Anschluss (0.9.206) wandern jetzt auch die **Hotspot-Einstellungen je WLAN-Karte** (`hotspot.json`, Rechte 0600 bleiben) und die **eigenen Namen der Verbindungen und Sticks**, die an einem Kartennamen hängen (`net:<Karte>`, `if:<Karte>` in `device-names.json`; Namen nach USB-Kennung bleiben). Auch das Einspielen einer Sicherung ordnet jetzt `if:`-Namen über die MAC zu. **Nicht mitgeführt:** die DJI-Kameras (ihre Verbindung merkt sich der DJI-Dienst selbst über die Hardware-Adresse; die Datei gehört dem Dienst) und ein beim Start schon laufender Hotspot (das NetworkManager-Profil `pipbox-hotspot-<Karte>` hängt am Kartennamen: nach einem Tausch der WLAN-Namen den Hotspot einmal aus- und einschalten).
 - Tests: `tools/test_ifacemem.py` 9 Tests (Hotspot-Einstellungen samt Rechten und Namen folgen der Karte, ohne WLAN und Namen läuft der Rest), `tools/test_settings.py` (Namen `if:` in der Sicherung).
