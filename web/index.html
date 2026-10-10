@@ -105,7 +105,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 .chatbox .bdg{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;line-height:1;padding:2px 4px;margin-right:5px;border-radius:4px;vertical-align:1px;color:#0f172a}
 .chatbox .bdg.broadcaster{background:#e91916}.chatbox .bdg.moderator{background:#00ad03}.chatbox .bdg.vip{background:#e005b9;color:#fff}
 .chatbox .bdg.subscriber,.chatbox .bdg.founder{background:#9147ff;color:#fff}.chatbox .bdg.staff,.chatbox .bdg.partner{background:#6b7280;color:#fff}
-.chatbox .cm .mm{opacity:.5;border:0;background:transparent;color:var(--text);cursor:pointer;font-size:18px;line-height:1;padding:6px 10px;margin:-6px -4px 0 0;min-width:36px;min-height:32px;align-self:start}
+.chatbox .cm .mm{opacity:.5;border:0;background:transparent;color:var(--text);cursor:pointer;font-size:18px;line-height:1;padding:0 10px;margin:0 -4px 0 0;min-width:36px;min-height:20px;height:20px;align-self:center}      /* Am Rechner nicht höher als die Textzeile: der Knopf dehnte die Zeile (Text saß oben, unten Luft) */
 .chatbox .cm:hover .mm,.chatbox .cm .mm:focus{opacity:1}
 .chatbox .cm .mrow{grid-column:2 / -1;display:flex;gap:6px;flex-wrap:wrap;padding-top:6px}
 .chatbox .cm .mrow button{padding:6px 12px;min-height:36px;font-size:13px}
@@ -128,16 +128,21 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 .chatbox.o-s{font-size:13px}.chatbox.o-l{font-size:18px}
 .chatform{display:flex;gap:8px;margin-top:10px}.chatform input{flex:1;min-width:0}
 .twacc{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:14px}
+.twacc.twwho{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:stretch}
+.twacc.twwho #tw_acc_t{grid-column:1 / -1}
+.twacc.twwho button{width:100%;padding:8px 6px;font-size:14px}
 .twch input{flex:1 1 150px;min-width:120px;max-width:240px;min-height:30px}
+#tw_accrow,#tw_acc_code{max-height:420px}
+.twfade{opacity:0;max-height:0!important;margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0;border-width:0;overflow:hidden;transition:opacity .5s ease,max-height .6s ease,margin .6s ease,padding .6s ease}
 .twcode{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:0 0 10px;padding:10px;border:1px solid var(--line);border-radius:12px}
 .twcode svg{width:150px;height:150px;border-radius:6px}
 .twcode_big{font-size:26px;font-weight:700;letter-spacing:.14em;font-variant-numeric:tabular-nums}
 .twcode_txt{display:grid;gap:8px;min-width:0}
-.chatbox{max-height:min(420px,60vh);min-height:80px;overflow-y:auto;font-size:15px;line-height:1.45;display:flex;flex-direction:column;overflow-wrap:anywhere;scrollbar-width:thin}
-.chatbox .cm{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px;padding:7px 2px;border-bottom:1px solid color-mix(in srgb,var(--line) 75%,transparent)}   /* hauchdünne Linie zwischen den Nachrichten */
+.chatbox{max-height:min(420px,60vh);min-height:80px;overflow-y:auto;font-size:15px;line-height:1.3;display:flex;flex-direction:column;overflow-wrap:anywhere;scrollbar-width:thin}
+.chatbox .cm{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px;padding:3px 2px 2px;border-bottom:1px solid color-mix(in srgb,var(--line) 75%,transparent)}   /* hauchdünne Linie zwischen den Nachrichten */
 .chatbox .cm:last-child{border-bottom:0}
 .chatbox .cm.alt{background:color-mix(in srgb,var(--text) 6%,transparent);border-radius:6px}      /* jede zweite Nachricht minimal heller hinterlegt (feste Zählung, kein Flackern beim Entfernen alter Zeilen) */
-.chatbox .cm .ct{color:var(--muted);font-size:12px;line-height:1.9;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chatbox .cm .ct{color:var(--muted);font-size:12px;line-height:1.6;font-variant-numeric:tabular-nums;white-space:nowrap}
 .chatbox .cm .cb{min-width:0}
 .chatbox .cm .cn{font-weight:600;margin-right:6px}.chatbox .cm.me .cb{font-style:italic}
 .chatbox .cm.sub,.chatbox .cm.raid,.chatbox .cm.notice{border-left:3px solid var(--accent);padding-left:8px;background:color-mix(in srgb,var(--accent) 7%,transparent)}
@@ -171,7 +176,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 @media(min-width:461px){.sig{height:28px}.sig svg{height:28px}.sig .sgs{height:28px;font-size:8px;line-height:9px;min-width:22px;overflow:visible}}      /* Rechner: höherer Verlauf, damit alle drei Zahlen lesbar sind */
 @media(max-width:460px){.sig{gap:5px;margin-left:6px}.sig .sgs{display:none}.sig svg{width:60px}.camdots{gap:4px}.camdots .dot{width:8px;height:8px}}
 .chatbox a.lk{color:var(--accent);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
-.chatbox img.em{height:1.6em;width:auto;vertical-align:middle;margin:0 1px}
+.chatbox img.em{height:1.6em;width:auto;vertical-align:middle;margin:-3px 1px}
 /* Handy: so viele Nachrichten wie möglich auf der Fläche (Zeilenabstand 1,15 statt 1,45, keine Luft über und unter der Nachricht statt 9 px, Uhrzeit und Abzeichen kleiner, Emotes ohne die Zeile zu dehnen) */
 @media(max-width:620px){
   .chatbox{max-height:56vh;font-size:15px;line-height:1.15}
@@ -3035,7 +3040,7 @@ async function tick(){
   }catch(e){ /* keine Antwort: beim nächsten Durchlauf wieder */ }
 }
 // ---- Twitch-Konto: Anmeldung per Geräte-Code (kein Token einfügen); Zugangsdaten bleiben auf der Box ----
-let twAccPoll=null, twAcc=null;
+let twAccPoll=null, twAcc=null, twWasWait=false, twShowDone=false, twDoneT=0;
 function twAccRender(a){
   if(!a) return;
   const t=$("tw_acc_t"), go=$("tw_acc_go"), code=$("tw_acc_code"), on=a.state==="angemeldet";
@@ -3043,16 +3048,25 @@ function twAccRender(a){
   $("tw_chrow").hidden=!a.need_channel;                                                                       // oben nur, solange der Kanal fehlt; sonst steht das Feld in den Einstellungen (Zahnrad)
   ["tw_ch_in","tw_ch2_in"].forEach(id=>{ if($(id)!==document.activeElement) $(id).value=a.streamer||""; });        // dasselbe Feld wie bei der Akku-Warnung (nie vorbelegt); es legt fest, wer Streamer ist
   $("tw_ch_t").textContent=a.need_channel?"Zuerst eintragen, dann anmelden.":"";
-  go.textContent=other?"Als Zuschauer anmelden":"Mit Twitch anmelden"; $("tw_acc_owner").hidden=!(other&&!wait&&!on); $("tw_acc_asmod").hidden=!(other&&!wait&&!on);
+  go.textContent=other?"Zuschauer":"Mit Twitch anmelden"; $("tw_acc_asmod").textContent="Moderator"; $("tw_acc_owner").textContent="Streamer";    // kurze Beschriftungen unter "Anmelden als:" (drei gleich breite Knöpfe)
+  $("tw_acc_owner").hidden=!(other&&!wait&&!on); $("tw_acc_asmod").hidden=!(other&&!wait&&!on); $("tw_accrow").classList.toggle("twwho",other&&!wait&&!on);
   $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod); $("tw_acc_ev").hidden=!(on&&!a.events);
-  code.hidden=!wait; go.hidden=wait||on||!!a.need_channel;
-  $("tw_accrow").hidden=on;                                              // angemeldet: die Zeile verschwindet, Konto und Abmelden liegen hinter dem ⚙ in der Kopfzeile
+  // Gerade angemeldet: Code und Meldung bleiben ein paar Sekunden stehen und blenden dann sanft aus (Wunsch des Nutzers); beim Laden einer schon angemeldeten Box sieht man nichts davon
+  const justDone=on&&twWasWait; twWasWait=wait;
+  if(justDone){
+    twShowDone=true; clearTimeout(twDoneT);
+    twDoneT=setTimeout(()=>{ [$("tw_accrow"),code].forEach(e=>e.classList.add("twfade"));
+      twDoneT=setTimeout(()=>{ twShowDone=false; [$("tw_accrow"),code].forEach(e=>e.classList.remove("twfade")); twAccRender(twAcc); },700); },3500);
+  }
+  if(!on){ twShowDone=false; clearTimeout(twDoneT); [$("tw_accrow"),code].forEach(e=>e.classList.remove("twfade")); }
+  code.hidden=!(wait||(on&&twShowDone)); go.hidden=wait||on||!!a.need_channel;
+  $("tw_accrow").hidden=on&&!twShowDone;                                 // angemeldet: die Zeile verschwindet, Konto und Abmelden liegen hinter dem ⚙ in der Kopfzeile
   $("tw_accpanel").hidden=!on; $("tw_acc_t2").textContent=on?(a.role==="mod"?`Angemeldet als ${a.login} · Moderator`:a.role==="user"?`Angemeldet als ${a.login} · Zuschauer`:a.mod?`Angemeldet als ${a.login} · Moderation an`:`Angemeldet als ${a.login}`):""; $("tw_acc_ev_on").hidden=!(on&&a.events);
   if(on) t.textContent="Angemeldet als "+a.login;
   else if(wait) t.textContent="Warte auf die Bestätigung bei Twitch …";
   else if(a.state==="abgelaufen") t.textContent="Anmeldung abgelaufen";
   else if(a.state==="fehler") t.textContent=a.error||"Anmeldung fehlgeschlagen";
-  else if(other) t.textContent=a.box_login?`Auf der Box ist ${a.box_login} angemeldet. Zum Schreiben melde dich selbst an (Zuschauer oder Moderator).`:`Der Streamer (${a.streamer}) ist noch nicht angemeldet. Zum Schreiben melde dich selbst an (Zuschauer oder Moderator).`;
+  else if(other) t.textContent=a.box_login?`Streamer: ${a.box_login}. Anmelden als:`:`Streamer (${a.streamer}) noch nicht angemeldet. Anmelden als:`;
   else t.textContent="Nicht angemeldet";
   if(wait){ $("tw_code").textContent=a.code||""; const l=$("tw_link"); l.href=a.uri||"#"; l.textContent=(a.uri||"").replace(/^https?:\/\//,"").replace(/\?.*$/,"")||"twitch.tv/activate";
             const q=a.uri?QR.svg(a.uri):""; if($("tw_qr").dataset.u!==a.uri){ $("tw_qr").innerHTML=q; $("tw_qr").dataset.u=a.uri||""; } }
