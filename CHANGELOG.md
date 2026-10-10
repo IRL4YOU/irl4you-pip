@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.209 (Beta)
+- **DJI Osmo Pocket 3: Ladesymbol 🔌 (Wunsch des Nutzers).** Gemessen am 10. Oktober 2026 an einer echten Pocket 3 im Modus „Nur Akkustand“ (die Kamera sendet selbst per RTMP): Der Strom steht wie bei Action 4, 5 Pro und 6 in den Bytes 5 bis 8 der Statusnachricht (int32); am Kabel bei vollem Akku 0 bis +1 mA, abgezogen −433 bis −552 mA. Dieselbe Schwelle (−100 mA) gilt jetzt auch für die Pocket 3 (`POWER_FROM_CURRENT`). **Nur bei 100 % Akku gemessen**; echtes Laden mit positivem Strom wurde bei dieser Kamera nicht beobachtet. Den Akkustand zeigte die Box schon.
+- README und Anleitung Kameras: Pocket 3 nur im Modus „Nur Akkustand“ geprüft, Stream-Start über die Box nicht.
+- Tests: `tools/test_dji_service.py` 127 (neu: Pocket 3 mit den echten Werten; die Fälle „Ladeerkennung unbekannt“ nutzen jetzt Osmo 360 und Action 3).
+
 ## 0.9.208 (Beta)
 - **Sicherung: Aufklapper „Was wird gesichert?“ vor dem Herunterladen (Wunsch des Nutzers).** In der Karte „Einstellungen sichern“ steht über dem Knopf „Datei herunterladen“ eine Liste in zwei Spalten (am Handy untereinander): **Ist in der Sicherung** (Kameras und Netzwerkkarte, Bildaufbau und Sendeeinstellungen, SRTLA-Server, Sendewege/Kameranetz/Hotspots mit MAC-Zuordnung, WLAN-Netze, DJI-Kameras, HDMI-Eingang, Automatischer Start, eigene Namen, Twitch-Einstellungen; Passwörter und Stream-ID nur mit dem Haken) und **Ist nicht dabei** (Bluetooth-Kopplung der DJI-Kameras, Twitch-Anmeldung und Token, Tailscale, feste Zusatzadresse, Protokolle und Mitschnitte).
 - 17 neue Texte in allen 14 Sprachen. Tests: `tools/test_ui_layout.py` 29 (Liste steht über dem Knopf, deckt alle Teile ab, „nicht dabei“ stimmt mit `make_document` überein).
