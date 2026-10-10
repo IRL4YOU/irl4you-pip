@@ -85,7 +85,10 @@ Die Moderation ist **aus**, bis du sie einschaltest. Dein Konto muss **Streamer 
    Twitch lehnt manches ab, zum Beispiel VIP für jemanden, der schon VIP oder Moderator ist, oder wenn das VIP-Limit erreicht ist.
    Die Meldung steht dann unter dem Eingabefeld.
 
-**Wichtig – wer mit welchem Konto schreibt und moderiert:** Auf der Box ist **ein** Twitch-Konto angemeldet, das des Streamers.
+**Wichtig – wer mit welchem Konto schreibt und moderiert:** Auf der Box ist **ein** Twitch-Konto angemeldet, das des Streamers. **Wer der Streamer ist, legt das Feld „Kanal (Konto, auf dem gestreamt wird)“ fest**
+(dasselbe Feld wie bei der Akku-Warnung). Es steht oben im Chat; ist es noch leer, trägst du den Kanal dort zuerst ein. Es wird nie ein Name
+vorbelegt. Nur dieses Konto kann Streamer werden: Meldet sich ein anderes Konto (zum Beispiel ein VIP-Konto) als Streamer an, lehnt die Box es
+ab, auch wenn noch niemand angemeldet ist.
 Die Box merkt sich, **in welchem Browser** sich der Streamer angemeldet hat: Der Browser erzeugt dabei einen Zufallsschlüssel
 und behält ihn bei sich, die Box speichert nur einen Fingerabdruck davon.
 
