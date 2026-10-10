@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.224 (Beta)
+- **README stark gekürzt (Wunsch des Nutzers: „viel zu viel Text“).** Von etwa 47 KB auf etwa 9 KB: Installation in drei Schritten, Anleitungen, **Was es kann** in Stichpunkten, ehrlicher **Stand** (getestet, nicht geprüft, offen), Demo, Sicherheit, Danksagung, Lizenz. Erledigtes und Verlaufsgeschichten (Testprotokolle einzelner Tage, „neu in …“-Hinweise, Einzelheiten zu Schaltern) sind raus; sie stehen im Änderungsverlauf und in den Anleitungen.
+- **Neue Hilfedatei `anleitungen/ANLEITUNG-Hardware.md`:** Bluetooth-Stick (Tabelle, automatischer Treiber), WLAN-Stick UGREEN AX900, Hinweise zum Kamera-WLAN (aus dem Betrieb), gekürzt. Verlinkt in der README und in `anleitungen/README.md`.
+- Keine Programmänderung.
+
 ## 0.9.223 (Beta)
 - **Vorschau von außen: aus, mit Erlaubnis nur klein und für einen Zuschauer (Wunsch des Nutzers).** Jede Vorschau braucht rund 1,7 Mbit/s Upload; kommen zehn Zuschauer von außen, fehlt der Sendung die Bandbreite. Die Box erkennt jetzt, **woher** eine Anfrage kommt (`client_origin`): **lokal** (Heimnetz, Router-WLAN, Hotspot der Box, die Box selbst) oder **extern** (Tailscale 100.64.0.0/10, der Tailscale-Proxy auf der Box, erkennbar an `X-Forwarded-For`, öffentlicher Link, öffentliche Adresse; im Zweifel extern). Lokal bleibt alles wie bisher. **Von außen ist die Vorschau standardmäßig aus** (Meldung „Die Vorschau ist von außen nicht freigegeben …“). Der Schalter **„Vorschau auch von außen erlauben (verbraucht Upload)“** steht unter „Zugriff auf diese Oberfläche“ und ist **nur von zu Hause änderbar** (von außen: 403). Ist er an, gilt von außen: höchstens **320 Pixel, 10 Bilder je Sekunde, ohne Dauerbetrieb** (etwa 0,3 Mbit/s) und **höchstens ein Zuschauer von außen** (der zweite bekommt „busy“); der Platz wird auch nach Fehlern wieder frei. Die Karte Vorschau zeigt von außen „Vorschau von außen: klein, damit der Upload für die Sendung bleibt.“ Datei `preview-access.json` im Zustandsordner (Rechte 0600).
 - **Wer die Vorschau bisher von außen (Tailscale) benutzt hat,** muss sie einmal zu Hause erlauben und bekommt sie dann klein.
