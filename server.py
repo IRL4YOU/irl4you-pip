@@ -9183,10 +9183,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(400, {"error": str(e)})
             if path == "/api/uiaccess":
                 return self.reply(200, self.uiaccess.set(d.get("block_client_wifi"), self.local_ip()))
-            if path == "/api/previewaccess":
-                if self.origin() != "lokal":
-                    return self.reply(403, {"error": "Das lässt sich nur im Heimnetz oder im WLAN der Box ändern, nicht von außen"})
-                return self.reply(200, dict(self.previewaccess.set(d.get("external")), origin="lokal"))
+            if path == "/api/previewaccess":                                   # auch über Tailscale änderbar (Wunsch des Nutzers, Anmeldung ist ohnehin nötig): ein Streamer unterwegs schaltet es selbst ein
+                return self.reply(200, dict(self.previewaccess.set(d.get("external")), origin=self.origin()))
             if path == "/api/twitch/login":
                 act = d.get("action")
                 key = d.get("owner") or self.headers.get("x-pb-owner", "")
