@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.205 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Vorschau des gesendeten Bildes, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
+**Version 0.9.206 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche: Kameras (RTMP, DJI per Bluetooth, HDMI-Eingang), Bild-in-Bild mit bis zu vier Kameras, Hauptbild wechseln, "Alle Kameras immer bereit" (Beta), Upload über mehrere Leitungen (SRTLA), Fernzugriff über Tailscale, Twitch-Chat mit Anmeldung und Moderation, Vorschau des gesendeten Bildes, Software-Update, 14 Sprachen, Ansicht für das Handy und mehr. Es läuft **getrennt von der Original-Oberfläche** der BELABOX.
 
 > **Beta heißt:** Es läuft im Alltag, aber noch nicht alles ist über lange Zeit und unterwegs geprüft (siehe "Was noch fehlt oder ungetestet ist"). Neue Versionen gibt es oft; zurück auf eine frühere Version geht in der Oberfläche.
 
@@ -105,6 +105,7 @@ vorhandene BELABOX-Passwort (nur ohne belaUI, etwa in der Entwicklung, gilt ein 
   aller Werte. Der gebaute `srtla_send` ist ein **latenzbewusster Patch** auf BELABOX/srtla (siehe `srtla/`, AGPL-3.0): er
   misst Laufzeit und Jitter je Leitung und verhindert so den Bitrate-Einbruch bei Leitungen mit unterschiedlicher Laufzeit.
   Verteilung wählbar: beste Leitung bevorzugen (Standard) oder alle gleichzeitig.
+- **Netzwerkkarten folgen der MAC-Adresse** (seit 0.9.206): Wechseln die Namen (`eth0`, `eth1`, `usb0`) nach dem Flashen oder einem Neustart, wandern Sendewege, Kameranetz und Kamera-Anschlüsse mit der Karte; die Sicherung speichert die MAC-Adressen für das Einspielen auf einer anderen Karte.
 - **WLAN / Hotspot als Sendeweg:** Netze suchen, verbinden, trennen und als Sendeweg wählen, direkt in der Oberfläche
   (Root-Helfer mit festen Aktionen; das Passwort wird von diesem Projekt nicht gespeichert, NetworkManager legt es im WLAN-Profil ab).
 - **Box ausschalten:** Herunterfahren und Neu starten direkt in der Oberfläche (Root-Helfer mit fester Liste, Protokoll wird vorher sauber geschlossen).
