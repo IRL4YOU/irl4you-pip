@@ -66,9 +66,10 @@ class PhoneChat(unittest.TestCase):
         self.assertIn(".chatbox .cm{padding:0 2px;", blk)                                   # 0 px statt 9 px zwischen den Nachrichten
         self.assertIn("img.em{height:1.3em;", blk)
 
-    def test_desktop_rules_unchanged(self):
-        self.assertIn("line-height:1.45;display:flex;flex-direction:column", PAGE)
-        self.assertIn(".chatbox .cm{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px;padding:7px 2px;", PAGE)
+    def test_desktop_rules(self):
+        """Am Rechner: seit 0.9.219 schmalere Zeilen (Zeilenabstand 1,3 statt 1,45, Innenabstand 3 px oben und 2 px unten statt 7 px)."""
+        self.assertIn("line-height:1.3;display:flex;flex-direction:column", PAGE)
+        self.assertIn(".chatbox .cm{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px;padding:3px 2px 2px;", PAGE)
 
 
 class FootHides(unittest.TestCase):
@@ -223,6 +224,23 @@ class ImportProgress(unittest.TestCase):
         self.assertIn("details.card>summary .sumh::before,html[data-design] details.card>summary .sumh::before{color:var(--warn);border-color:var(--warn)}", PAGE)
         self.assertIn("details.card>summary .sumh{font-size:12px;font-weight:600;", PAGE)                   # die Überschrift der Hauptkategorie minimal fetter
         self.assertNotRegex(PAGE, r"\.subsec>summary::before\{[^}]*var\(--warn\)")                 # Unterpunkte nicht in derselben Farbe
+
+    def test_login_window_fades_out_after_a_few_seconds_and_chat_rows_are_slim(self):
+        """Nach der Anmeldung blendet Code und Meldung nach einigen Sekunden sanft aus; Chat-Zeilen am Rechner: kein ⋯-Knopf, der die Zeile dehnt, weniger Luft."""
+        self.assertIn("const justDone=on&&twWasWait; twWasWait=wait;", PAGE)
+        self.assertIn("classList.add(\"twfade\")", PAGE)
+        self.assertIn(".twfade{opacity:0;max-height:0!important;", PAGE)
+        self.assertIn("transition:opacity .5s ease,max-height .6s ease", PAGE)
+        self.assertIn("min-height:20px;height:20px;align-self:center}", PAGE)                  # ⋯ nicht höher als die Textzeile
+        self.assertIn("column-gap:10px;padding:3px 2px 2px;", PAGE)
+        self.assertIn("font-size:12px;line-height:1.6;", PAGE)
+
+    def test_sign_in_choices_are_three_equal_buttons_under_one_short_line(self):
+        """Ohne eigene Anmeldung (Handy und Rechner): eine kurze Zeile "Streamer: Name. Anmelden als:" und drei gleich breite Knöpfe (Zuschauer, Moderator, Streamer)."""
+        self.assertIn(".twacc.twwho{display:grid;grid-template-columns:repeat(3,1fr);", PAGE)
+        self.assertIn('t.textContent=a.box_login?`Streamer: ${a.box_login}. Anmelden als:`', PAGE)
+        self.assertIn('go.textContent=other?"Zuschauer":"Mit Twitch anmelden"; $("tw_acc_asmod").textContent="Moderator"; $("tw_acc_owner").textContent="Streamer";', PAGE)
+        self.assertIn('classList.toggle("twwho",other&&!wait&&!on)', PAGE)
 
 
 class LiveAlwaysReachable(unittest.TestCase):
