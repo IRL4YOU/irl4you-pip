@@ -186,8 +186,11 @@ ACTION2_NAME = "Osmo Action 2"                     # Fernsteuerung klappt laut M
 # int32 Little Endian), derselbe Verlauf: aus dem Akku etwa -600 bis -770 mA, beim Anstecken kurz um 0 (-54), am Kabel positiv (+700 bis +4400 mA; die Kamera
 # lädt dann). Dieselbe Schwelle (-100 mA) trennt beides. Je Modell nur ein Versuch; beim Abziehen wechselten außerdem Byte 28 (0x60 -> 0x20) und Byte 32
 # (2 -> 0, beim Anstecken 1, dann 2), das wird hier nicht benutzt.
+# Osmo Pocket 3 (10. Okt 2026, im Modus "Nur Akkustand", die Kamera sendet selbst per RTMP; Kabel einmal abgezogen und wieder angesteckt, Journal der Box):
+# dieselbe Stelle (Bytes 5 bis 8, int32 Little Endian): am Kabel bei vollem Akku 0 bis +1 mA, abgezogen -433 bis -552 mA (Bytes 1 bis 2 = Spannung, etwa 4120 bis 4150 mV).
+# Gemessen nur bei 100 % Akku; echtes Laden (positiver Strom) bei niedrigerem Stand wurde bei dieser Kamera nicht beobachtet.
 # Für andere Modelle (auch die Osmo 360, die ebenfalls "action5" heißt) ist es nicht bekannt: dort bleibt "lädt" unbekannt (None), nie geraten.
-POWER_FROM_CURRENT = {"action4": (5, -100), "action5": (5, -100), "action6": (5, -100)}      # (Byte der Stromangabe, Schwelle in mA): darüber hängt die Kamera am Strom (lädt oder wird versorgt)
+POWER_FROM_CURRENT = {"action4": (5, -100), "action5": (5, -100), "action6": (5, -100), "pocket3": (5, -100)}      # (Byte der Stromangabe, Schwelle in mA): darüber hängt die Kamera am Strom (lädt oder wird versorgt)
 POWER_NOT_KNOWN_MODELS = ("360",)                # Namensteile von Modellen, für die die Stelle nicht gemessen wurde (teilen sich die Art mit einem bekannten)
 
 
