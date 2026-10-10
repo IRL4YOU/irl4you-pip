@@ -204,14 +204,19 @@ class ImportProgress(unittest.TestCase):
         self.assertIn('hdr["x-pb-owner"]=pbOwnerKey()', PAGE)
         self.assertIn('"x-pb-owner":pbOwnerKey()', PAGE)                                    # auch der Chat-Abruf nennt den Schlüssel
 
-    def test_chat_card_shows_the_channel_on_top_and_asks_for_it_when_missing(self):
-        """Oben im Chat steht der Kanal (wie bei der Akku-Warnung, "Konto, auf dem gestreamt wird"); fehlt er, trägt man ihn dort ein. Nichts wird vorbelegt."""
-        self.assertIn('id="tw_chrow" hidden', PAGE)
-        self.assertIn('Kanal (Konto, auf dem gestreamt wird): ${a.streamer}', PAGE)
-        self.assertIn('$("tw_ch_form").hidden=!a.need_channel;', PAGE)
+    def test_chat_card_has_the_channel_field_on_top(self):
+        """Oben im Chat steht dasselbe Feld wie bei der Akku-Warnung ("Kanal (Konto, auf dem gestreamt wird)", Wunsch des Nutzers): sichtbar und änderbar, nie vorbelegt."""
+        self.assertIn('<div class="twacc twch" id="tw_chrow">', PAGE)
+        i = PAGE.index('id="tw_chrow"')
+        row = PAGE[i:PAGE.index("</div>", i)]
+        self.assertIn("Kanal (Konto, auf dem gestreamt wird)", row)
+        self.assertIn('id="tw_ch_in"', row)
+        self.assertIn('id="tw_ch_save"', row)
+        self.assertNotIn(" value=", row)                                                    # kein Name vorbelegt
+        self.assertNotIn('id="tw_chrow" hidden', PAGE)                                      # immer sichtbar
+        self.assertIn('$("tw_ch_in").value=a.streamer||""', PAGE)
         self.assertIn('go.hidden=wait||on||!!a.need_channel;', PAGE)
         self.assertIn('srtlaCall("POST","/api/twitch",{channel:v})', PAGE)
-        self.assertNotIn('id="tw_ch_in" value=', PAGE)                                      # kein Name vorbelegt
 
 
 class LiveAlwaysReachable(unittest.TestCase):
