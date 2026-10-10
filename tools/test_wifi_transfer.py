@@ -277,5 +277,40 @@ class Main(Base):
         self.assertEqual(st["state"], "error")
 
 
+
+class RequestsDoNotOverwriteEachOther(unittest.TestCase):
+    """Meldung des Nutzers beim Einspielen: "Der WLAN-Helfer hat nicht rechtzeitig geantwortet", obwohl die Netze angelegt waren. Eine Suche nach WLANs
+    schrieb in die Auslösedatei, solange das Einspielen noch nicht gelesen war. Darum läuft immer nur eine Anfrage."""
+
+    def make(self):
+        sys.path.insert(0, ROOT)
+        import server
+        d = tempfile.mkdtemp()
+        w = server.Wifi(d, False, None, None, None)
+        w.status = lambda: {"helper_installed": True, "state": "idle", "cards": [{"iface": "wlan0", "camera_net": False}]}
+        return server, w
+
+    def test_scan_is_refused_while_an_import_waits_for_the_helper(self):
+        server, w = self.make()
+        w.STATUS = os.path.join(tempfile.mkdtemp(), "status.json")                    # der Helfer antwortet nie: helper_call wartet
+        import threading
+        t = threading.Thread(target=lambda: self.assertRaises(RuntimeError, w.helper_call, {"action": "import_wifi", "networks": []}, 1.2))
+        t.start()
+        import time
+        time.sleep(0.4)
+        with self.assertRaises(ValueError) as cm:
+            w.request({"action": "scan", "iface": "wlan0"})
+        self.assertIn("schon eine Aktion", str(cm.exception))
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(w.req), "wifi-request")) and "scan" in open(w.req).read())     # die Anfrage des Einspielens bleibt unberührt
+        t.join()
+
+    def test_lock_is_released_after_the_call(self):
+        server, w = self.make()
+        w.STATUS = os.path.join(tempfile.mkdtemp(), "status.json")
+        with self.assertRaises(RuntimeError):
+            w.helper_call({"action": "import_wifi", "networks": []}, 0.5)
+        w.request({"action": "scan", "iface": "wlan0"})                                  # danach geht eine Suche wieder
+        self.assertIn("scan", open(w.req).read())
+
 if __name__ == "__main__":
     unittest.main()

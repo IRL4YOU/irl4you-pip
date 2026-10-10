@@ -144,6 +144,17 @@ class DefaultOrder(unittest.TestCase):
         self.assertEqual(ids[:3], ["c_prev", "c_chat", "c_status"])                              # oben unverändert
 
 
+class ImportProgress(unittest.TestCase):
+    def test_import_and_restore_show_a_progress_bar_like_the_update(self):
+        """Wunsch des Nutzers: beim Einspielen eine Fortschrittsanzeige wie beim Software-Update (damit niemand denkt, es passiere nichts)."""
+        self.assertIn('<div id="bk_prog" class="prog" hidden>', PAGE)
+        self.assertIn('async function bkWithProgress(fn){', PAGE)
+        self.assertIn('srtlaCall("GET","/api/settings/progress")', PAGE)
+        self.assertIn('await bkWithProgress(()=>srtlaCall("POST","/api/settings/import"', PAGE)
+        self.assertIn('await bkWithProgress(()=>srtlaCall("POST","/api/settings/restore"', PAGE)
+        self.assertIn('/api/settings/progress', open(os.path.join(ROOT, "server.py"), encoding="utf-8").read())
+
+
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
         """Am Handy steht Live/Stop in der Fußleiste; war sie per Einstellung ganz weg, fehlte der Knopf zum Live-Gehen (Meldung des Nutzers)."""

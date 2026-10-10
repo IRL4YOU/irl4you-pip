@@ -219,6 +219,26 @@ class RoundTrip(unittest.TestCase):
         b.wifi.import_saved = mock.Mock(return_value="2 WLAN-Netze eingespielt")
         return b
 
+    def test_progress_is_reported_part_by_part_and_ends_done(self):
+        """Fortschrittsanzeige beim Einspielen: Der Server meldet, welcher Teil dran ist (Wunsch des Nutzers: nicht denken, dass nichts passiert)."""
+        b = self.fresh()
+        self.assertEqual(b.t.progress, {"state": "idle"})
+        seen = []
+        orig = b.t._apply_names
+        b.t._apply_names = lambda x: (seen.append(dict(b.t.progress)), orig(x))[1]
+        res = b.t.apply(self.out, PW, ["names", "autostart", "hotspots"])
+        self.assertEqual(len(res["results"]), 3)
+        self.assertEqual(seen[0]["state"], "running")
+        self.assertEqual((seen[0]["total"], seen[0]["label"]), (3, "Namen (Verbindungen, WLAN- und Bluetooth-Sticks)"))
+        self.assertEqual(b.t.progress, {"state": "done", "done": 3, "total": 3, "label": ""})
+
+    def test_progress_ends_even_if_a_part_blows_up(self):
+        b = self.fresh()
+        b.t._apply_names = mock.Mock(side_effect=RuntimeError("kaputt"))
+        res = b.t.apply(self.out, PW, ["names"])
+        self.assertFalse(res["results"][0]["ok"])
+        self.assertEqual(b.t.progress["state"], "done")
+
     def test_all_parts_arrive_identically(self):
         b = self.fresh()
         res = b.t.apply(self.out, PW)
