@@ -154,6 +154,15 @@ class ImportProgress(unittest.TestCase):
         self.assertIn('await bkWithProgress(()=>srtlaCall("POST","/api/settings/restore"', PAGE)
         self.assertIn('/api/settings/progress', open(os.path.join(ROOT, "server.py"), encoding="utf-8").read())
 
+    def test_todo_note_after_import_lists_what_the_backup_does_not_contain(self):
+        """Nach dem Einspielen steht, was noch zu tun ist (Wunsch des Nutzers): DJI koppeln, Twitch, Tailscale, Netzwerkkarten prüfen; Haken merkt der Browser."""
+        self.assertIn('<div id="bk_todo" class="bktodo" hidden>', PAGE)
+        for k in ("dji", "twitch", "tailscale", "net"):
+            self.assertIn('data-todo="%s"' % k, PAGE)
+        self.assertIn("function bkTodoShow(){", PAGE)
+        self.assertIn("function bkResults(r){\n  bkTodoShow();", PAGE)                      # erscheint, sobald Ergebnisse da sind
+        self.assertIn('bkTodoSave(all?null:st)', PAGE)                                      # alle gesetzt: weg
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
