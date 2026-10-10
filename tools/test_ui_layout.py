@@ -200,9 +200,18 @@ class ImportProgress(unittest.TestCase):
         self.assertIn('id="tw_acc_asmod"', PAGE)
         self.assertIn('{action:"start",as:"mod"}', PAGE)                                                             # Moderator: Moderatorenrechte
         self.assertIn('a.role==="user"?`Angemeldet als ${a.login} · Zuschauer`', PAGE)
-        self.assertIn('a.role==="none"&&!!a.box_login', PAGE)
+        self.assertIn('a.role==="none"&&!!a.streamer', PAGE)
         self.assertIn('hdr["x-pb-owner"]=pbOwnerKey()', PAGE)
         self.assertIn('"x-pb-owner":pbOwnerKey()', PAGE)                                    # auch der Chat-Abruf nennt den Schlüssel
+
+    def test_chat_card_shows_the_channel_on_top_and_asks_for_it_when_missing(self):
+        """Oben im Chat steht der Kanal (wie bei der Akku-Warnung, "Konto, auf dem gestreamt wird"); fehlt er, trägt man ihn dort ein. Nichts wird vorbelegt."""
+        self.assertIn('id="tw_chrow" hidden', PAGE)
+        self.assertIn('Kanal (Konto, auf dem gestreamt wird): ${a.streamer}', PAGE)
+        self.assertIn('$("tw_ch_form").hidden=!a.need_channel;', PAGE)
+        self.assertIn('go.hidden=wait||on||!!a.need_channel;', PAGE)
+        self.assertIn('srtlaCall("POST","/api/twitch",{channel:v})', PAGE)
+        self.assertNotIn('id="tw_ch_in" value=', PAGE)                                      # kein Name vorbelegt
 
 
 class LiveAlwaysReachable(unittest.TestCase):

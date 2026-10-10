@@ -778,6 +778,33 @@ class Moderators(HelixBase):
         self.assertEqual(self.accounts.pick(KEY2)[0], "mod")
         self.assertIsNone(m.is_moderator("abc"))
 
+    def test_the_entered_channel_decides_who_may_be_the_streamer_on_an_empty_box(self):
+        FakeTwitch.state["login"], FakeTwitch.state["user_id"] = "Irl4you", "55"
+        st = server.TwitchStore(os.path.join(self.dir, "twitch.json"))
+        tl = self.make()
+        st.account = tl
+        acc = server.TwitchAccounts(tl, self.sessions, store=st)
+        a = acc.status(KEY)
+        self.assertEqual((a["role"], a["need_channel"], a["streamer"]), ("owner", True, ""))      # nichts eingetragen, nichts vorbelegt
+        st.set({"channel": "Akinos01"})
+        a = acc.status(KEY)
+        self.assertEqual((a["role"], a["need_channel"], a["streamer"], a["box_login"]), ("none", False, "akinos01", ""))   # der Kanal gilt als der Streamer
+        s = self.moderator(KEY3, login="Irl4you", uid="55", mod=False)                    # irl4you meldet sich als Zuschauer an
+        self.assertEqual(acc.pick(KEY3), ("user", s))
+        FakeTwitch.state["login"], FakeTwitch.state["user_id"] = "Irl4you", "55"
+        tl.start(everything=True, owner_key=KEY, claim=True, expect="akinos01")           # irl4you will Streamer werden: abgelehnt
+        self.until(lambda: tl.pending is None)
+        self.assertFalse(tl.ready())
+        self.assertFalse(os.path.exists(self.path))                                       # nichts gespeichert
+        self.assertTrue(FakeTwitch.state.get("revoked"))
+        a = acc.status(KEY)
+        self.assertEqual((a["state"], a["error"]), ("fehler", server.TwitchLogin.ERR_NOT_OWNER))
+        FakeTwitch.state["login"], FakeTwitch.state["user_id"] = "Akinos01", "42"
+        tl.start(everything=True, owner_key=KEY, claim=True, expect="akinos01")           # das Konto des Kanals wird Streamer
+        self.until(lambda: tl.ready())
+        self.assertEqual((tl.login(), tl.is_owner(KEY), acc.pick(KEY)[0]), ("akinos01", True, "owner"))
+        self.assertEqual(acc.pick(KEY3)[0], "user")                                      # irl4you bleibt Zuschauer
+
 
 class FakeChat:
     def __init__(self):
