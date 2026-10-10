@@ -2,6 +2,11 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 0.9.230 (Beta)
+- **Modell-Liste der DJI-Kameras gekürzt (Wunsch des Nutzers).** In der Hilfe der Oberfläche und in der Anleitung Kameras stehen nur noch **Osmo Action 3, 4, 5 Pro, 6 und Osmo Pocket 3**. Die Osmo 360 und die Pocket 4 sind raus (nicht getestet und nicht geplant). Die README nennt Action 2 und 3, GoPro Hero 9 bis 13 und Starlink als „noch nicht ausprobiert“, bei Problemen bitte ein Ticket. Der Code erkennt die Modelle weiter wie bisher.
+- **Übersetzungen nachgetragen:** die 4 Texte aus 0.9.227 und 0.9.228 (Grund bei „Netze suchen“, Hinweis „Bildaufbau fehlt“, Knopf „Zum Bildaufbau“) in allen 12 weiteren Sprachen, dazu der gekürzte Hilfetext. Rückstand: 0.
+- README, Abschnitt „Stand“: auf den heutigen Stand gebracht (Kameras über Tage, Twitch am 10. Oktober 2026 mit echtem Konto getestet).
+
 ## 0.9.229 (Beta)
 - **README und Anleitungen verlinken die Webseite irl4you.de (Wunsch des Nutzers):** neuer kurzer Abschnitt „Mehr auf irl4you.de“ mit Links zur BOX-Seite, zum Blog, zu BELABOX, Servern, Hardware, Software und den Hilfen; die Kopfzeile nennt, was es dort gibt. Keine Programmänderung.
 
