@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.216 (Beta)
+- **Haupt- und Unterpunkte sind zu unterscheiden (Wunsch des Nutzers).** Der Pfeil vor dem Titel einer **Hauptkategorie** (Status, Verbindungen, SRTLA, Kameras, …) ist jetzt **bernsteinfarben** (`--warn`, hell und dunkel, in allen drei Designs); die Pfeile der **Unterpunkte** behalten ihre Farbe (türkis, im Design „klar“ grau). Dazu ist die **Überschrift der Hauptkategorie minimal fetter** (Schriftstärke 600; im Design „klar“ bleibt sie bei 650). Nur Farbe und Stärke, kein Platzverbrauch. Vom Nutzer in der Vorschau angesehen und freigegeben.
+- Übersetzungen: die 9 Texte der Zuschauer-/Kanal-Anmeldung (0.9.213 bis 0.9.215) in 12 Sprachen vorbereitet (lokal, noch nicht hochgeladen); Rückstand danach: 0.
+- Tests: `tools/test_ui_layout.py` 33.
+
 ## 0.9.215 (Beta)
 - **Chat: das Feld „Kanal (Konto, auf dem gestreamt wird)“ steht oben im Chat (Meldung des Nutzers).** In 0.9.214 stand dort nur eine Textzeile; der Nutzer sah nicht, dass es dieses Feld gibt und wo er es ändert. Jetzt ist es **dasselbe Feld wie bei der Akku-Warnung** (gleiche Einstellung `channel`), immer sichtbar und änderbar mit „Speichern“, nie vorbelegt. Ist es leer, steht „Zuerst eintragen, dann anmelden.“ und der Anmelde-Knopf erscheint erst danach. Der Kanal legt weiter fest, wer Streamer ist (0.9.214).
 - Tests: `tools/test_ui_layout.py` 32. 1 neuer Text nur auf Deutsch und Englisch (Rückstand in den anderen Sprachen: 11).
