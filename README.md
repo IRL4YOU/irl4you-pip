@@ -68,13 +68,11 @@ Weitere Details: [ANLEITUNG-Betrieb.md](anleitungen/ANLEITUNG-Betrieb.md).
 
 ## Stand
 
-- **Getestet** auf einer Orange Pi 5 Plus mit vier DJI-Kameras gleichzeitig (zwei **Osmo Action 4**, **Action 5 Pro**, **Action 6**) und einer **GoPro Hero 8**: Hauptbild und drei kleine Bilder bei etwa 11 bis 13 Mbit/s,
-  **47,5 Stunden am Stück** im Heimnetz (6. bis 8. Oktober 2026), frisch geflashte Karte mit `setup.sh` und eingespielter Sicherung.
-- **Zusätzlich mit echter Kamera geprüft:** die **DJI Osmo Pocket 3** (sendet per RTMP an die Box; Akkustand und Ladezustand kommen per Bluetooth dazu).
-  Auf der ROCK 5B+ nur ein älterer Stand (0.9.10).
-- **Noch nicht geprüft:** lange Fahrten unterwegs; drei Mobilfunkwege nur kurz (40 s), Starlink gar nicht; „Alle Kameras immer bereit“ nur einige Stunden; weitere DJI-Modelle, GoPro Hero 9 bis 13;
-  Twitch-Rollen und Befehle nur gegen Testserver (echt bestätigt sind Anmeldung und Testnachricht); Controller und Handy-Akku nur mit Testwerten; „feste Zusatzadresse“ nur mit Tests.
-- **Offen:** unerklärte Totalausfälle einer Box (zuletzt in der Nacht zum 2. Oktober 2026, ohne Fehlermeldung; Verdacht Stromversorgung, nicht bewiesen); Überblendung beim Wechsel des Hauptbilds ist geplant.
+- **Im Alltag erprobt:** Orange Pi 5 Plus mit vier DJI-Kameras gleichzeitig (zwei **Osmo Action 4**, **Action 5 Pro**, **Action 6**) und einer **GoPro Hero 8**: Hauptbild und drei kleine Bilder bei etwa 11 bis 13 Mbit/s.
+  Die Kameras liefen über **Tage am Stück**, zuletzt **47,5 Stunden** im Heimnetz (6. bis 8. Oktober 2026), auf einer frisch geflashten Karte mit `setup.sh` und eingespielter Sicherung.
+- **Twitch** am 10. Oktober 2026 mit echtem Konto getestet: Anmeldung, Chat lesen und schreiben, Moderation. Dazu die **DJI Osmo Pocket 3** (sendet per RTMP an die Box; Akkustand und Ladezustand kommen per Bluetooth dazu).
+- **Noch nicht ausprobiert:** weitere DJI-Modelle, GoPro Hero 9 bis 13 und Starlink. Wer sie benutzt: bitte ein Ticket aufmachen.
+- **Geplant:** Überblendung beim Wechsel des Hauptbilds.
 - **Sprachen:** außer Deutsch maschinell übersetzt, nicht von Muttersprachlern geprüft (`web/i18n/README.md`).
 
 ## Ansehen ohne Box (Demo)
