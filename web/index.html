@@ -215,6 +215,8 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 .ibtn{display:inline-block;margin-left:8px;width:22px;height:22px;padding:0;border-radius:50%;border:1px solid var(--accent);background:transparent;color:var(--accent);font:italic 700 13px/20px Georgia,serif;text-transform:none;letter-spacing:0;cursor:pointer;vertical-align:middle}
 .ibtn[aria-expanded=true]{background:var(--accent);color:#0f172a}
 .ibrow{display:block;margin:0 0 4px}.ibrow .ibtn{margin-left:0}
+details:not([open])>summary .ibtn{display:none}
+details>summary .ibtn{margin-left:10px;vertical-align:middle;text-transform:none;letter-spacing:0}
 .hlp:not(.open){display:none}
 html.nohelp :is(.ibtn,.ibrow,.helpbtn,.hlp){display:none!important}      /* Optionen: die Hilfe-Knöpfe "i" samt ihren Texten ausblenden */
 .helpbtn{width:22px;height:22px;padding:0;border-radius:50%;border:1px solid var(--accent);background:transparent;color:var(--accent);font:italic 700 13px/20px Georgia,serif;text-transform:none;letter-spacing:0;cursor:pointer;vertical-align:middle}
@@ -632,7 +634,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </details>
 
   <details class="card wide" id="c_chat" open><summary><span class="sumh">Chat</span><span id="net_sig" class="sig" role="img" aria-label="Verbindung: keine Messung" title="Verbindung: keine Messung"><i class="sigdot"></i><span class="sgs" aria-hidden="true"><span id="sg_max">10</span><span id="sg_mid">5,5</span><span id="sg_min">1</span></span><svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H80M0 10H80M0 19H80"></path><polyline id="net_line" points=""></polyline></svg><span id="sg_val" class="sgv"></span></span><span id="cam_dots" class="camdots" role="img"></span><button type="button" id="chat_opt" class="sec small chatoptbtn" aria-expanded="false" title="Konto und Ansicht des Chats" aria-label="Konto und Ansicht des Chats">⚙</button></summary>
-    <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button></div>
+    <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button><button type="button" id="tw_acc_owner" class="sec small" hidden>Ich bin der Streamer</button></div>
     <div id="chat_optbox" class="chatopts" hidden>
       <div class="accrow" id="tw_accpanel" hidden><span id="tw_acc_t2" class="muted" translate="no"></span><span id="tw_acc_ev_on" class="muted" hidden>Ereignisse an</span><button type="button" id="tw_acc_mod" class="sec small" hidden>Moderation einschalten</button><button type="button" id="tw_acc_modoff" class="sec small" hidden>Moderation ausschalten</button><button type="button" id="tw_acc_ev" class="sec small" hidden>Ereignisse einschalten</button><button type="button" id="tw_acc_out" class="sec small">Abmelden</button></div>
       <label><input type="checkbox" data-opt="ts" checked> Uhrzeit</label>
@@ -1824,7 +1826,7 @@ function pbOwnerKey(){
 }
 async function srtlaCall(method,url,body){
   const hdr={"Content-Type":"application/json"};
-  if(url.indexOf("/api/chat/")===0) hdr["x-pb-owner"]=pbOwnerKey();
+  if(url.indexOf("/api/chat/")===0||url.indexOf("/api/twitch/log")===0) hdr["x-pb-owner"]=pbOwnerKey();
   if(url==="/api/twitch/login"&&body&&body.action==="start") body.owner=pbOwnerKey();
   const r=await fetch(url,{method,headers:hdr,body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||"Fehler"); return j;
@@ -3032,14 +3034,17 @@ let twAccPoll=null, twAcc=null;
 function twAccRender(a){
   if(!a) return;
   const t=$("tw_acc_t"), go=$("tw_acc_go"), code=$("tw_acc_code"), on=a.state==="angemeldet";
-  twAcc=a; const wait=a.state==="wartet"; $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod); $("tw_acc_ev").hidden=!(on&&!a.events);
+  twAcc=a; const wait=a.state==="wartet", other=a.role==="none"&&!!a.box_login;            // other: auf der Box ist jemand anderes angemeldet: hier nur lesen, bis man sich selbst anmeldet
+  go.textContent=other?"Als Moderator anmelden":"Mit Twitch anmelden"; $("tw_acc_owner").hidden=!(other&&!wait&&!on);
+  $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod); $("tw_acc_ev").hidden=!(on&&!a.events);
   code.hidden=!wait; go.hidden=wait||on;
   $("tw_accrow").hidden=on;                                              // angemeldet: die Zeile verschwindet, Konto und Abmelden liegen hinter dem ⚙ in der Kopfzeile
-  $("tw_accpanel").hidden=!on; $("tw_acc_t2").textContent=on?(a.mod?`Angemeldet als ${a.login} · Moderation an`:`Angemeldet als ${a.login}`):""; $("tw_acc_ev_on").hidden=!(on&&a.events);
+  $("tw_accpanel").hidden=!on; $("tw_acc_t2").textContent=on?(a.role==="mod"?`Angemeldet als ${a.login} · Moderator`:a.mod?`Angemeldet als ${a.login} · Moderation an`:`Angemeldet als ${a.login}`):""; $("tw_acc_ev_on").hidden=!(on&&a.events);
   if(on) t.textContent="Angemeldet als "+a.login;
   else if(wait) t.textContent="Warte auf die Bestätigung bei Twitch …";
   else if(a.state==="abgelaufen") t.textContent="Anmeldung abgelaufen";
   else if(a.state==="fehler") t.textContent=a.error||"Anmeldung fehlgeschlagen";
+  else if(other) t.textContent=`Auf der Box ist ${a.box_login} angemeldet. Zum Schreiben und Moderieren melde dich selbst an.`;
   else t.textContent="Nicht angemeldet";
   if(wait){ $("tw_code").textContent=a.code||""; const l=$("tw_link"); l.href=a.uri||"#"; l.textContent=(a.uri||"").replace(/^https?:\/\//,"").replace(/\?.*$/,"")||"twitch.tv/activate";
             const q=a.uri?QR.svg(a.uri):""; if($("tw_qr").dataset.u!==a.uri){ $("tw_qr").innerHTML=q; $("tw_qr").dataset.u=a.uri||""; } }
@@ -3049,9 +3054,10 @@ function twAccRender(a){
   if(!wait&&twAccPoll){ clearInterval(twAccPoll); twAccPoll=null; if(typeof twLoad==="function") twLoad(); }
 }
 async function twAccLoad(){ try{ twAccRender(await srtlaCall("GET","/api/twitch/login")); }catch(e){} }
-$("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // alle Rechte auf einmal: einmal bei Twitch bestätigen
+$("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.role==="none"?{action:"start",as:"mod"}:{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // Helfer mit eigenem Konto (Moderator) oder der Streamer selbst: alle Rechte auf einmal
+$("tw_acc_owner").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // der Streamer weist sich aus: Twitch muss dasselbe Konto wie auf der Box bestätigen         // alle Rechte auf einmal: einmal bei Twitch bestätigen
 $("tw_acc_mod").addEventListener("click",async()=>{
-  try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:{action:"start",all:true})); }      // Rechte (Moderation samt Befehlen) schon da: sofort an; sonst einmal bei Twitch alle auf einmal bestätigen
+  try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:twAcc&&twAcc.role==="mod"?{action:"start",as:"mod"}:{action:"start",all:true})); }      // Rechte (Moderation samt Befehlen) schon da: sofort an; sonst einmal bei Twitch alle auf einmal bestätigen
   catch(x){ $("chat_err").textContent=x.message; } });
 $("tw_acc_ev").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",events:true})); }catch(x){ $("chat_err").textContent=x.message; } });         // einmal bei Twitch bestätigen (Follows und Kanalpunkte)
 $("tw_acc_modoff").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"mod",on:false})); }catch(x){ $("chat_err").textContent=x.message; } });
@@ -3218,7 +3224,7 @@ $("chat_form").addEventListener("submit",async e=>{
   if(typeof ResizeObserver!=="undefined") new ResizeObserver(()=>{ if(box.clientHeight>0&&stick) box.scrollTop=box.scrollHeight; }).observe(box);      // war die Karte verborgen, springt der Chat beim Zeigen ans Ende
   function pollFetch(url){                                                                                 // mit Zeitgrenze: ein hängender Abruf (Handy gesperrt, WLAN gewechselt) blockiert nie dauerhaft
     const ac=typeof AbortController!=="undefined"?new AbortController():null, to=setTimeout(()=>{ if(ac) ac.abort(); },8000);
-    return fetch(url,ac?{signal:ac.signal}:undefined).finally(()=>clearTimeout(to));
+    return fetch(url,Object.assign({headers:{"x-pb-owner":pbOwnerKey()}},ac?{signal:ac.signal}:{})).finally(()=>clearTimeout(to));          // der Schlüssel dieses Browsers: daran erkennt die Box, welches Konto hier gilt
   }
   async function poll(){
     if(busy||!card.open||card.hasAttribute("data-pbhide")||document.hidden) return; busy=true;
@@ -3776,12 +3782,11 @@ function hlpOwner(ph){                                             // die Übers
 (function(){
   document.querySelectorAll(HLP_SEL).forEach(ph=>{
     const head=hlpOwner(ph); if(!head) return;
-    const card=head.tagName==="SUMMARY";                           // Kartenkopf: das "i" steht erst in der aufgeklappten Karte (eigene Zeile darunter), sonst hinter der Überschrift
-    const row=card&&head.nextElementSibling&&head.nextElementSibling.classList.contains("ibrow")?head.nextElementSibling:null;
-    let b=card?(row&&row.querySelector(".ibtn")):head.querySelector(":scope>.ibtn");
+    // Das "i" steht direkt hinter der Überschrift (bei Karten und Unterpunkten in der Kopfzeile) und nur, solange der Bereich aufgeklappt ist (Wunsch des Nutzers: keine eigene Zeile)
+    let b=head.querySelector(":scope>.ibtn,:scope>.sumh>.ibtn");
     if(!b){
       b=document.createElement("button"); b.type="button"; b.className="ibtn"; b.textContent="i"; b.setAttribute("aria-expanded","false"); b.setAttribute("aria-label","Hilfe anzeigen"); b.title="Hilfe"; b._hlp=[];
-      if(card){ const r=document.createElement("div"); r.className="ibrow"; r.appendChild(b); head.insertAdjacentElement("afterend",r); } else head.appendChild(b);
+      (head.querySelector(":scope>.sumh")||head).appendChild(b);
     }
     b._hlp.push(ph); ph.classList.add("hlp");
   });
