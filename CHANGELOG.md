@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.217 (Beta)
+- **Das Feld „Kanal (Konto, auf dem gestreamt wird)“ steht in den Einstellungen, nicht dauerhaft oben (Wunsch des Nutzers).** Es ist jetzt in den Chat-Einstellungen (Zahnrad) mit „Speichern“, dasselbe Feld wie bei der Akku-Warnung. Oben im Chat erscheint es **nur, solange der Kanal noch fehlt** („Zuerst eintragen, dann anmelden.“); ist er eingetragen, verschwindet die Zeile und kostet keinen Platz. Beide Felder zeigen denselben Wert und speichern dieselbe Einstellung. Nie vorbelegt.
+- Tests: `tools/test_ui_layout.py` 33.
+
 ## 0.9.216 (Beta)
 - **Haupt- und Unterpunkte sind zu unterscheiden (Wunsch des Nutzers).** Der Pfeil vor dem Titel einer **Hauptkategorie** (Status, Verbindungen, SRTLA, Kameras, …) ist jetzt **bernsteinfarben** (`--warn`, hell und dunkel, in allen drei Designs); die Pfeile der **Unterpunkte** behalten ihre Farbe (türkis, im Design „klar“ grau). Dazu ist die **Überschrift der Hauptkategorie minimal fetter** (Schriftstärke 600; im Design „klar“ bleibt sie bei 650). Nur Farbe und Stärke, kein Platzverbrauch. Vom Nutzer in der Vorschau angesehen und freigegeben.
 - Übersetzungen: die 9 Texte der Zuschauer-/Kanal-Anmeldung (0.9.213 bis 0.9.215) in 12 Sprachen vorbereitet (lokal, noch nicht hochgeladen); Rückstand danach: 0.
