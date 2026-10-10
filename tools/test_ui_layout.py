@@ -269,6 +269,14 @@ class ImportProgress(unittest.TestCase):
         self.assertIn('extern:"Die Vorschau ist von außen nicht freigegeben.', PAGE)
         self.assertIn('st.origin==="extern"?"Vorschau von außen: klein', PAGE)
 
+    def test_dji_scan_button_shows_the_reason_in_the_camera_card(self):
+        """"Netze suchen" in der DJI-Karte schrieb Fehler nur in die WLAN-Karte weiter oben; dort stand nur "keine Netze gefunden". Jetzt steht der Grund in der Kamera-Karte."""
+        self.assertIn('<div class="d-nearmsg" role="status"></div>', PAGE)
+        self.assertIn("Keine WLAN-Karte gefunden. Name und Passwort lassen sich auch von Hand eintragen.", PAGE)
+        self.assertIn("Keine Netze gefunden. Steckt ein WLAN-Stick, und läuft keine Sendung?", PAGE)
+        self.assertIn("const err=await wifiDo({action:\"scan\",iface:$(\"w_if\").value},\"Suche läuft …\");", PAGE)
+        self.assertIn('return x.message||"Fehler"; }', PAGE)                                   # wifiDo meldet den Fehler zurück
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
