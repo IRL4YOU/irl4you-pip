@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) (Anleitungen, Server, Rechner, Blog) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.230 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
+**Version 0.9.231 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
 Twitch-Chat und Fernzugriff, ohne die Original-Oberfläche anzufassen. Sie läuft **getrennt** davon.
 
 > **Beta heißt:** Es läuft im Alltag, aber nicht alles ist lange und unterwegs geprüft (siehe „Stand“). Neue Versionen kommen oft; zurück auf eine frühere geht in der Oberfläche.
@@ -63,7 +63,7 @@ Weitere Details: [ANLEITUNG-Betrieb.md](anleitungen/ANLEITUNG-Betrieb.md).
 
 **Betrieb**
 - **Software-Update** und **System-Updates** in der Oberfläche, **Sicherung** (verschlüsselt) und Einspielen, **Protokolle**, **Fernzugriff** (Tailscale), **SSH** auf Knopfdruck.
-- **Schutz:** nur private Netze und Tailscale erreichen die Oberfläche; die **Vorschau von außen ist aus**, weil sie den Upload der Sendung braucht (zu Hause erlaubbar, dann klein).
+- **Schutz:** nur private Netze und Tailscale erreichen die Oberfläche; die **Vorschau von außen ist aus**, weil sie den Upload der Sendung braucht (in der Oberfläche erlaubbar, dann klein).
 - **Problem melden / Wunsch äußern** (bereitet ein GitHub-Formular vor), 14 **Sprachen**, hell/dunkel, Streammodus.
 
 ## Stand

@@ -2,6 +2,11 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 0.9.231 (Beta)
+- **Die Vorschau von außen lässt sich jetzt auch über Tailscale einschalten (Wunsch des Nutzers).** Der Haken „Vorschau auch von außen erlauben“ unter „Zugriff auf diese Oberfläche“ war nur zu Hause (Heimnetz, WLAN der Box) zu sehen und zu ändern. Ein Streamer, der nur über Tailscale zugreift, fand ihn nie und konnte die Vorschau nicht einschalten. Jetzt sieht und ändert ihn jeder, der angemeldet ist.
+- **Die Vorschau zeigt den echten Grund.** Bei „von außen nicht freigegeben“ stand dort fälschlich „Die Vorschau startet wieder, sobald die Box sendet“ und sie wartete endlos. Jetzt steht „Die Vorschau ist von außen nicht freigegeben. Sie lässt sich unter „Verbindungen → Zugriff auf diese Oberfläche“ erlauben.“ Nur „Box sendet nicht“ und „kein Bild“ lassen sie weiter warten.
+- Der Hilfetext des Hakens sagt nicht mehr, dass er nur von zu Hause änderbar ist. Die Texte sind in allen 14 Sprachen angepasst. Tests: `tools/test_ui_layout.py` 40, `tools/test_preview_access.py` 13.
+
 ## 0.9.230 (Beta)
 - **Modell-Liste der DJI-Kameras gekürzt (Wunsch des Nutzers).** In der Hilfe der Oberfläche und in der Anleitung Kameras stehen nur noch **Osmo Action 3, 4, 5 Pro, 6 und Osmo Pocket 3**. Die Osmo 360 und die Pocket 4 sind raus (nicht getestet und nicht geplant). Die README nennt Action 2 und 3, GoPro Hero 9 bis 13 und Starlink als „noch nicht ausprobiert“, bei Problemen bitte ein Ticket. Der Code erkennt die Modelle weiter wie bisher.
 - **Übersetzungen nachgetragen:** die 4 Texte aus 0.9.227 und 0.9.228 (Grund bei „Netze suchen“, Hinweis „Bildaufbau fehlt“, Knopf „Zum Bildaufbau“) in allen 12 weiteren Sprachen, dazu der gekürzte Hilfetext. Rückstand: 0.
