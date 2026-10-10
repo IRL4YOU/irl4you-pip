@@ -14,6 +14,8 @@ Kurze Anleitungen für Anwender. Der Stand ist **Beta**: Was noch nicht mit echt
 
 Zum Aufbau der Software siehe [../KONZEPT.md](../KONZEPT.md), zu den Änderungen [../CHANGELOG.md](../CHANGELOG.md).
 
+**Mehr Anleitungen, Rechner und Server-Pakete:** [irl4you.de](https://irl4you.de), zur BOX [irl4you.de/irl4you-box.html](https://irl4you.de/irl4you-box.html).
+
 **Hilfe in der Oberfläche:** Hinter dem kleinen **?** und dem **i** stehen kurze Erklärungen direkt an der Stelle, an der man sie braucht.
 
 **Fragen, Fehler, Ideen:** GitHub-Issue im Projekt [IRL4YOU/irl4you-pip](https://github.com/IRL4YOU/irl4you-pip) oder die Community auf [Discord](https://discord.gg/nrBCEarMup). Bei Fehlern bitte das Protokoll aus der Karte „Protokolle“ anhängen.
