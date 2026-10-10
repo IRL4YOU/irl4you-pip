@@ -2,6 +2,9 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 0.9.226 (Beta)
+- **README: Die Osmo Pocket 3 steht jetzt in der Liste der getesteten Kameras** (Wunsch des Nutzers; sie fehlte im Satz zum Teststand). Dort sind jetzt Osmo Action 4 (zwei), Action 5 Pro, Action 6, GoPro Hero 8 und die Osmo Pocket 3 genannt. Keine Programmänderung.
+
 ## 0.9.225 (Beta)
 - **Änderungsliste gekürzt (Wunsch des Nutzers).** `CHANGELOG.md` hat nur noch die **letzten 25 Versionen** (31 KB statt 185 KB); alles bis 0.9.199 steht in `CHANGELOG-Archiv.md`. Die Oberfläche merkt das: Im Fenster „Software-Update“ lädt sie das Archiv nur dazu, wenn die installierte Version **älter** ist als die Liste (damit auch dann alle neuen Änderungen erscheinen), und die **Suche in „Alle Änderungen“** durchsucht Liste und Archiv zusammen. Fehlt das Archiv, bleibt die Liste.
 - **Übersetzungen nachgetragen:** die 5 Texte der Vorschau-Freigabe von außen (0.9.223) in allen 12 weiteren Sprachen. Rückstand: 0.

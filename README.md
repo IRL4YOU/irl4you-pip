@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.225 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
+**Version 0.9.226 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
 Twitch-Chat und Fernzugriff, ohne die Original-Oberfläche anzufassen. Sie läuft **getrennt** davon.
 
 > **Beta heißt:** Es läuft im Alltag, aber nicht alles ist lange und unterwegs geprüft (siehe „Stand“). Neue Versionen kommen oft; zurück auf eine frühere geht in der Oberfläche.
@@ -59,8 +59,9 @@ Weitere Details: [ANLEITUNG-Betrieb.md](anleitungen/ANLEITUNG-Betrieb.md).
 
 ## Stand
 
-- **Getestet** auf einer Orange Pi 5 Plus mit vier DJI-Kameras (zwei Action 4, Action 5 Pro, Action 6) und einer GoPro Hero 8: Hauptbild und drei kleine Bilder bei etwa 11 bis 13 Mbit/s,
-  **47,5 Stunden am Stück** im Heimnetz (6. bis 8. Oktober 2026), frisch geflashte Karte mit `setup.sh` und eingespielter Sicherung. Die Pocket 3 ist per RTMP samt Akku und Ladezustand geprüft.
+- **Getestet** auf einer Orange Pi 5 Plus mit vier DJI-Kameras gleichzeitig (zwei **Osmo Action 4**, **Action 5 Pro**, **Action 6**) und einer **GoPro Hero 8**: Hauptbild und drei kleine Bilder bei etwa 11 bis 13 Mbit/s,
+  **47,5 Stunden am Stück** im Heimnetz (6. bis 8. Oktober 2026), frisch geflashte Karte mit `setup.sh` und eingespielter Sicherung.
+- **Zusätzlich mit echter Kamera geprüft:** die **DJI Osmo Pocket 3** (sendet per RTMP an die Box; Akkustand und Ladezustand kommen per Bluetooth dazu).
   Auf der ROCK 5B+ nur ein älterer Stand (0.9.10).
 - **Noch nicht geprüft:** lange Fahrten unterwegs; drei Mobilfunkwege nur kurz (40 s), Starlink gar nicht; „Alle Kameras immer bereit“ nur einige Stunden; weitere DJI-Modelle, GoPro Hero 9 bis 13;
   Twitch-Rollen und Befehle nur gegen Testserver (echt bestätigt sind Anmeldung und Testnachricht); Controller und Handy-Akku nur mit Testwerten; „feste Zusatzadresse“ nur mit Tests.
