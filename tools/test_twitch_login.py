@@ -297,6 +297,10 @@ class FakeHelix(http.server.BaseHTTPRequestHandler):
         if method == "GET" and self.path.startswith("/helix/users?login=bob"):
             out = json.dumps({"data": [{"id": "777", "login": "bob"}]}).encode()
             code = 200
+        elif method == "GET" and self.path.startswith("/helix/games?name=Just"):
+            out, code = json.dumps({"data": [{"id": "509658", "name": "Just Chatting"}]}).encode(), 200
+        elif method == "GET" and self.path.startswith("/helix/games"):
+            out, code = json.dumps({"data": []}).encode(), 200
         elif method == "GET" and self.path.startswith("/helix/users"):
             out, code = json.dumps({"data": []}).encode(), 200
         elif method == "POST" and self.path == "/helix/eventsub/subscriptions":
@@ -320,6 +324,13 @@ class FakeHelix(http.server.BaseHTTPRequestHandler):
     def do_DELETE(self):
         self._go("DELETE")
 
+    def do_PATCH(self):
+        self._go("PATCH")
+
+
+KEY = "A" * 20 + "b" * 20                                                          # Streamer-Schlüssel des Browsers, in dem angemeldet wurde
+KEY2 = "Z" * 40                                                                  # ein anderer Browser
+
 
 class Moderation(Base):
     def setUp(self):
@@ -333,14 +344,14 @@ class Moderation(Base):
         self.hx.server_close()
         super().tearDown()
 
-    def mod(self, scopes=True, channel=""):
+    def mod(self, scopes=True, channel="", everything=False):
         FakeTwitch.state["mod_scopes"] = scopes
         st = server.TwitchStore(os.path.join(self.dir, "twitch.json"))
         if channel:
             st.set({"channel": channel})
         tl = self.make()
         st.account = tl
-        tl.start(mod=scopes)
+        tl.start(mod=scopes, everything=everything, owner_key=KEY)
         self.wait(tl, "angemeldet")
         return server.TwitchMod(st, tl, api_base="http://127.0.0.1:%d/helix/" % self.hx.server_address[1], client_id="testclient"), tl
 
@@ -411,11 +422,163 @@ class Moderation(Base):
         self.assertEqual(posts[0], {"user_id": "777", "reason": "zu laut", "duration": 120})
         self.assertEqual(chat.sent, [])                                                  # Befehle landen nie als Text im Chat
         self.now[0] += 2
-        for bad in ("/me hallo", "/timeout", ".ban bob", "/clear"):
+        for bad in ("/me hallo", "/timeout", ".ban bob", "/vip", "/unknown x"):
             with self.assertRaises(ValueError):
                 snd.say(bad)
             self.now[0] += 2
         self.assertEqual(chat.sent, [])
+
+
+    def test_moderation_includes_all_command_rights_and_everything_at_once_adds_events(self):
+        m, tl = self.mod()                                                              # "Moderation einschalten": Löschen, Bann UND alle Befehle in einer Bestätigung
+        wanted = FakeTwitch.state["seen"][0][1]["scopes"].split()
+        for sc in server.TwitchLogin.CMD_SCOPES.split() + "moderator:manage:banned_users moderator:manage:chat_messages".split():
+            self.assertIn(sc, wanted)
+        self.assertEqual((tl.status()["mod"], tl.status()["events"]), (True, False))
+        m2, tl2 = self.mod(everything=True)                                            # erste Anmeldung: alles auf einmal
+        self.assertEqual((tl2.status()["mod"], tl2.status()["events"]), (True, True))
+        for sc in server.TwitchLogin.EVENT_SCOPES.split():
+            self.assertIn(sc, FakeTwitch.state["seen"][-1][1]["scopes"].split())
+
+    def test_an_older_login_without_the_command_rights_needs_moderation_switched_on_again(self):
+        m, tl = self.mod()
+        tl.tokens["scopes"] = ["chat:read", "chat:edit", "user:write:chat", "moderator:manage:banned_users", "moderator:manage:chat_messages"]   # Stand vor den Befehlen
+        st = tl.status()
+        self.assertEqual((st["mod"], st["mod_scope"]), (False, False))                 # der Knopf "Moderation einschalten" holt alles in einer Anmeldung
+        with self.assertRaises(ValueError):
+            tl.set_mod(True)
+        with self.assertRaises(ValueError) as c:
+            m.do({"action": "vip", "user_id": "777"})
+        self.assertEqual(str(c.exception), server.TwitchMod.ERR_SCOPE)
+
+    def test_commands_only_for_the_owner_where_twitch_says_so(self):
+        m, tl = self.mod(channel="bob")                                                 # fremder Kanal: nur Moderatorenbefehle
+        FakeHelix.log.clear()
+        for act in ("vip", "unvip", "mod", "unmod", "raid", "unraid", "marker", "title", "game"):
+            with self.assertRaises(ValueError) as c:
+                m.do({"action": act, "user_id": "5", "text": "x"}, KEY)
+            self.assertEqual(str(c.exception), server.TwitchMod.ERR_OWNER, act)
+        self.assertEqual([x[0] for x in FakeHelix.log], ["GET"])                         # nur der Name des Kanals wird aufgelöst, sonst geht nichts zu Twitch
+        self.assertEqual(m.do({"action": "clear"}, KEY)["message"], "Chat geleert")
+
+    def test_owner_commands_only_work_in_the_browser_where_the_streamer_signed_in(self):
+        m, tl = self.mod()
+        FakeHelix.log.clear()
+        owner_acts = ({"action": "vip", "user_id": "777"}, {"action": "unvip", "user_id": "777"}, {"action": "mod", "user_id": "777"}, {"action": "unmod", "user_id": "777"},
+                      {"action": "raid", "user_id": "777"}, {"action": "unraid"}, {"action": "marker"}, {"action": "title", "text": "x"}, {"action": "game", "text": "Just Chatting"})
+        for key in (None, "", "kurz", KEY2, KEY[:-1], 5):                                # kein, ungültiger oder fremder Schlüssel
+            for req in owner_acts:
+                with self.assertRaises(ValueError) as c:
+                    m.do(req, key)
+                self.assertEqual(str(c.exception), server.TwitchMod.ERR_BROWSER, (key, req))
+        self.assertEqual(FakeHelix.log, [])                                              # nichts ging zu Twitch
+        for req in ({"action": "clear"}, {"action": "slow"}, {"action": "announce", "text": "Hallo"}, {"action": "ban", "user_id": "777"}):
+            self.assertTrue(m.do(req, KEY2)["ok"], req)                                   # was auch Moderatoren dürfen, geht ohne Streamer-Schlüssel
+        self.assertEqual(m.do({"action": "vip", "user_id": "777"}, KEY)["message"], "VIP vergeben")
+        chat = FakeChat()
+        snd = server.TwitchSender(m.store, chat=chat, clock=lambda: self.now[0], mod=m)
+        self.now[0] += 2
+        with self.assertRaises(ValueError) as c:
+            snd.say("/mod bob", KEY2)
+        self.assertEqual(str(c.exception), server.TwitchMod.ERR_BROWSER)
+        self.assertEqual(chat.sent, [])
+
+    def test_only_a_hash_is_stored_and_more_browsers_can_be_added_by_signing_in_there(self):
+        m, tl = self.mod()
+        raw = open(self.path).read()
+        self.assertNotIn(KEY, raw)                                                       # der Schlüssel selbst steht nie auf der Box
+        import hashlib
+        self.assertIn(hashlib.sha256(KEY.encode()).hexdigest(), raw)
+        self.assertEqual((tl.is_owner(KEY), tl.is_owner(KEY2)), (True, False))
+        tl.start(mod=True, owner_key=KEY2)                                               # zweiter Browser (zum Beispiel das Handy des Streamers): meldet sich auch an
+        self.wait(tl, "angemeldet")
+        self.assertEqual((tl.is_owner(KEY), tl.is_owner(KEY2)), (True, True))
+        tl2 = self.make()                                                                # nach einem Neustart der Box
+        self.assertEqual((tl2.is_owner(KEY), tl2.is_owner(KEY2)), (True, True))
+        tl2.refresh()
+        self.assertEqual((tl2.is_owner(KEY), tl2.is_owner(KEY2)), (True, True))          # Erneuern behält sie
+        tl2.logout()
+        self.assertEqual((tl2.is_owner(KEY), tl2.is_owner(KEY2)), (False, False))        # Abmelden löscht sie
+
+    def test_a_pending_sign_in_of_another_browser_cannot_hand_out_its_key_to_the_streamer(self):
+        m, tl = self.mod()
+        tl.start(mod=True, owner_key=KEY2)                                               # jemand mit dem Link beginnt eine Anmeldung ...
+        tl.start(mod=True, owner_key=KEY)                                                # ... der Streamer beginnt in seinem Browser eine eigene: sie ersetzt die fremde
+        self.assertEqual(tl.pending["owner"], tl.owner_hash(KEY))
+        self.wait(tl, "angemeldet")
+        self.assertEqual((tl.is_owner(KEY), tl.is_owner(KEY2)), (True, False))
+
+    def test_new_commands_call_the_right_endpoints(self):
+        m, tl = self.mod()
+        FakeHelix.log.clear()
+        calls = [({"action": "vip", "user_id": "777"}, "VIP vergeben"), ({"action": "unvip", "user_id": "777"}, "VIP entfernt"),
+                 ({"action": "mod", "user_id": "777"}, "Moderator ernannt"), ({"action": "unmod", "user_id": "777"}, "Moderator entfernt"),
+                 ({"action": "clear"}, "Chat geleert"), ({"action": "slow"}, "Langsamer Modus an (30 Sekunden)"), ({"action": "slow", "number": 9999}, "Langsamer Modus an (120 Sekunden)"),
+                 ({"action": "slowoff"}, "Langsamer Modus aus"), ({"action": "followers", "number": 10}, "Nur Follower an (seit 10 Minuten)"),
+                 ({"action": "followersoff"}, "Nur Follower aus"), ({"action": "subscribers"}, "Nur Abonnenten an"), ({"action": "emoteonlyoff"}, "Nur Emotes aus"),
+                 ({"action": "announce", "text": "Gleich geht es los"}, "Ankündigung gesendet"), ({"action": "raid", "user_id": "777"}, "Raid gestartet"),
+                 ({"action": "unraid"}, "Raid abgebrochen"), ({"action": "marker", "text": "Tor"}, "Marker gesetzt"), ({"action": "title", "text": "Neuer Titel"}, "Titel geändert"),
+                 ({"action": "game", "text": "Just Chatting"}, "Kategorie geändert")]
+        for req, msg in calls:
+            self.assertEqual(m.do(req, KEY)["message"], msg, req)
+        log = [(x[0], x[1].replace("/helix/", ""), json.loads(x[4]) if x[4] else None) for x in FakeHelix.log]
+        self.assertEqual(log[0][0:2], ("POST", "channels/vips?broadcaster_id=42&user_id=777"))
+        self.assertEqual(log[1][0:2], ("DELETE", "channels/vips?broadcaster_id=42&user_id=777"))
+        self.assertEqual(log[2][0:2], ("POST", "moderation/moderators?broadcaster_id=42&user_id=777"))
+        self.assertEqual(log[3][0:2], ("DELETE", "moderation/moderators?broadcaster_id=42&user_id=777"))
+        self.assertEqual(log[4][0:2], ("DELETE", "moderation/chat?broadcaster_id=42&moderator_id=42"))
+        self.assertEqual(log[5], ("PATCH", "chat/settings?broadcaster_id=42&moderator_id=42", {"slow_mode": True, "slow_mode_wait_time": 30}))
+        self.assertEqual(log[6][2], {"slow_mode": True, "slow_mode_wait_time": 120})
+        self.assertEqual(log[7][2], {"slow_mode": False})
+        self.assertEqual(log[8][2], {"follower_mode": True, "follower_mode_duration": 10})
+        self.assertEqual(log[9][2], {"follower_mode": False})
+        self.assertEqual(log[10][2], {"subscriber_mode": True})
+        self.assertEqual(log[11][2], {"emote_mode": False})
+        self.assertEqual(log[12], ("POST", "chat/announcements?broadcaster_id=42&moderator_id=42", {"message": "Gleich geht es los", "color": "primary"}))
+        self.assertEqual(log[13][0:2], ("POST", "raids?from_broadcaster_id=42&to_broadcaster_id=777"))
+        self.assertEqual(log[14][0:2], ("DELETE", "raids?broadcaster_id=42"))
+        self.assertEqual(log[15], ("POST", "streams/markers", {"user_id": "42", "description": "Tor"}))
+        self.assertEqual(log[16], ("PATCH", "channels?broadcaster_id=42", {"title": "Neuer Titel"}))
+        self.assertEqual(log[17][0], "GET")
+        self.assertEqual(log[18], ("PATCH", "channels?broadcaster_id=42", {"game_id": "509658"}))
+        with self.assertRaises(ValueError) as c:
+            m.do({"action": "game", "text": "Gibtsnicht"}, KEY)
+        self.assertEqual(str(c.exception), "Diese Kategorie gibt es nicht")
+        for bad in ({"action": "announce"}, {"action": "title", "text": "  "}, {"action": "slow", "number": "abc"}):
+            with self.assertRaises(ValueError):
+                m.do(bad, KEY)
+
+    def test_twitch_errors_for_the_new_commands_become_short_messages(self):
+        m, tl = self.mod()
+        for status, text in ((404, server.TwitchMod.ERR_NOTFOUND), (403, server.TwitchMod.ERR_FORBIDDEN)):
+            FakeHelix.status = status
+            with self.assertRaises(ValueError) as c:
+                m.do({"action": "vip", "user_id": "777"} if status != 404 else {"action": "marker"}, KEY)
+            self.assertEqual(str(c.exception), text)
+
+    def test_slash_commands_for_the_new_functions(self):
+        m, tl = self.mod()
+        chat = FakeChat()
+        snd = server.TwitchSender(m.store, chat=chat, clock=lambda: self.now[0], mod=m)
+        def go(t):
+            self.now[0] += 2
+            return snd.say(t, KEY)["message"]
+        self.assertEqual(go("/vip @bob"), "VIP vergeben: bob")
+        self.assertEqual(go("/unmod bob"), "Moderator entfernt: bob")
+        self.assertEqual(go("/clear"), "Chat geleert")
+        self.assertEqual(go("/slow 45"), "Langsamer Modus an (45 Sekunden)")
+        self.assertEqual(go("/slow"), "Langsamer Modus an (30 Sekunden)")
+        self.assertEqual(go("/followersoff"), "Nur Follower aus")
+        self.assertEqual(go("/announce Hallo zusammen, schön dass ihr da seid"), "Ankündigung gesendet")
+        self.assertEqual(go("/marker"), "Marker gesetzt")
+        self.assertEqual(go("/title Neuer Titel mit Leerzeichen"), "Titel geändert")
+        self.assertEqual(go("/game Just Chatting"), "Kategorie geändert")
+        ann = [json.loads(x[4]) for x in FakeHelix.log if "announcements" in x[1]][0]
+        self.assertEqual(ann["message"], "Hallo zusammen, schön dass ihr da seid")
+        for bad in ("/vip", "/slow abc", "/announce", "/title", "/raid"):
+            with self.assertRaises(ValueError):
+                go(bad)
+        self.assertEqual(chat.sent, [])                                                  # nie als Text im Chat
 
 
 class FakeChat:
