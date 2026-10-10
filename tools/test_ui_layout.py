@@ -179,6 +179,14 @@ class ImportProgress(unittest.TestCase):
         self.assertNotIn("ExtraAddress", doc)                                               # die feste Adresse steckt tatsächlich nicht in der Sicherung
         self.assertNotIn('"token"', doc)
 
+    def test_chat_command_answer_stays_visible_under_the_input(self):
+        """Ein Befehl im Chat-Feld zeigt die Antwort (zum Beispiel "VIP vergeben: Name") einige Sekunden an; Fehler von Twitch stehen wie bisher an derselben Stelle."""
+        self.assertIn('if(t[0]==="/"&&r&&r.message){', PAGE)
+        self.assertIn('err.textContent=r.message; err.classList.add("okmsg");', PAGE)
+        self.assertIn('.err.okmsg{color:var(--ok)}', PAGE)
+        i = PAGE.index('$("chat_form").addEventListener("submit"')
+        self.assertIn("catch(x){ err.textContent=x.message; }", PAGE[i:i + 1200])
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
