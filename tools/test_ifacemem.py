@@ -83,12 +83,44 @@ class Reconcile(unittest.TestCase):
         self.assertEqual(self.memory(), {"eth0": A, "eth1": B})
 
 
+class HotspotsAndNames(unittest.TestCase):
+    """Alles, was geht, wandert mit: Hotspot-Einstellungen je WLAN-Karte und eigene Namen der Verbindungen und Sticks (Wunsch des Nutzers)."""
+
+    def test_hotspot_settings_and_names_follow_the_card(self):
+        d = tempfile.mkdtemp()
+        srtla, net, cams = stores(d)
+        wifi = server.Wifi(d, False, None, None, None)
+        json.dump({"wlan0": {"ssid": "Box-A", "password": "geheimgeheim", "band": "a", "channel": 36}, "wlan1": {"ssid": "Box-B", "password": "anderespw", "band": "bg", "channel": 6}},
+                  open(wifi.hs_file, "w"))
+        names = server.DeviceNames(d)
+        json.dump({"net:eth0": "Router", "if:wlan1": "Stick hinten", "usb:0bda:c811": "Logilink"}, open(names.path, "w"))
+        mem = server.IfaceMemory(os.path.join(d, "iface-macs.json"))
+        with mock.patch.object(server.SettingsTransfer, "local_macs", staticmethod(lambda: {"eth0": A, "eth1": B, "wlan0": C, "wlan1": D})):
+            mem.reconcile(srtla, net, cams, wifi, names)
+        with mock.patch.object(server.SettingsTransfer, "local_macs", staticmethod(lambda: {"eth0": B, "eth1": A, "wlan0": D, "wlan1": C})):    # beide Paare vertauscht
+            m = mem.reconcile(srtla, net, cams, wifi, names)
+        self.assertEqual(m, {"eth0": "eth1", "eth1": "eth0", "wlan0": "wlan1", "wlan1": "wlan0"})
+        hs = wifi.hotspots()
+        self.assertEqual((hs["wlan1"]["ssid"], hs["wlan0"]["ssid"]), ("Box-A", "Box-B"))        # der Hotspot "Box-A" gehört weiter zur Karte C
+        self.assertEqual(hs["wlan1"]["password"], "geheimgeheim")
+        self.assertEqual(oct(os.stat(wifi.hs_file).st_mode & 0o777), oct(0o600))                 # Passwörter nur für den Dienst lesbar
+        self.assertEqual(names._all(), {"net:eth1": "Router", "if:wlan0": "Stick hinten", "usb:0bda:c811": "Logilink"})   # die USB-Kennung bleibt, wie sie ist
+
+    def test_without_wifi_and_names_the_rest_still_works(self):
+        d = tempfile.mkdtemp()
+        srtla, net, cams = stores(d)
+        mem = server.IfaceMemory(os.path.join(d, "iface-macs.json"))
+        run(mem, srtla, net, cams, {"eth0": A, "eth1": B})
+        self.assertEqual(run(mem, srtla, net, cams, {"eth0": B, "eth1": A}), {"eth0": "eth1", "eth1": "eth0"})
+
+
 class Wiring(unittest.TestCase):
     def test_started_in_main_but_not_in_demo(self):
         src = open(os.path.join(ROOT, "server.py"), encoding="utf-8").read()
         i = src.index("mem = IfaceMemory(os.path.join(args.state, \"iface-macs.json\"))")
         self.assertIn("if not args.demo:", src[i - 60:i])
-        self.assertIn("threading.Thread(target=mem.run,", src[i:i + 600])
+        self.assertIn("threading.Thread(target=mem.run,", src[i:i + 900])
+        self.assertIn("Handler.wifi, Handler.names", src[i:i + 900])                       # Hotspots und Namen sind angeschlossen
 
 
 if __name__ == "__main__":

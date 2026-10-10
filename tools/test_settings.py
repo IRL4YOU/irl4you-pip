@@ -250,14 +250,14 @@ class RoundTrip(unittest.TestCase):
     def test_remap_swaps_all_places_at_once(self):
         doc = {"cameras": [{"name": "a", "key": "k", "role": "pip", "iface": "eth0"}], "camnet": {"iface": "eth1"},
                "srtla": {"settings": {"uplinks": ["eth0", "eth1", "wlan0"], "min_share": {"eth0": 10, "eth1": 20}}},
-               "hotspots": {"wlan1": {"ssid": "x"}}, "dji": [{"addr": "AA", "wifi_ifname": "eth1"}], "names": {"net:eth0": "Router", "usb:1": "Stick"}}
+               "hotspots": {"wlan1": {"ssid": "x"}}, "dji": [{"addr": "AA", "wifi_ifname": "eth1"}], "names": {"net:eth0": "Router", "if:eth1": "Stick am Kabel", "usb:1": "Stick"}}
         out = server.SettingsTransfer._remap_ifaces(doc, {"eth0": "eth1", "eth1": "eth0"})
         self.assertEqual(out["cameras"][0]["iface"], "eth1")
         self.assertEqual(out["camnet"]["iface"], "eth0")
         self.assertEqual(out["srtla"]["settings"]["uplinks"], ["eth1", "eth0", "wlan0"])
         self.assertEqual(out["srtla"]["settings"]["min_share"], {"eth1": 10, "eth0": 20})
         self.assertEqual(out["dji"][0]["wifi_ifname"], "eth0")
-        self.assertEqual(out["names"], {"net:eth1": "Router", "usb:1": "Stick"})
+        self.assertEqual(out["names"], {"net:eth1": "Router", "if:eth0": "Stick am Kabel", "usb:1": "Stick"})
         self.assertEqual(doc["cameras"][0]["iface"], "eth0")                                  # das Original bleibt unverändert
 
     def test_progress_is_reported_part_by_part_and_ends_done(self):
