@@ -152,3 +152,7 @@ Drei kleine Verbesserungen sind eingebaut:
 - Langzeitbetrieb unterwegs im Freien (zu Hause: 47,5 Stunden am Stück ohne Absturz belegt).
 
 Mehr dazu in `README.md` und `CHANGELOG.md`.
+
+---
+
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de)

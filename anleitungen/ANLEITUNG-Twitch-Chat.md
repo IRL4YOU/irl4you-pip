@@ -198,3 +198,7 @@ etwa 100 Sekunden auf. Eine einzelne Chat-Verbindung wird nicht auf mehrere Wege
 | Bot schreibt nicht | Bot neu anmelden („Anmeldung des Bots abgelaufen“). Bei Chat nur für Follower oder Abonnenten: Bot zum Moderator oder VIP machen. |
 | Chat zeigt Emotes als Text | 7TV, BTTV oder FFZ nicht erreichbar, oder **Emotes als Bild** ist im Zahnrad aus. |
 | Bildschirm geht am Handy aus | Der Schalter „Bildschirm anlassen“ (Glühbirne in der Kopfzeile) braucht https, zum Beispiel über den Fernzugriff mit Tailscale. |
+
+---
+
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de)

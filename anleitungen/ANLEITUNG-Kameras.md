@@ -184,3 +184,7 @@ Orange Pi 5 Plus) hat geholfen:
 | HDMI-Kamera fehlt im Bildaufbau | Ist **Als Kamera senden** eingeschaltet? Steht unter **HDMI-Eingang** ein Signal? |
 | "Bitte Stromversorgung prüfen" | Netzteil und USB-Hub prüfen, Adapter direkt am Board anstecken. |
 | Nichts davon hilft | In der Karte **Protokolle** die Protokolle herunterladen (Passwörter und Adressen werden ersetzt, trotzdem kurz durchsehen) und für ein GitHub-Issue verwenden. |
+
+---
+
+Weitere Anleitungen und Themen: [irl4you.de](https://irl4you.de)
