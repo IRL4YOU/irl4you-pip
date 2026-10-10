@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.9.221 (Beta)
+- **Übersetzungen nachgetragen.** Die 3 Texte der neuen Anmelde-Auswahl („Zuschauer“, „Streamer: Name. Anmelden als:“, „Streamer (Name) noch nicht angemeldet. Anmelden als:“) aus 0.9.219 sind jetzt in allen 12 weiteren Sprachen da. Maschinell übersetzt. Rückstand: 0.
+
 ## 0.9.220 (Beta)
 - **Chat: Abzeichen als kleine Symbole statt Wörter (Wunsch des Nutzers).** „STREAMER“ war viel zu breit und verbrauchte Platz. Jetzt steht ein Symbol im farbigen Quadrat: ● Streamer (rot), ⚔ Moderator (grün), ◆ VIP (pink, die Raute), ★ Abonnent (lila), ✱ Twitch-Mitarbeiter, ✔ Partner. Der Name steht weiter als Hinweis beim Darüberfahren. Jedes Abzeichen ist etwa 16 px breit statt bis zu 70 px.
 - Keine neuen Texte. Tests: `tools/test_ui_layout.py` 37.
