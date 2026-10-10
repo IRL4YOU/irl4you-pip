@@ -134,11 +134,12 @@ class HeaderLogo(unittest.TestCase):
 
 
 class DefaultOrder(unittest.TestCase):
-    def test_options_and_report_sit_near_the_bottom_and_power_is_last(self):
-        """Wunsch des Nutzers: Standardreihenfolge unten: Optionen, Problem melden, Box ausschalten und abmelden (jeder kann sie ändern)."""
+    def test_options_sit_near_the_bottom_and_power_is_last(self):
+        """Wunsch des Nutzers: Standardreihenfolge unten: Optionen (mit Problem melden darin), Box ausschalten und abmelden (jeder kann sie ändern)."""
         import re
         ids = [m.group(1) for m in re.finditer(r'<details class="card[^>]*?\bid="([A-Za-z_0-9]+)"', PAGE[PAGE.index("<main"):])]
-        self.assertEqual(ids[-3:], ["c_layout", "c_report", "c_power"])
+        self.assertEqual(ids[-2:], ["c_layout", "c_power"])                                      # "Problem melden" steht jetzt unter Optionen (Wunsch des Nutzers, 0.9.200)
+        self.assertNotIn("c_report", ids)
         self.assertLess(ids.index("c_dev"), ids.index("c_layout"))                              # Entwickler steht über den Optionen
         self.assertEqual(ids[:3], ["c_prev", "c_chat", "c_status"])                              # oben unverändert
 

@@ -171,6 +171,9 @@ class Routes(unittest.TestCase):
 class Page(unittest.TestCase):
     def test_card_and_texts(self):
         self.assertIn('id="c_report"', PAGE)
+        a, b = PAGE.index('id="c_layout"'), PAGE.index('id="c_power"')
+        self.assertTrue(a < PAGE.index('id="c_report"') < b)                                                # unter Optionen (Wunsch des Nutzers, 0.9.200)
+        self.assertIn('<details class="subsec" id="c_report"><summary>Problem melden / Wunsch äußern</summary>', PAGE)
         self.assertIn("Problem melden / Wunsch äußern", PAGE)
         self.assertIn("Die Box sendet selbst nichts.", PAGE)
         self.assertIn('value="issue" checked', PAGE)
