@@ -160,6 +160,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
 .evchip{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);z-index:2;border-radius:999px;padding:5px 14px;font-size:13px;font-weight:600;background:var(--accent);border-color:var(--accent);color:#0f172a;box-shadow:0 2px 8px var(--shade)}
 /* Verbindungs-Amplitude neben "Chat" (wie die Streamstatus-Anzeige für OBS): pulsierender Punkt und Linienverlauf der Senderate der letzten 30 s; grün gut, gelb mäßig, rot schlecht, grau keine Sendung */
 .sig{display:inline-flex;align-items:center;gap:7px;margin-left:10px;color:var(--muted);vertical-align:middle}
+#livebox .row .sig{margin:0 14px 0 16px}#livebox .row .sig .sgv{display:none}           /* die Zahl im Verlauf wäre dieselbe wie die Megabit-Zahl daneben */
 .sig.ok{color:var(--ok)}.sig.warn{color:var(--warn)}.sig.crit{color:var(--crit)}
 .sig .sigdot{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor;animation:sigpulse 1.8s ease-in-out infinite;transition:color .35s ease}
 .sig.warn .sigdot{animation-duration:1.1s}.sig.crit .sigdot{animation-duration:.7s}
@@ -184,6 +185,7 @@ header .hdr .updbtn{border-color:var(--warn);background:rgba(245,158,11,.12);col
   .chatbox .cm .ct{font-size:11px;line-height:1.15}
   .chatbox .bdg{font-size:9px;padding:1px 3px;margin-right:4px;vertical-align:0}
   .chatbox .cm .cn{margin-right:4px}
+  .chatbox .cm.alt{background:color-mix(in srgb,var(--text) 3%,transparent)}                  /* Handy: der Wechsel hell/dunkel zwischen den Zeilen nur noch ganz leicht (das Display ist schon sehr gut) */
   .chatbox img.em{height:1.3em;margin:-2px 1px}
   .chatbox .cm.ev{padding:3px 6px 3px 8px;margin:1px 0}
   .chatbox .cm.ev .evh{font-size:12px;margin-bottom:0}
@@ -2504,12 +2506,14 @@ async function doLiveStop(){
 }
 // Kopfleiste: immer sichtbar, zeigt den Zustand der Sendung und startet oder beendet sie (ohne Rückfrage)
 // Kopfleiste am Handy während der Sendung: die Pulsanzeige und die Kamerapunkte des Chats (dieselben Elemente, sie ziehen um); sonst stehen sie wieder im Chat
+// Sonst steht die Pulsanzeige (Verlauf) in der Karte "Live": erst "Live", dann der Verlauf, dann die Megabit-Zahl (Wunsch des Nutzers, einheitlich auf Rechner und Handy); die Kamerapunkte bleiben im Chat
 function placeSig(){
-  const sig=$("net_sig"), dots=$("cam_dots"), hold=$("hdr_sig"), gear=$("chat_opt"); if(!sig||!dots||!hold||!gear) return;
+  const sig=$("net_sig"), dots=$("cam_dots"), hold=$("hdr_sig"), gear=$("chat_opt"), up=$("liveup"); if(!sig||!dots||!hold||!gear||!up) return;
   const want=isPhone()&&document.body.classList.contains("streaming");
-  if(want&&sig.parentNode!==hold){ hold.appendChild(sig); hold.appendChild(dots); }
-  else if(!want&&sig.parentNode===hold){ gear.before(sig); gear.before(dots); }
+  if(want){ if(sig.parentNode!==hold){ hold.appendChild(sig); hold.appendChild(dots); } }
+  else{ if(sig.parentNode!==up.parentNode) up.before(sig); if(dots.parentNode!==gear.parentNode) gear.before(dots); }
 }
+setTimeout(placeSig,0);
 if(window.matchMedia) matchMedia("(max-width:620px)").addEventListener("change",placeSig);
 $("hdr_more").addEventListener("click",()=>{ const o=document.body.classList.toggle("hdr-open"); $("hdr_more").setAttribute("aria-expanded",o?"true":"false"); });
 function updHdrLive(d){
