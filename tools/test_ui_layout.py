@@ -163,6 +163,22 @@ class ImportProgress(unittest.TestCase):
         self.assertIn("function bkResults(r){\n  bkTodoShow();", PAGE)                      # erscheint, sobald Ergebnisse da sind
         self.assertIn('bkTodoSave(all?null:st)', PAGE)                                      # alle gesetzt: weg
 
+    def test_backup_card_lists_what_is_and_is_not_saved(self):
+        """Vor dem Herunterladen steht, was die Sicherung enthält und was nicht (Wunsch des Nutzers); die Liste deckt alle Teile des Dokuments ab."""
+        i = PAGE.index('<details class="subsec" id="bk_what">')
+        self.assertLess(i, PAGE.index('id="bk_export"'))                                     # über dem Knopf zum Herunterladen
+        block = PAGE[i:PAGE.index("</details>", i)]
+        yes, no = block.split('class="bkno"')
+        for t in ("Kameras", "SRTLA-Server", "Sendewege, Kameranetz und Hotspots", "Gespeicherte WLAN-Netze", "DJI-Kameras", "HDMI-Eingang",
+                  "Automatischer Start", "Eigene Namen", "Twitch: Kanal"):
+            self.assertIn(t, yes)
+        for t in ("Bluetooth-Kopplung", "Twitch-Anmeldung und Token", "Tailscale", "Feste Zusatzadresse", "Protokolle und Mitschnitte"):
+            self.assertIn(t, no)
+        src = open(os.path.join(ROOT, "server.py"), encoding="utf-8").read()
+        doc = src[src.index("def make_document"):src.index("def export(self, secrets_on")]
+        self.assertNotIn("ExtraAddress", doc)                                               # die feste Adresse steckt tatsächlich nicht in der Sicherung
+        self.assertNotIn('"token"', doc)
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
