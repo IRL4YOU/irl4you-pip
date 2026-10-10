@@ -740,6 +740,81 @@ class NetChoice:
         return {"options": self.options(), "selected": self.iface, "ip": self.ip()}
 
 
+class IfaceMemory:
+    """Netzwerkkarten folgen der MAC-Adresse, nicht dem Namen (Wunsch des Nutzers, 10. Oktober 2026).
+
+    Der Kernel zählt eth0, eth1, usb0 … in der Reihenfolge, in der die Karten starten; nach dem Neu-Flashen oder einem Neustart können die Namen vertauscht sein.
+    Sendewege, das Netzwerk der Kameras und der Anschluss je Kamera sind aber unter dem Namen gespeichert. Diese Klasse merkt sich, welche MAC zuletzt hinter
+    welchem Namen stand. Steht eine MAC jetzt unter einem anderen Namen, wandern die gespeicherten Verweise mit (die Einstellung gilt dann weiter für dieselbe Karte).
+    Fehlt die alte MAC (Karte abgezogen), geschieht nichts. Verändert nur eigene Einstellungen, nie das System."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def _last(self):
+        try:
+            with open(self.path) as f:
+                d = json.load(f)
+            return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, str)} if isinstance(d, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _save(self, cur):
+        tmp = self.path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(cur, f)
+        os.replace(tmp, self.path)
+
+    def reconcile(self, srtla, netchoice, cams):
+        """Einmal abgleichen. Gibt {alter Name: neuer Name} zurück (leer, wenn nichts zu tun war)."""
+        cur = SettingsTransfer.local_macs()
+        last = self._last()
+        by_mac = {m: n for n, m in cur.items()}
+        mapping = {name: by_mac[mac] for name, mac in last.items() if cur.get(name) != mac and by_mac.get(mac) not in (None, name)}
+        if mapping:
+            self._apply(mapping, srtla, netchoice, cams)
+            print("iface_macs:", ", ".join("%s->%s" % kv for kv in sorted(mapping.items())), flush=True)           # Journal: welche Namen getauscht waren
+        if cur != last:
+            try:
+                self._save(cur)
+            except OSError:
+                pass
+        return mapping
+
+    @staticmethod
+    def _apply(m, srtla, netchoice, cams):
+        r = lambda n: m.get(n, n)
+        with srtla.lock:
+            st = srtla.data.get("settings") or {}
+            if isinstance(st.get("uplinks"), list):
+                st["uplinks"] = sorted(set(r(u) for u in st["uplinks"]))
+            if isinstance(st.get("min_share"), dict):
+                st["min_share"] = {r(k): v for k, v in st["min_share"].items()}
+            srtla.save()
+        if netchoice is not None and netchoice.iface in m:
+            netchoice.iface = r(netchoice.iface)
+            tmp = netchoice.path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"iface": netchoice.iface}, f)
+            os.replace(tmp, netchoice.path)
+        with cams.lock:
+            changed = False
+            for c in cams.cams:
+                if c.get("iface") in m:
+                    c["iface"] = r(c["iface"])
+                    changed = True
+            if changed:
+                cams.save()
+
+    def run(self, srtla, netchoice, cams, every=30):
+        while True:
+            try:
+                self.reconcile(srtla, netchoice, cams)
+            except Exception as e:                                        # nie die Oberfläche mitnehmen
+                print("iface_macs:", type(e).__name__, flush=True)
+            time.sleep(every)
+
+
 HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 
@@ -8711,6 +8786,13 @@ def main():
         return [ips[u] for u in ups if u in ips]
     Handler.chatpaths = ChatPaths(chat_sources)
     Handler.transfer.netchoice = Handler.netchoice
+    if not args.demo:
+        mem = IfaceMemory(os.path.join(args.state, "iface-macs.json"))
+        try:
+            mem.reconcile(Handler.srtla, Handler.netchoice, Handler.cams)          # gleich beim Start, bevor jemand sendet
+        except Exception as e:
+            print("iface_macs:", type(e).__name__, flush=True)
+        threading.Thread(target=mem.run, args=(Handler.srtla, Handler.netchoice, Handler.cams), daemon=True).start()
     Handler.twitch = TwitchNotifier(TwitchStore(os.path.join(args.state, "twitch.json")), Handler.djisvc, Handler.cams, Handler.send, chat=TwitchChat(paths=Handler.chatpaths), demo=args.demo)
     Handler.twitchlogin = TwitchLogin(os.path.join(args.state, "twitch-login.json"), demo=args.demo, paths=Handler.chatpaths)
     Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
