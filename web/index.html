@@ -634,7 +634,7 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </details>
 
   <details class="card wide" id="c_chat" open><summary><span class="sumh">Chat</span><span id="net_sig" class="sig" role="img" aria-label="Verbindung: keine Messung" title="Verbindung: keine Messung"><i class="sigdot"></i><span class="sgs" aria-hidden="true"><span id="sg_max">10</span><span id="sg_mid">5,5</span><span id="sg_min">1</span></span><svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H80M0 10H80M0 19H80"></path><polyline id="net_line" points=""></polyline></svg><span id="sg_val" class="sgv"></span></span><span id="cam_dots" class="camdots" role="img"></span><button type="button" id="chat_opt" class="sec small chatoptbtn" aria-expanded="false" title="Konto und Ansicht des Chats" aria-label="Konto und Ansicht des Chats">⚙</button></summary>
-    <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button><button type="button" id="tw_acc_owner" class="sec small" hidden>Ich bin der Streamer</button></div>
+    <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button><button type="button" id="tw_acc_asmod" class="sec small" hidden>Als Moderator anmelden</button><button type="button" id="tw_acc_owner" class="sec small" hidden>Ich bin der Streamer</button></div>
     <div id="chat_optbox" class="chatopts" hidden>
       <div class="accrow" id="tw_accpanel" hidden><span id="tw_acc_t2" class="muted" translate="no"></span><span id="tw_acc_ev_on" class="muted" hidden>Ereignisse an</span><button type="button" id="tw_acc_mod" class="sec small" hidden>Moderation einschalten</button><button type="button" id="tw_acc_modoff" class="sec small" hidden>Moderation ausschalten</button><button type="button" id="tw_acc_ev" class="sec small" hidden>Ereignisse einschalten</button><button type="button" id="tw_acc_out" class="sec small">Abmelden</button></div>
       <label><input type="checkbox" data-opt="ts" checked> Uhrzeit</label>
@@ -3035,16 +3035,16 @@ function twAccRender(a){
   if(!a) return;
   const t=$("tw_acc_t"), go=$("tw_acc_go"), code=$("tw_acc_code"), on=a.state==="angemeldet";
   twAcc=a; const wait=a.state==="wartet", other=a.role==="none"&&!!a.box_login;            // other: auf der Box ist jemand anderes angemeldet: hier nur lesen, bis man sich selbst anmeldet
-  go.textContent=other?"Als Moderator anmelden":"Mit Twitch anmelden"; $("tw_acc_owner").hidden=!(other&&!wait&&!on);
+  go.textContent=other?"Als Zuschauer anmelden":"Mit Twitch anmelden"; $("tw_acc_owner").hidden=!(other&&!wait&&!on); $("tw_acc_asmod").hidden=!(other&&!wait&&!on);
   $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod); $("tw_acc_ev").hidden=!(on&&!a.events);
   code.hidden=!wait; go.hidden=wait||on;
   $("tw_accrow").hidden=on;                                              // angemeldet: die Zeile verschwindet, Konto und Abmelden liegen hinter dem ⚙ in der Kopfzeile
-  $("tw_accpanel").hidden=!on; $("tw_acc_t2").textContent=on?(a.role==="mod"?`Angemeldet als ${a.login} · Moderator`:a.mod?`Angemeldet als ${a.login} · Moderation an`:`Angemeldet als ${a.login}`):""; $("tw_acc_ev_on").hidden=!(on&&a.events);
+  $("tw_accpanel").hidden=!on; $("tw_acc_t2").textContent=on?(a.role==="mod"?`Angemeldet als ${a.login} · Moderator`:a.role==="user"?`Angemeldet als ${a.login} · Zuschauer`:a.mod?`Angemeldet als ${a.login} · Moderation an`:`Angemeldet als ${a.login}`):""; $("tw_acc_ev_on").hidden=!(on&&a.events);
   if(on) t.textContent="Angemeldet als "+a.login;
   else if(wait) t.textContent="Warte auf die Bestätigung bei Twitch …";
   else if(a.state==="abgelaufen") t.textContent="Anmeldung abgelaufen";
   else if(a.state==="fehler") t.textContent=a.error||"Anmeldung fehlgeschlagen";
-  else if(other) t.textContent=`Auf der Box ist ${a.box_login} angemeldet. Zum Schreiben und Moderieren melde dich selbst an.`;
+  else if(other) t.textContent=`Auf der Box ist ${a.box_login} angemeldet. Zum Schreiben melde dich selbst an (Zuschauer oder Moderator).`;
   else t.textContent="Nicht angemeldet";
   if(wait){ $("tw_code").textContent=a.code||""; const l=$("tw_link"); l.href=a.uri||"#"; l.textContent=(a.uri||"").replace(/^https?:\/\//,"").replace(/\?.*$/,"")||"twitch.tv/activate";
             const q=a.uri?QR.svg(a.uri):""; if($("tw_qr").dataset.u!==a.uri){ $("tw_qr").innerHTML=q; $("tw_qr").dataset.u=a.uri||""; } }
@@ -3054,10 +3054,11 @@ function twAccRender(a){
   if(!wait&&twAccPoll){ clearInterval(twAccPoll); twAccPoll=null; if(typeof twLoad==="function") twLoad(); }
 }
 async function twAccLoad(){ try{ twAccRender(await srtlaCall("GET","/api/twitch/login")); }catch(e){} }
-$("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.role==="none"?{action:"start",as:"mod"}:{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // Helfer mit eigenem Konto (Moderator) oder der Streamer selbst: alle Rechte auf einmal
+$("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.role==="none"?{action:"start",as:"user"}:{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // Zuschauer mit eigenem Konto (nur Chat) oder der Streamer selbst: alle Rechte auf einmal
+$("tw_acc_asmod").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",as:"mod"})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // Moderator mit eigenem Konto: Moderatorenrechte, ohne die des Kanalinhabers
 $("tw_acc_owner").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // der Streamer weist sich aus: Twitch muss dasselbe Konto wie auf der Box bestätigen         // alle Rechte auf einmal: einmal bei Twitch bestätigen
 $("tw_acc_mod").addEventListener("click",async()=>{
-  try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:twAcc&&twAcc.role==="mod"?{action:"start",as:"mod"}:{action:"start",all:true})); }      // Rechte (Moderation samt Befehlen) schon da: sofort an; sonst einmal bei Twitch alle auf einmal bestätigen
+  try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:twAcc&&(twAcc.role==="mod"||twAcc.role==="user")?{action:"start",as:"mod"}:{action:"start",all:true})); }      // Rechte (Moderation samt Befehlen) schon da: sofort an; sonst einmal bei Twitch alle auf einmal bestätigen
   catch(x){ $("chat_err").textContent=x.message; } });
 $("tw_acc_ev").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",events:true})); }catch(x){ $("chat_err").textContent=x.message; } });         // einmal bei Twitch bestätigen (Follows und Kanalpunkte)
 $("tw_acc_modoff").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"mod",on:false})); }catch(x){ $("chat_err").textContent=x.message; } });
