@@ -59,11 +59,11 @@ Praktisch zum Beispiel nach dem Neu-Aufspielen der SD-Karte. Öffne die Karte **
 
 **Einspielen:** Nur ohne Sendung.
 1. Wähle die Datei aus. Ist sie verschlüsselt, gib ihr Passwort ein und klicke **Öffnen**.
-2. Wähle die Teile, die du einspielen willst, und klicke **Ausgewählte Teile einspielen**. Sie ersetzen die jetzigen Einstellungen.
+2. Wähle die Teile, die du einspielen willst, und klicke **Ausgewählte Teile einspielen**. Sie ersetzen die jetzigen Einstellungen. Beim Einspielen zeigt ein **Fortschrittsbalken**, welcher Teil gerade dran ist (wie beim Software-Update); er endet mit „Fertig“, danach stehen die Ergebnisse je Teil darunter.
 3. Der Stand davor wird gesichert. Mit **Letzten Stand zurückholen** kommst du dahin zurück.
 
 **Enthalten** sind unter anderem: Kameras, Bildaufbau, SRTLA-Server, DJI-Kameras (Einstellungen), HDMI-Eingang, Akku-Warnung im Twitch-Chat (ohne Token), Hotspots und gespeicherte WLAN-Netze. **Nicht enthalten** sind die Einstellungen unter **Optionen** (Reihenfolge und Ausblenden der Menüs, Überschriften von Chat und Vorschau): Sie gelten je Gerät und stehen nur im jeweiligen Browser.
-**Nicht enthalten:** das Passwort der Oberfläche, SSH, Schlüssel, der Twitch-Token samt Twitch-Anmeldung und die Bluetooth-Kopplung der DJI-Kameras (diese musst du neu koppeln). Unternehmens-WLANs lassen sich nicht übertragen.
+**Nicht enthalten:** das Passwort der Oberfläche, SSH, Schlüssel, der Twitch-Token samt Twitch-Anmeldung, **Tailscale (Anmeldung und Freigaben: auf der neuen Karte unter Fernzugriff neu verbinden und die Freigabe wieder einschalten)** und die Bluetooth-Kopplung der DJI-Kameras (diese musst du neu koppeln). Unternehmens-WLANs lassen sich nicht übertragen.
 Das Einspielen von WLAN-Netzen und DJI-Kameras ist noch nicht mit einer echten Box geprüft.
 
 ## 4. Protokolle
