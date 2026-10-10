@@ -86,7 +86,7 @@ Die Moderation ist **aus**, bis du sie einschaltest. Dein Konto muss **Streamer 
    Die Meldung steht dann unter dem Eingabefeld.
 
 **Wichtig – wer mit welchem Konto schreibt und moderiert:** Auf der Box ist **ein** Twitch-Konto angemeldet, das des Streamers. **Wer der Streamer ist, legt das Feld „Kanal (Konto, auf dem gestreamt wird)“ fest**
-(dasselbe Feld wie bei der Akku-Warnung). Es steht oben im Chat; ist es noch leer, trägst du den Kanal dort zuerst ein. Es wird nie ein Name
+(dasselbe Feld wie bei der Akku-Warnung). Es steht als Eingabefeld oben im Chat (dort änderst du es auch); ist es noch leer, trägst du den Kanal dort zuerst ein. Es wird nie ein Name
 vorbelegt. Nur dieses Konto kann Streamer werden: Meldet sich ein anderes Konto (zum Beispiel ein VIP-Konto) als Streamer an, lehnt die Box es
 ab, auch wenn noch niemand angemeldet ist.
 Die Box merkt sich, **in welchem Browser** sich der Streamer angemeldet hat: Der Browser erzeugt dabei einen Zufallsschlüssel
