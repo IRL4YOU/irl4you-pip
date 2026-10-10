@@ -142,16 +142,21 @@ def validate(mac, addr, prefix):
 
 
 def hook_text(mac, addr, prefix):
-    return (b"#!/bin/sh\n# IRL4YOU BOX: feste Zusatzadresse (von pipbox-netaddr.py geschrieben; zum Entfernen in der Oberflaeche ausschalten)\n".decode("ascii") +
-            '[ "$ADDRFAM" = "inet" ] || exit 0\n'
-            '[ -r "/sys/class/net/$IFACE/address" ] || exit 0\n'
-            '[ "$(cat "/sys/class/net/$IFACE/address")" = "%s" ] || exit 0\n'
-            'LB=""\n[ ${#IFACE} -le 12 ] && LB="label $IFACE:pb"\n'
-            'if ip addr replace %s/%d dev "$IFACE" $LB 2>/dev/null; then\n'
-            '  logger -t pipbox-extra-ip "gesetzt auf $IFACE (${MODE:-?} ${PHASE:-?} ${METHOD:-?})" 2>/dev/null || true\n'
-            'else\n'
-            '  logger -t pipbox-extra-ip "FEHLER beim Setzen auf $IFACE (${MODE:-?} ${PHASE:-?} ${METHOD:-?})" 2>/dev/null || true\n'
-            'fi\nexit 0\n' % (mac, addr, prefix))
+    """Skript fuer /etc/network/if-up.d. Als Bytes-Literal (nur ASCII), damit i18n_extract es nicht als Oberflaechentext erfasst."""
+    return (b"""#!/bin/sh
+# IRL4YOU BOX: feste Zusatzadresse (von pipbox-netaddr.py geschrieben; zum Entfernen in der Oberflaeche ausschalten)
+[ "$ADDRFAM" = "inet" ] || exit 0
+[ -r "/sys/class/net/$IFACE/address" ] || exit 0
+[ "$(cat "/sys/class/net/$IFACE/address")" = "%s" ] || exit 0
+LB=""
+[ ${#IFACE} -le 12 ] && LB="label $IFACE:pb"
+if ip addr replace %s/%d dev "$IFACE" $LB 2>/dev/null; then
+  logger -t pipbox-extra-ip "gesetzt auf $IFACE (${MODE:-?} ${PHASE:-?} ${METHOD:-?})" 2>/dev/null || true
+else
+  logger -t pipbox-extra-ip "FEHLER beim Setzen auf $IFACE (${MODE:-?} ${PHASE:-?} ${METHOD:-?})" 2>/dev/null || true
+fi
+exit 0
+""".decode("ascii") % (mac, addr, prefix))
 
 
 def status(**kw):

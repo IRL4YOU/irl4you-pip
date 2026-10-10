@@ -963,7 +963,7 @@ def network_report():
     for u in ("networking", "ifplugd", "NetworkManager", "systemd-networkd", "dhcpcd"):
         out.append("%-18s %s" % (u, run(["systemctl", "is-active", u + ".service"], 5).strip()))
     out.append(run(["systemctl", "list-units", "--no-legend", "--no-pager", "ifplugd*", "ifup@*", "dhclient*"], 8).rstrip(nl))
-    out += ["", "Verbindungen von NetworkManager (Name, Art, Karte, Zustand):", run(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE,STATE", "con", "show"], 8).rstrip(nl), "",
+    out += ["", "Verbindungen von NetworkManager (Name, Art, Karte, Zustand):", run(["nmcli", "-t", "-f", "name,type,device,state", "con", "show"], 8).rstrip(nl), "",
             net_files().rstrip(nl), "",
             "Journal dieses Starts (Netz-Meldungen: ifup/ifdown, ifplugd, DHCP, Kabel, unser Skript; Anfang und Ende):", net_journal(0, 140, 60).rstrip(nl), "",
             "Journal des vorigen Starts (Netz-Meldungen, Ende: Herunterfahren und Neustart):", net_journal(-1, 10, 60).rstrip(nl)]
