@@ -68,7 +68,7 @@ Das Einspielen wurde am 10. Oktober 2026 auf einer frisch geflashten Karte volls
 
 **Nach dem Einspielen** steht unter dem Ergebnis ein Hinweis **„Nach dem Einspielen noch zu erledigen“** mit Haken (der Browser merkt sie, sind alle gesetzt, verschwindet er): **DJI-Kameras** einmal neu koppeln und verbinden, bei **Twitch** neu anmelden, **Tailscale** neu verbinden und die Freigabe wieder einschalten, **Sendewege und Netzwerk für Kameras prüfen**.
 
-**Achtung bei einer neuen Karte:** Die Netzwerkkarten können dort andere Namen haben (`eth0` und `eth1` vertauscht). Die Sicherung speichert Sendewege und das Kameranetz unter diesen Namen. Prüfe darum unter **Senden**, welche Wege aktiv sind, und beim **Netzwerk für Kameras**, ob die Karte mit dem Kameranetz gewählt ist. Meldungen wie „1 Netze zum Senden gibt es hier nicht (ausgelassen)“ weisen darauf hin.
+**Netzwerkkarten mit anderen Namen:** Auf einer neuen Karte können `eth0` und `eth1` vertauscht sein (die Namen vergibt der Kernel beim Start nach der Reihenfolge, nicht nach der Karte). Die Sicherung speichert deshalb seit 0.9.205 die **MAC-Adresse** jeder Netzwerkkarte mit; beim Einspielen ordnet die Box Sendewege, Kameranetz, Kamera-Anschlüsse, Hotspots und Namen **anhand der MAC** zu und schreibt im Ergebnis „Netzwerkkarten: Namen der Netzwerkkarten anhand der MAC-Adressen angepasst: eth0 → eth1, …“. Eine **ältere Sicherung** (vor 0.9.205) hat keine MAC-Adressen: Dann prüfe unter **Senden**, welche Wege aktiv sind, und beim **Netzwerk für Kameras**, ob die Karte mit dem Kameranetz gewählt ist. Meldungen wie „1 Netze zum Senden gibt es hier nicht (ausgelassen)“ weisen darauf hin.
 
 ## 4. Protokolle
 
