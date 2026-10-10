@@ -8378,6 +8378,81 @@ class UiAccess:
         return self.status(local_ip)
 
 
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def client_origin(peer, forwarded=False):
+    """Woher kommt die Anfrage? "lokal": Heimnetz, Router-WLAN, Hotspot der Box (private Adressen) und die Box selbst. "extern": über Tailscale (eigene
+    Adresse aus 100.64.0.0/10 oder über den Tailscale-Proxy auf dieser Box, erkennbar an X-Forwarded-For), über einen öffentlichen Link (Funnel) oder von einer
+    öffentlichen Adresse. Das entscheidet über die Vorschau (sie kostet Upload, den die Sendung braucht)."""
+    try:
+        a = ipaddress.ip_address(str(peer).split("%")[0])
+    except ValueError:
+        return "extern"
+    if isinstance(a, ipaddress.IPv6Address) and a.ipv4_mapped:
+        a = a.ipv4_mapped
+    if a.is_loopback:
+        return "extern" if forwarded else "lokal"
+    if a.version == 4 and a in TAILNET:
+        return "extern"
+    return "lokal" if (a.is_private or a.is_link_local) else "extern"
+
+
+class PreviewAccess:
+    """Vorschau von außen (Wunsch des Nutzers): Jede Vorschau braucht rund 1,7 Mbit/s Upload. Von außen (Tailscale, öffentlicher Link) ist sie deshalb
+    **standardmäßig aus**; der Nutzer kann sie im Heimnetz erlauben. Dann nur **klein** (EXT_WIDTH × EXT_FPS) und für **einen** Zuschauer zugleich, damit
+    der Upload für die Sendung bleibt. Lokal bleibt alles wie bisher. Datei: preview-access.json im Zustandsordner (Rechte 0600)."""
+    EXT_WIDTH = 320
+    EXT_FPS = 10
+    EXT_MAX = 1
+
+    def __init__(self, path, demo=False):
+        self.path, self.demo = path, demo
+        self.lock = threading.Lock()
+        self.external = False
+        self.ext_viewers = 0
+        try:
+            with open(path) as f:
+                self.external = json.load(f).get("external") is True
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    def set(self, external):
+        if not isinstance(external, bool):
+            raise ValueError("ja oder nein")
+        with self.lock:
+            self.external = external
+            if not self.demo:
+                tmp = self.path + ".tmp"
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    json.dump({"external": external}, f)
+                os.replace(tmp, self.path)
+        return self.status()
+
+    def status(self):
+        with self.lock:
+            return {"external": self.external, "ext_viewers": self.ext_viewers, "ext_width": self.EXT_WIDTH, "ext_fps": self.EXT_FPS, "ext_max": self.EXT_MAX}
+
+    def allowed(self, origin):
+        return origin != "extern" or self.external
+
+    def acquire(self, origin):
+        """Platz für eine Vorschau reservieren: lokal immer (die Vorschau selbst begrenzt auf zwei), von außen nur, wenn erlaubt und noch frei."""
+        if origin != "extern":
+            return True
+        with self.lock:
+            if not self.external or self.ext_viewers >= self.EXT_MAX:
+                return False
+            self.ext_viewers += 1
+            return True
+
+    def release(self, origin):
+        if origin == "extern":
+            with self.lock:
+                self.ext_viewers = max(0, self.ext_viewers - 1)
+
+
 def source_allowed(ip):
     """Darf diese Adresse die Oberfläche erreichen? Nur eigene und private Netze: Loopback (Tailscale-Proxy), private Adressbereiche, Link-Local,
     Carrier-Grade-NAT (100.64.0.0/10, dort liegt auch Tailscale) und IPv6-ULA. Eine öffentliche Quelladresse heißt: die Oberfläche hängt
@@ -8597,6 +8672,10 @@ class Handler(BaseHTTPRequestHandler):
                 pass
         return peer
 
+    def origin(self):
+        """"lokal" oder "extern" (siehe client_origin): beim Tailscale-Proxy auf dieser Box kommt die Anfrage von 127.0.0.1 mit X-Forwarded-For."""
+        return client_origin(self.client_address[0], bool(self.headers.get("X-Forwarded-For")))
+
     def local_ip(self):
         """Eigene Adresse, auf der diese Verbindung ankam (welches Netz der Box)."""
         try:
@@ -8657,12 +8736,32 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if not pv:
             return self.reply(503, {"error": "missing"})
+        org = self.origin()
+        pa = self.previewaccess
+        if not pa.allowed(org):
+            return self.reply(403, {"error": "extern"})                           # von außen nicht freigegeben
         if not self.send._active():
             return self.reply(503, {"error": "off"})
+        if not pa.acquire(org):
+            return self.reply(429, {"error": "busy"})                             # von außen höchstens ein Zuschauer
+        try:
+            return self._preview_stream(pv, q, org)
+        finally:
+            pa.release(org)
+
+    def _preview_stream(self, pv, q, org):
         try:
             fmt = (q.get("fmt") or ["mp4"])[0]
             fmt = fmt if fmt in pipbox_preview.FORMATS else "mp4"
-            up, head = pv.open((q.get("fps") or [30])[0], (q.get("w") or [640])[0], (q.get("long") or [""])[0] == "1", fmt)
+            fps, width, long = (q.get("fps") or [30])[0], (q.get("w") or [640])[0], (q.get("long") or [""])[0] == "1"
+            if org == "extern":                                                   # von außen immer klein und kurz: der Upload bleibt für die Sendung
+                try:
+                    fps = min(int(fps), self.previewaccess.EXT_FPS)
+                    width = min(int(width), self.previewaccess.EXT_WIDTH)
+                except (TypeError, ValueError):
+                    fps, width = self.previewaccess.EXT_FPS, self.previewaccess.EXT_WIDTH
+                long = False
+            up, head = pv.open(fps, width, long, fmt)
         except OSError:
             return self.reply(503, {"error": "missing"})
         if up is None:
@@ -8792,12 +8891,23 @@ class Handler(BaseHTTPRequestHandler):
                     if f:
                         c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
             return self.reply(200, m)
+        if path == "/api/previewaccess":
+            return self.reply(200, dict(self.previewaccess.status(), origin=self.origin()))
         if path == "/api/preview":
+            org = self.origin()
             if not self.preview:
-                return self.reply(200, {"available": False, "why": "missing"})
+                return self.reply(200, {"available": False, "why": "missing", "origin": org})
+            if not self.previewaccess.allowed(org):
+                return self.reply(200, {"available": False, "why": "extern", "origin": org})         # von außen nicht freigegeben
             if not self.send._active():
-                return self.reply(200, {"available": False, "why": "off"})            # ohne Sendung gar nicht erst den Dienst wecken
-            return self.reply(200, self.preview.status())
+                return self.reply(200, {"available": False, "why": "off", "origin": org})            # ohne Sendung gar nicht erst den Dienst wecken
+            st = self.preview.status()
+            st["origin"] = org
+            if org == "extern":
+                st.update(ext_width=self.previewaccess.EXT_WIDTH, ext_fps=self.previewaccess.EXT_FPS)
+                if self.previewaccess.status()["ext_viewers"] >= self.previewaccess.EXT_MAX:
+                    st.update(available=False, why="busy")
+            return self.reply(200, st)
         if path == "/api/preview/stream":
             return self.preview_stream()
         if path == "/api/controller-keys":
@@ -9048,6 +9158,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(400, {"error": str(e)})
             if path == "/api/uiaccess":
                 return self.reply(200, self.uiaccess.set(d.get("block_client_wifi"), self.local_ip()))
+            if path == "/api/previewaccess":
+                if self.origin() != "lokal":
+                    return self.reply(403, {"error": "Das lässt sich nur im Heimnetz oder im WLAN der Box ändern, nicht von außen"})
+                return self.reply(200, dict(self.previewaccess.set(d.get("external")), origin="lokal"))
             if path == "/api/twitch/login":
                 act = d.get("action")
                 key = d.get("owner") or self.headers.get("x-pb-owner", "")
@@ -9268,6 +9382,7 @@ def main():
             time.sleep(3)
     threading.Thread(target=watcher, daemon=True).start()
     Handler.uiaccess = UiAccess(os.path.join(args.state, "ui-access.json"), demo=args.demo)
+    Handler.previewaccess = PreviewAccess(os.path.join(args.state, "preview-access.json"), demo=args.demo)
     Handler.netaddr = ExtraAddress(args.state, demo=args.demo)
     LimitedHTTPServer.ui_access = Handler.uiaccess
     LimitedHTTPServer.allow_public = args.allow_public
