@@ -288,7 +288,9 @@ button.mv{background:transparent;color:var(--muted);border-color:var(--line);pad
 button.del{background:transparent;color:var(--crit);border-color:var(--line);padding:4px 10px;font-size:13px}
 details.card>summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;list-style:none}
 details.card>summary::-webkit-details-marker{display:none}
-details.card>summary .sumh{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+details.card>summary .sumh{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+/* Hauptkategorie: der Pfeil vor dem Kartentitel hat eine eigene Farbe (Bernstein), die Unterpunkte behalten ihre (Türkis bzw. grau): so sieht man, was Haupt- und was Unterpunkt ist, ohne Platz zu verbrauchen */
+details.card>summary .sumh::before,html[data-design] details.card>summary .sumh::before{color:var(--warn);border-color:var(--warn)}
 details.card>summary .sumh::before{content:"\25B8  ";}
 details.card[open]>summary .sumh::before{content:"\25BE  ";}
 details.card[open]>summary{margin-bottom:10px}
