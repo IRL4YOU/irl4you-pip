@@ -1,6 +1,6 @@
 # IRL4YOU BOX: Betrieb und Pflege
 
-Diese Anleitung zeigt dir, wie du die IRL4YOU BOX installierst, aktuell hältst, sicherst und bei Problemen Hilfe bekommst. Die Weboberfläche läuft getrennt von der Original-Oberfläche der BELABOX auf Port 8780. Es ist eine Beta: Neue Versionen kommen oft, und zurück auf eine frühere Version geht in der Oberfläche.
+Diese Anleitung zeigt dir, wie du die IRL4YOU BOX installierst, aktuell hältst, sicherst und bei Problemen Hilfe bekommst. Die Weboberfläche läuft getrennt von der Original-Oberfläche der BELABOX auf Port 8780. Neue Versionen kommen oft, und zurück auf eine frühere Version geht in der Oberfläche.
 
 ## 1. Installation und erste Anmeldung
 

@@ -1,6 +1,6 @@
 # Anleitungen zur IRL4YOU BOX
 
-Kurze Anleitungen für Anwender. Der Stand ist **Beta**: Was noch nicht mit echten Geräten geprüft ist, steht jeweils ehrlich dabei.
+Kurze Anleitungen für Anwender. Was noch nicht mit echten Geräten geprüft ist, steht jeweils ehrlich dabei.
 
 | Thema | Anleitung |
 |---|---|

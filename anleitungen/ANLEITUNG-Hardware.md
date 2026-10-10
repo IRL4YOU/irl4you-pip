@@ -1,6 +1,6 @@
 # Hardware: Bluetooth-Stick, WLAN-Stick und Kamera-WLAN
 
-Kurze Hinweise zu USB-Sticks und zum WLAN der Kameras. Stand **Beta**: Was nicht mit echter Hardware geprüft ist, steht dabei.
+Kurze Hinweise zu USB-Sticks und zum WLAN der Kameras. Was nicht mit echter Hardware geprüft ist, steht dabei.
 
 ## 1. Bluetooth-Stick für die DJI-Kameras
 

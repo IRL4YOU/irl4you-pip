@@ -2,7 +2,7 @@
 
 Diese Anleitung zeigt dir, wie du Server, Sendewege und Bild einstellst und live gehst. Die Oberfläche öffnest du im Browser unter `http://<Adresse der Box>:8780`.
 
-> **Beta:** Das Paket läuft im Alltag, ist aber nicht in jedem Punkt lange und unterwegs getestet. Was noch ungetestet ist, steht im jeweiligen Abschnitt und gesammelt unter "Was noch nicht geprüft ist".
+> **Stand:** Das Paket läuft im Alltag. Was noch ungetestet ist, steht gesammelt unter "Was noch nicht geprüft ist".
 
 ## 1. SRTLA-Server eintragen und umschalten
 
@@ -145,11 +145,10 @@ Drei kleine Verbesserungen sind eingebaut:
 
 ## Was noch nicht geprüft ist
 
-- Fußleiste mit echten Kameras.
-- "Hauptbild tauschen ohne Unterbrechung": nur kurz im Heimnetz.
-- "Alle Kameras immer bereit": noch kein langer Lauf, keine Fahrt.
-- Mehrere Mobilfunkwege: nur ein kurzer Test, Starlink nicht.
-- Langzeitbetrieb unterwegs im Freien (zu Hause: 47,5 Stunden am Stück ohne Absturz belegt).
+- Starlink als Sendeweg.
+- GoPro Hero 9 bis 13 und DJI Osmo Action 2 und 3.
+
+Wer sie benutzt und Probleme hat: bitte ein Ticket aufmachen. Belegt sind Kameras über Tage am Stück (zuletzt 47,5 Stunden am Stück ohne Absturz).
 
 Mehr dazu in `README.md` und `CHANGELOG.md`.
 
