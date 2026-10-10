@@ -32,7 +32,7 @@ Gut zu wissen:
 ## 2. DJI-Kameras per Bluetooth
 
 Die Box koppelt DJI-Kameras selbst, übergibt ihnen ein WLAN und das RTMP-Ziel und startet den Stream.
-Die Oberfläche nennt diese Modelle: Osmo Action 3, 4, 5 Pro, 6, Osmo 360, Osmo Pocket 3 und 4.
+Die Oberfläche nennt diese Modelle: Osmo Action 3, 4, 5 Pro, 6 und Osmo Pocket 3.
 Mit Action 4, Action 5 Pro und Action 6 haben wir gearbeitet. **Pocket 3: geprüft** (10. Oktober 2026). Sie sendet per **RTMP** an die Box, die Box liest per Bluetooth **Akkustand und Ladezustand** mit (Schalter „Nur Akkustand lesen“, Abschnitt unten). Dass die Box die Pocket 3 selbst koppelt und den Stream startet, ist nicht ausprobiert; bei weiteren Modellen ist auch das noch nicht mit echter Kamera geprüft.
 
 ### Suchen und koppeln
