@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.9.211 (Beta)
+- **Chat-Befehle: Die Antwort ist jetzt zu sehen (Meldung des Nutzers).** Der Nutzer machte „IRL4YOU“ per `/vip` zum VIP; es ging, aber im Chat-Feld erschien nichts. Jetzt steht nach einem Befehl für 8 Sekunden die Antwort in Grün unter dem Eingabefeld (zum Beispiel „✓ VIP vergeben: irl4you“, „Langsamer Modus an (30 Sekunden)“). Lehnt Twitch ab, steht der Grund wie bisher in Rot an derselben Stelle (Twitchs eigener Text bei Fehlern 400/409/422/425, zum Beispiel VIP-Limit oder schon VIP). Gewöhnliche Chat-Nachrichten zeigen keine Antwort.
+- Tests: `tools/test_ui_layout.py` 29.
+
 ## 0.9.210 (Beta)
 - **Twitch-Chat: neue Befehle (Wunsch des Nutzers).** Im Eingabefeld des Chats gehen jetzt (zusätzlich zu `/ban`, `/timeout`, `/unban`): `/clear`, `/slow [Sek]`, `/slowoff`, `/followers [Min]`, `/followersoff`, `/subscribers`, `/subscribersoff`, `/emoteonly`, `/emoteonlyoff`, `/announce Text`, `/vip Name`, `/unvip Name`, `/mod Name`, `/unmod Name`, `/raid Name`, `/unraid`, `/marker [Text]`, `/title Text`, `/game Kategorie`. Alle laufen über die Twitch-Schnittstelle (`TwitchMod._extra`), nie als Text im Chat; Twitchs Ablehnungen (zum Beispiel VIP-Limit, schon VIP, Stream nicht live) erscheinen als kurze Meldung.
 - **„Moderation einschalten“ holt alle Rechte auf einmal** (Moderation plus Befehle: `channel:manage:vips`, `channel:manage:moderators`, `moderator:manage:chat_settings`, `moderator:manage:announcements`, `channel:manage:raids`, `channel:manage:broadcast`); die erste Anmeldung („Mit Twitch anmelden“) fragt zusätzlich die Ereignisse mit ab. Es kommt **kein zusätzlicher Knopf** dazu. **Ältere Anmeldungen** ohne die Befehlsrechte zeigen „Moderation einschalten“ wieder an (einmal bei Twitch bestätigen, vorher abmelden ist nicht nötig).
