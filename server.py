@@ -1974,6 +1974,7 @@ class SendControl:
         out["reasons"] = [] if active else self.reasons()
         if not active and belacoder_running():
             out["reasons"].append("Es läuft schon ein belacoder (z. B. über die BELABOX-Oberfläche)")
+        out["no_layout"] = not active and not self.pipeline.cfg.get("main")
         out["can_start"] = not active and not out["reasons"]
         return out
 
