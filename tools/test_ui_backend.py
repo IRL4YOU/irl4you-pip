@@ -1415,7 +1415,7 @@ class HeaderControls(unittest.TestCase):
     def test_main_connection_has_its_own_heading_not_under_the_dji_one(self):
         """Issue #5: Die Hauptverbindung gilt für alle RTMP-Kameras (Handy, Drohne ...); sie stand fälschlich unter "DJI-Kameras (Bluetooth)"."""
         h = self.html
-        main, dji = h.index('<div class="sech">Hauptverbindung</div>'), h.index('<div class="sech">DJI-Kameras (Bluetooth)</div>')
+        main, dji = h.index('<div class="sech">Hauptverbindung</div>'), h.index('<summary>DJI-Kameras (Bluetooth)</summary>')
         self.assertLess(main, dji)
         self.assertLess(h.index('id="netsel"'), dji)            # Auswahl und Adresszeile gehören zur Hauptverbindung
         self.assertLess(h.index('id="netinfo"'), dji)
@@ -2095,13 +2095,34 @@ class UpdateHistory(unittest.TestCase):
 
         def get(name, limit):
             calls.append((name, limit))
-            return "## 0.9.2\n- b\n\n## 0.9.1\n- a\n"
+            return "## 0.9.2\n- b\n\n## 0.9.1\n- a\n" if name == "CHANGELOG.md" else "# Archiv\n\n## 0.8.0\n- z\n"
         with mock.patch.object(sw, "_get", get):
             a = sw.history()
             b = sw.history()
-        self.assertEqual(a, {"text": "## 0.9.2\n- b\n\n## 0.9.1\n- a\n", "error": ""})
+        self.assertEqual(a, {"text": "## 0.9.2\n- b\n\n## 0.9.1\n- a\n\n# Archiv\n\n## 0.8.0\n- z\n", "error": ""})   # Liste und Archiv zusammen
         self.assertEqual(b, a)
-        self.assertEqual(calls, [("CHANGELOG.md", server.SwUpdate.CHANGELOG_MAX)])        # genau eine Abfrage
+        self.assertEqual(calls, [("CHANGELOG.md", server.SwUpdate.CHANGELOG_MAX), ("CHANGELOG-Archiv.md", server.SwUpdate.CHANGELOG_MAX)])        # genau eine Abfrage je Datei
+
+    def test_archive_is_loaded_for_notes_only_when_the_installed_version_is_older_than_the_list(self):
+        """Die Änderungsliste hält nur die letzten Versionen, der Rest steht im Archiv: dessen Einträge kommen nur dazu, wenn die installierte Version älter ist als die Liste."""
+        sw = self.sw()
+        calls = []
+
+        def get(name, limit):
+            calls.append(name)
+            return "# Änderungen\n\n## 0.9.202\n- c\n\n## 0.9.201\n- b\n\n## 0.9.200\n- a\n" if name == "CHANGELOG.md" else "# Archiv\n\n## 0.9.199\n- z\n\n## 0.9.198\n- y\n"
+        with mock.patch.object(sw, "_get", get):
+            t = sw._changelog("0.9.200")                                                   # neuer als alles im Archiv: nur die Liste
+            self.assertEqual(calls, ["CHANGELOG.md"])
+            self.assertNotIn("0.9.199", t)
+            calls.clear()
+            t = sw._changelog("0.9.150")                                                   # älter als die Liste: Archiv dazu
+            self.assertEqual(calls, ["CHANGELOG.md", "CHANGELOG-Archiv.md"])
+            self.assertIn("## 0.9.199", t)
+            n = server.SwUpdate._sections_since(t, "0.9.198")
+            self.assertEqual([l for l in n.splitlines() if l.startswith("## ")], ["## 0.9.202", "## 0.9.201", "## 0.9.200", "## 0.9.199"])
+        self.assertEqual(server.SwUpdate._oldest("## 0.9.5\n\n## 0.9.11\n## x\n"), (0, 9, 5))
+        self.assertIsNone(server.SwUpdate._oldest("kein Abschnitt"))
 
     def test_nothing_is_loaded_while_sending(self):
         sw = self.sw(sending=True)
@@ -2115,12 +2136,12 @@ class UpdateHistory(unittest.TestCase):
         with mock.patch.object(sw, "_get", side_effect=OSError("kein Netz")):
             r = sw.history()
         self.assertEqual((r["text"], r["error"]), ("", "GitHub ist nicht erreichbar."))
-        with mock.patch.object(sw, "_get", return_value="## 0.9.1\n- a\n"):
-            self.assertEqual(sw.history()["error"], "")                                    # der nächste Versuch klappt
+        with mock.patch.object(sw, "_get", side_effect=lambda n, l: "## 0.9.1\n- a\n" if n == "CHANGELOG.md" else (_ for _ in ()).throw(OSError("kein Archiv"))):
+            self.assertEqual(sw.history()["error"], "")                                    # der nächste Versuch klappt (auch ohne Archiv)
 
     def test_stale_copy_is_kept_when_github_fails_later(self):
         sw = self.sw()
-        with mock.patch.object(sw, "_get", return_value="## 0.9.1\n- a\n"):
+        with mock.patch.object(sw, "_get", side_effect=lambda n, l: "## 0.9.1\n- a\n" if n == "CHANGELOG.md" else (_ for _ in ()).throw(OSError("kein Archiv"))):
             sw.history()
         sw.hist_t -= 3600
         with mock.patch.object(sw, "_get", side_effect=OSError("weg")):
