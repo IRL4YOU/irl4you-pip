@@ -258,6 +258,17 @@ class ImportProgress(unittest.TestCase):
         self.assertIn(".chatbox .cm.alt{background:color-mix(in srgb,var(--text) 3%,transparent)}", PAGE[i:i + 1500])
         self.assertIn(".chatbox .cm.alt{background:color-mix(in srgb,var(--text) 6%,transparent)", PAGE)      # Rechner unverändert
 
+    def test_preview_from_outside_has_its_switch_in_the_access_section(self):
+        """Der Schalter "Vorschau auch von außen erlauben" steht unter "Zugriff auf diese Oberfläche", ist nur von zu Hause änderbar und die Vorschau erklärt, warum sie von außen aus ist."""
+        i = PAGE.index('<details class="subsec" id="net_ua">')
+        block = PAGE[i:PAGE.index("</details>", i)]
+        self.assertIn('id="pa_ext"', block)
+        self.assertIn("Vorschau auch von außen erlauben (verbraucht Upload)", block)
+        self.assertIn('srtlaCall("POST","/api/previewaccess",{external:e.target.checked})', PAGE)
+        self.assertIn('$("pa_row").hidden=!local;', PAGE)                                    # von außen sieht man den Schalter nicht
+        self.assertIn('extern:"Die Vorschau ist von außen nicht freigegeben.', PAGE)
+        self.assertIn('st.origin==="extern"?"Vorschau von außen: klein', PAGE)
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
