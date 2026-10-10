@@ -637,9 +637,10 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
   </details>
 
   <details class="card wide" id="c_chat" open><summary><span class="sumh">Chat</span><span id="net_sig" class="sig" role="img" aria-label="Verbindung: keine Messung" title="Verbindung: keine Messung"><i class="sigdot"></i><span class="sgs" aria-hidden="true"><span id="sg_max">10</span><span id="sg_mid">5,5</span><span id="sg_min">1</span></span><svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H80M0 10H80M0 19H80"></path><polyline id="net_line" points=""></polyline></svg><span id="sg_val" class="sgv"></span></span><span id="cam_dots" class="camdots" role="img"></span><button type="button" id="chat_opt" class="sec small chatoptbtn" aria-expanded="false" title="Konto und Ansicht des Chats" aria-label="Konto und Ansicht des Chats">⚙</button></summary>
-    <div class="twacc twch" id="tw_chrow"><label class="muted" for="tw_ch_in">Kanal (Konto, auf dem gestreamt wird)</label><input id="tw_ch_in" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="button" id="tw_ch_save" class="sec small">Speichern</button><span id="tw_ch_t" class="muted"></span></div>
+    <div class="twacc twch" id="tw_chrow" hidden><label class="muted" for="tw_ch_in">Kanal (Konto, auf dem gestreamt wird)</label><input id="tw_ch_in" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="button" id="tw_ch_save" class="sec small">Speichern</button><span id="tw_ch_t" class="muted"></span></div>
     <div class="twacc" id="tw_accrow"><span id="tw_acc_t" class="muted"></span><button type="button" id="tw_acc_go" class="sec small">Mit Twitch anmelden</button><button type="button" id="tw_acc_asmod" class="sec small" hidden>Als Moderator anmelden</button><button type="button" id="tw_acc_owner" class="sec small" hidden>Ich bin der Streamer</button></div>
     <div id="chat_optbox" class="chatopts" hidden>
+      <div class="accrow twch" id="tw_chrow2"><label class="muted" for="tw_ch2_in">Kanal (Konto, auf dem gestreamt wird)</label><input id="tw_ch2_in" maxlength="25" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="button" id="tw_ch2_save" class="sec small">Speichern</button></div>
       <div class="accrow" id="tw_accpanel" hidden><span id="tw_acc_t2" class="muted" translate="no"></span><span id="tw_acc_ev_on" class="muted" hidden>Ereignisse an</span><button type="button" id="tw_acc_mod" class="sec small" hidden>Moderation einschalten</button><button type="button" id="tw_acc_modoff" class="sec small" hidden>Moderation ausschalten</button><button type="button" id="tw_acc_ev" class="sec small" hidden>Ereignisse einschalten</button><button type="button" id="tw_acc_out" class="sec small">Abmelden</button></div>
       <label><input type="checkbox" data-opt="ts" checked> Uhrzeit</label>
       <label><input type="checkbox" data-opt="badge" checked> Abzeichen</label>
@@ -3039,7 +3040,8 @@ function twAccRender(a){
   if(!a) return;
   const t=$("tw_acc_t"), go=$("tw_acc_go"), code=$("tw_acc_code"), on=a.state==="angemeldet";
   twAcc=a; const wait=a.state==="wartet", other=a.role==="none"&&!!a.streamer;            // other: der Streamer ist ein anderer: hier nur lesen, bis man sich selbst anmeldet
-  if($("tw_ch_in")!==document.activeElement) $("tw_ch_in").value=a.streamer||"";                              // oben im Chat steht dasselbe Feld wie bei der Akku-Warnung (nie vorbelegt); er legt fest, wer Streamer ist
+  $("tw_chrow").hidden=!a.need_channel;                                                                       // oben nur, solange der Kanal fehlt; sonst steht das Feld in den Einstellungen (Zahnrad)
+  ["tw_ch_in","tw_ch2_in"].forEach(id=>{ if($(id)!==document.activeElement) $(id).value=a.streamer||""; });        // dasselbe Feld wie bei der Akku-Warnung (nie vorbelegt); es legt fest, wer Streamer ist
   $("tw_ch_t").textContent=a.need_channel?"Zuerst eintragen, dann anmelden.":"";
   go.textContent=other?"Als Zuschauer anmelden":"Mit Twitch anmelden"; $("tw_acc_owner").hidden=!(other&&!wait&&!on); $("tw_acc_asmod").hidden=!(other&&!wait&&!on);
   $("tw_acc_mod").hidden=!(on&&!a.mod); $("tw_acc_modoff").hidden=!(on&&a.mod); $("tw_acc_ev").hidden=!(on&&!a.events);
@@ -3062,9 +3064,11 @@ function twAccRender(a){
 async function twAccLoad(){ try{ twAccRender(await srtlaCall("GET","/api/twitch/login")); }catch(e){} }
 $("tw_acc_go").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.role==="none"?{action:"start",as:"user"}:{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // Zuschauer mit eigenem Konto (nur Chat) oder der Streamer selbst: alle Rechte auf einmal
 $("tw_acc_asmod").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",as:"mod"})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // Moderator mit eigenem Konto: Moderatorenrechte, ohne die des Kanalinhabers
-async function twChanSave(){ const v=$("tw_ch_in").value.trim(); try{ await srtlaCall("POST","/api/twitch",{channel:v}); await twAccLoad(); if(typeof twLoad==="function") twLoad(); }catch(x){ $("chat_err").textContent=x.message; } }
-$("tw_ch_save").addEventListener("click",twChanSave);
-$("tw_ch_in").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); twChanSave(); } });
+async function twChanSave(id){ const v=$(id).value.trim(); try{ await srtlaCall("POST","/api/twitch",{channel:v}); await twAccLoad(); if(typeof twLoad==="function") twLoad(); }catch(x){ $("chat_err").textContent=x.message; } }
+[["tw_ch_in","tw_ch_save"],["tw_ch2_in","tw_ch2_save"]].forEach(([i,b])=>{
+  $(b).addEventListener("click",()=>twChanSave(i));
+  $(i).addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); twChanSave(i); } });
+});
 $("tw_acc_owner").addEventListener("click",async()=>{ try{ twAccRender(await srtlaCall("POST","/api/twitch/login",{action:"start",all:true})); }catch(x){ $("tw_acc_t").textContent=x.message; } });         // der Streamer weist sich aus: Twitch muss dasselbe Konto wie auf der Box bestätigen         // alle Rechte auf einmal: einmal bei Twitch bestätigen
 $("tw_acc_mod").addEventListener("click",async()=>{
   try{ twAccRender(await srtlaCall("POST","/api/twitch/login",twAcc&&twAcc.mod_scope?{action:"mod",on:true}:twAcc&&(twAcc.role==="mod"||twAcc.role==="user")?{action:"start",as:"mod"}:{action:"start",all:true})); }      // Rechte (Moderation samt Befehlen) schon da: sofort an; sonst einmal bei Twitch alle auf einmal bestätigen
