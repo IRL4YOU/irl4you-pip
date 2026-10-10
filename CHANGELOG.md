@@ -2,6 +2,10 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 0.9.228 (Beta)
+- **Hinweis, wenn der Bildaufbau fehlt (Wunsch des Nutzers).** Ist eine Kamera hinzugefügt, aber noch kein Bildaufbau gespeichert, ist „Live gehen“ grau. Bisher stand der Grund nur klein als Text. Jetzt zeigt die Live-Karte einen auffälligen Hinweis („Live geht erst, wenn der Bildaufbau fertig ist: Hauptkamera wählen und ‚Bildaufbau speichern‘“) mit dem Knopf **Zum Bildaufbau**, der die Karte öffnet und hinscrollt. Der Hinweis verschwindet, sobald ein Bildaufbau gespeichert ist.
+- Die Statusabfrage der Sendung meldet dafür `no_layout`. Tests: `tools/test_ui_layout.py` (40). Neue Texte nur Deutsch und Englisch.
+
 ## 0.9.227 (Beta)
 - **DJI-Kamera: „Netze suchen“ zeigt jetzt den Grund an.** Bisher stand dort nur „keine Netze gefunden“; die eigentliche Meldung erschien nur in der WLAN-Karte weiter oben. Jetzt steht sie direkt unter dem Knopf: **keine WLAN-Karte** (zum Beispiel Box ohne WLAN-Stick, Kamera hängt an einer Netzwerkkarte wie `eth1`; Name und Passwort lassen sich dann von Hand eintragen), Karte ist das Kameranetz, ein Hotspot läuft darauf, eine Sendung oder andere Aktion läuft, oder der WLAN-Helfer fehlt.
 - Tests: `tools/test_ui_layout.py` (neuer Test für die Meldung in der Kamera-Karte). Neue Texte nur Deutsch und Englisch.
