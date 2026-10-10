@@ -19,6 +19,13 @@ LOG="${PB_LOG:-$H/install-ausgabe.txt}"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 VERSION=$(cat "$HERE/VERSION" 2>/dev/null || echo "?")
 TTY=0; [ -t 1 ] && TTY=1
+# Farben nur am Bildschirm (nicht in Dateien) und nicht bei NO_COLOR
+COL=0; { [ "$TTY" = 1 ] || [ "${PB_COLOR:-0}" = 1 ]; } && [ -z "${NO_COLOR:-}" ] && COL=1
+if [ "$COL" = 1 ]; then
+  C_RST=$(printf '\033[0m'); C_OK=$(printf '\033[1;32m'); C_LINK=$(printf '\033[1;4;36m'); C_WARN=$(printf '\033[1;30;43m'); C_BOLD=$(printf '\033[1m')
+else
+  C_RST=""; C_OK=""; C_LINK=""; C_WARN=""; C_BOLD=""
+fi
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 # Liste der noch aktualisierbaren Pakete (nur Namen)
 upgradable() { LC_ALL=C apt list --upgradable 2>/dev/null | sed -n 's#^\([^/]*\)/.*#\1#p'; }
@@ -90,7 +97,7 @@ else
     if [ -z "$up" ]; then
       say "  Das Grundsystem ist schon aktuell."
     else
-      case " $(echo "$up" | tr '\n' ' ') " in *" l4t"*|*" belabox-linux-"*|*" belabox-network-config"*) NEED_REBOOT=1 ;; esac
+      case " $(echo "$up" | tr '\n' ' ') " in *" l4t"*|*" linux-image-"*|*" belabox-linux-"*|*" belabox-network-config"*) NEED_REBOOT=1 ;; esac
       echo "Zu aktualisieren: $(echo "$up" | wc -l) Pakete" >> "$LOG"
       {
         echo; echo "===== apt-get dist-upgrade ====="
@@ -140,8 +147,8 @@ BAD=""
 for s in pipbox pipbox-dji nginx; do systemctl is-active --quiet "$s.service" 2>/dev/null || BAD="$BAD $s"; done
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 if [ "$RC2" = 0 ] && [ -z "$HINTS" ] && [ -z "$BAD" ]; then
-  say "Alles fehlerfrei installiert."
-  say "IRL4YOU BOX Version $VERSION läuft: http://${IP:-<Adresse der Box>}:8780"
+  say "${C_OK}Alles fehlerfrei installiert.${C_RST}"
+  say "IRL4YOU BOX Version $VERSION ist eingerichtet."
   RESULT=0
 else
   RESULT=1
@@ -151,8 +158,13 @@ else
   [ -z "$BAD" ] || say "  - Diese Dienste laufen nicht:$BAD"
   say "Bitte das Protokoll schicken: $LOG"
 fi
+say ""
+say "Die Oberfläche der IRL4YOU BOX:  ${C_LINK}http://${IP:-<Adresse der Box>}:8780${C_RST}"
 if [ "$NEED_REBOOT" = 1 ] || [ -f /var/run/reboot-required ]; then
   say ""
-  say "Das Systemupdate bringt einen neuen Kernel mit: Bitte die Box jetzt neu starten (sudo reboot)."
+  say "${C_WARN} NEUSTART NÖTIG ${C_RST}"
+  say "Das Systemupdate hat einen neuen Kernel und weitere Systempakete installiert."
+  say "${C_BOLD}Die Box muss jetzt neu gestartet werden:${C_RST}   sudo reboot"
+  say "Erst danach läuft alles mit dem neuen Kernel. Nach etwa einer Minute ist die Oberfläche unter dem Link oben erreichbar."
 fi
 exit $RESULT
