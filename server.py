@@ -2842,6 +2842,10 @@ class Wifi:
         self.demo, self.netchoice, self.names, self.srtla = demo, netchoice, names, srtla
         self.fake_hs = {}
         self.fake_msg = ("", "")
+        # Die Auslösedatei des Helfers ist nur eine Datei: Schreibt eine zweite Anfrage (zum Beispiel die Suche nach WLANs) hinein, solange
+        # die erste noch nicht gelesen ist, geht eine davon verloren oder ihr Ergebnis wird überschrieben ("Helfer hat nicht rechtzeitig geantwortet").
+        # Darum läuft immer nur eine Anfrage gleichzeitig; eine zweite wird abgewiesen.
+        self.lock = threading.Lock()
 
     def hotspots(self):
         """Gespeicherte Hotspot-Einstellungen {Karte: {ssid, password, band, channel}}."""
@@ -3030,6 +3034,14 @@ class Wifi:
         return req
 
     def request(self, d):
+        if not self.lock.acquire(blocking=False):
+            raise ValueError("Es läuft schon eine Aktion")
+        try:
+            return self._request(d)
+        finally:
+            self.lock.release()
+
+    def _request(self, d):
         action = d.get("action")
         if action not in self.ACTIONS:
             raise ValueError("Unbekannte Aktion")
@@ -3082,6 +3094,14 @@ class Wifi:
     EXPORT_MAX = 262144
 
     def helper_call(self, req, wait=40):
+        if not self.lock.acquire(timeout=10):
+            raise ValueError("Es läuft schon eine WLAN-Aktion")
+        try:
+            return self._helper_call(req, wait)
+        finally:
+            self.lock.release()
+
+    def _helper_call(self, req, wait=40):
         """Eine Aktion für den Root-Helfer auslösen und auf sein Ergebnis warten (status.json mit unserer Marke)."""
         st = self.status()
         if not st["helper_installed"]:
@@ -6980,6 +7000,7 @@ class SettingsTransfer:
     def __init__(self, state_dir, cams, pipeline, srtla, autostart, names, djisvc, wifi, send, demo=False):
         self.cams, self.pipeline, self.srtla, self.autostart = cams, pipeline, srtla, autostart
         self.names, self.djisvc, self.wifi, self.send, self.demo = names, djisvc, wifi, send, demo
+        self.progress = {"state": "idle"}                  # für die Fortschrittsanzeige beim Einspielen (GET /api/settings/progress)
         self.hdmi = self.twitch = self.netchoice = None          # werden nach dem Start gesetzt (entstehen später oder fehlen in Tests)
         self.backup_dir = os.path.join(state_dir, "backup")
         self.backup_path = os.path.join(self.backup_dir, "vor-einspielen.json")
@@ -7381,14 +7402,20 @@ class SettingsTransfer:
         wanted = [s for s, _ in SETTINGS_SECTIONS if s in clean and (sections is None or s in sections)]
         if not wanted:
             raise ValueError("Nichts zum Einspielen gewählt")
-        self._write_backup()
         results, labels = [], dict(SETTINGS_SECTIONS)
-        for sid in wanted:
-            try:
-                msg = getattr(self, "_apply_" + sid)(clean[sid])
-                results.append({"id": sid, "label": labels[sid], "ok": True, "message": msg})
-            except Exception as e:                                  # ein Teil darf nie die anderen oder die Oberfläche mitnehmen
-                results.append({"id": sid, "label": labels[sid], "ok": False, "message": str(e) or type(e).__name__})
+        total = len(wanted)
+        self.progress = {"state": "running", "done": 0, "total": total, "label": ""}          # zuerst wird der Stand davor gesichert
+        try:
+            self._write_backup()
+            for i, sid in enumerate(wanted):
+                self.progress = {"state": "running", "done": i, "total": total, "label": labels[sid]}
+                try:
+                    msg = getattr(self, "_apply_" + sid)(clean[sid])
+                    results.append({"id": sid, "label": labels[sid], "ok": True, "message": msg})
+                except Exception as e:                                  # ein Teil darf nie die anderen oder die Oberfläche mitnehmen
+                    results.append({"id": sid, "label": labels[sid], "ok": False, "message": str(e) or type(e).__name__})
+        finally:
+            self.progress = {"state": "done", "done": total, "total": total, "label": ""}
         if "cameras" in wanted and "dji" in wanted:
             self._restore_camera_names(clean["cameras"])
         for r in report:
@@ -8240,6 +8267,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.logmode.status())
         if path == "/api/logs":
             return self.reply(200, self.logbundle.status())
+        if path == "/api/settings/progress":
+            return self.reply(200, dict(self.transfer.progress))
         if path == "/api/settings":
             return self.reply(200, {"has_backup": os.path.isfile(self.transfer.backup_path), "sending": bool(self.send._active())})
         if path == "/api/developer":
