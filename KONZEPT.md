@@ -2,7 +2,7 @@
 
 Eigenständiges Zusatzpaket für eine BELABOX (ROCK 5B+, Orange Pi 5 Plus). Es ändert keine Dateien der
 BELABOX-Oberfläche (`belaUI`), damit BELABOX-Updates weiter möglich bleiben. Den aktuellen Stand und die Grenzen
-des Tests beschreiben README und CHANGELOG (Beta).
+des Tests beschreiben README und CHANGELOG.
 
 ## Grundregeln
 

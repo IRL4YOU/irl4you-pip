@@ -2,10 +2,10 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) (Anleitungen, Server, Rechner, Blog) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 0.9.231 (Beta).** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
+**Version 1.0.0.** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
 Twitch-Chat und Fernzugriff, ohne die Original-Oberfläche anzufassen. Sie läuft **getrennt** davon.
 
-> **Beta heißt:** Es läuft im Alltag, aber nicht alles ist lange und unterwegs geprüft (siehe „Stand“). Neue Versionen kommen oft; zurück auf eine frühere geht in der Oberfläche.
+> Neue Versionen kommen oft; zurück auf eine frühere geht in der Oberfläche. Was geprüft ist und was nicht, steht unter „Stand“.
 
 ## Installation
 
@@ -70,7 +70,7 @@ Weitere Details: [ANLEITUNG-Betrieb.md](anleitungen/ANLEITUNG-Betrieb.md).
 
 - **Im Alltag erprobt:** Orange Pi 5 Plus mit vier DJI-Kameras gleichzeitig (zwei **Osmo Action 4**, **Action 5 Pro**, **Action 6**) und einer **GoPro Hero 8**: Hauptbild und drei kleine Bilder bei etwa 11 bis 13 Mbit/s.
   Die Kameras liefen über **Tage am Stück**, zuletzt **47,5 Stunden** im Heimnetz (6. bis 8. Oktober 2026), auf einer frisch geflashten Karte mit `setup.sh` und eingespielter Sicherung.
-- **Twitch** am 10. Oktober 2026 mit echtem Konto getestet: Anmeldung, Chat lesen und schreiben, Moderation. Dazu die **DJI Osmo Pocket 3** (sendet per RTMP an die Box; Akkustand und Ladezustand kommen per Bluetooth dazu).
+- **Twitch** am 10. Oktober 2026 mit echtem Konto getestet: Anmeldung, Chat lesen und schreiben, Moderation. Die **Vorschau über Tailscale** hat am selben Tag ein Streamer mit seiner Box bestätigt. Dazu die **DJI Osmo Pocket 3** (sendet per RTMP an die Box; Akkustand und Ladezustand kommen per Bluetooth dazu).
 - **Noch nicht ausprobiert:** GoPro Hero 9 bis 13, DJI Osmo Action 2 und 3 sowie Starlink. Bei Problemen: bitte ein Ticket aufmachen.
 - **Geplant:** Überblendung beim Wechsel des Hauptbilds.
 - **Sprachen:** außer Deutsch maschinell übersetzt, nicht von Muttersprachlern geprüft (`web/i18n/README.md`).

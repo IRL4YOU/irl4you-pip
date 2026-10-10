@@ -2,6 +2,12 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 1.0.0
+- **Version 1.0 ohne „Beta“.** Der Stand ist im Alltag erprobt: Kameras über Tage am Stück (zuletzt 47,5 Stunden), Twitch am 10. Oktober 2026 mit echtem Konto getestet (Anmeldung, Chat, Moderation) und die Vorschau über Tailscale von einem Streamer mit seiner Box bestätigt. Was nicht ausprobiert ist (GoPro Hero 9 bis 13, DJI Osmo Action 2 und 3, Starlink), steht in der README; bei Problemen bitte ein Ticket aufmachen.
+- Die Oberfläche zeigt unten nur noch „IRL4YOU BOX Version 1.0.0“ ohne den Satz, dass sich Funktionen noch ändern können. „Alle Kameras immer bereit“ bleibt eine Option, die standardmäßig aus ist.
+- Die Anleitungen und die KONZEPT.md sprechen nicht mehr von „Beta“; die Listen „noch nicht geprüft“ (Anleitung Senden) und der Stand zu Twitch (Anleitung Twitch-Chat) sind auf den heutigen Stand gebracht.
+- Keine Programmänderung außer der Stufenangabe (`STAGE` leer).
+
 ## 0.9.231 (Beta)
 - **Die Vorschau von außen lässt sich jetzt auch über Tailscale einschalten (Wunsch des Nutzers).** Der Haken „Vorschau auch von außen erlauben“ unter „Zugriff auf diese Oberfläche“ war nur zu Hause (Heimnetz, WLAN der Box) zu sehen und zu ändern. Ein Streamer, der nur über Tailscale zugreift, fand ihn nie und konnte die Vorschau nicht einschalten. Jetzt sieht und ändert ihn jeder, der angemeldet ist.
 - **Die Vorschau zeigt den echten Grund.** Bei „von außen nicht freigegeben“ stand dort fälschlich „Die Vorschau startet wieder, sobald die Box sendet“ und sie wartete endlos. Jetzt steht „Die Vorschau ist von außen nicht freigegeben. Sie lässt sich unter „Verbindungen → Zugriff auf diese Oberfläche“ erlauben.“ Nur „Box sendet nicht“ und „kein Bild“ lassen sie weiter warten.
