@@ -74,6 +74,25 @@ class Access(unittest.TestCase):
         self.assertFalse(server.PreviewAccess(self.path).external)                           # kaputte Datei: aus
 
 
+class ChangeFromOutside(unittest.TestCase):
+    """0.9.231 (Wunsch des Nutzers): Wer angemeldet ist, darf die Vorschau von außen auch über Tailscale einschalten (ein Streamer unterwegs)."""
+    def test_the_post_route_no_longer_refuses_external_requests(self):
+        src = open(os.path.join(os.path.dirname(HERE), "server.py"), encoding="utf-8").read()
+        i = src.index('if path == "/api/previewaccess":                                   # auch über Tailscale')
+        block = src[i:i + 500]
+        self.assertNotIn("403", block)
+        self.assertIn('origin=self.origin()', block)
+        self.assertNotIn("nur im Heimnetz oder im WLAN der Box ändern", src)
+
+    def test_the_setting_itself_works_for_any_origin(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        pa = server.PreviewAccess(os.path.join(d, "pa.json"), demo=True)
+        self.assertFalse(pa.allowed("extern"))
+        pa.set(True)
+        self.assertTrue(pa.allowed("extern"))
+
+
 class FakeSend:
     def _active(self):
         return True

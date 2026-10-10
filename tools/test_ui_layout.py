@@ -259,13 +259,16 @@ class ImportProgress(unittest.TestCase):
         self.assertIn(".chatbox .cm.alt{background:color-mix(in srgb,var(--text) 6%,transparent)", PAGE)      # Rechner unverändert
 
     def test_preview_from_outside_has_its_switch_in_the_access_section(self):
-        """Der Schalter "Vorschau auch von außen erlauben" steht unter "Zugriff auf diese Oberfläche", ist nur von zu Hause änderbar und die Vorschau erklärt, warum sie von außen aus ist."""
+        """Der Schalter "Vorschau auch von außen erlauben" steht unter "Zugriff auf diese Oberfläche", ist auch über Tailscale sichtbar und änderbar (0.9.231) und die Vorschau erklärt, warum sie von außen aus ist."""
         i = PAGE.index('<details class="subsec" id="net_ua">')
         block = PAGE[i:PAGE.index("</details>", i)]
         self.assertIn('id="pa_ext"', block)
         self.assertIn("Vorschau auch von außen erlauben (verbraucht Upload)", block)
         self.assertIn('srtlaCall("POST","/api/previewaccess",{external:e.target.checked})', PAGE)
-        self.assertIn('$("pa_row").hidden=!local;', PAGE)                                    # von außen sieht man den Schalter nicht
+        self.assertNotIn('$("pa_row").hidden', PAGE)                                         # der Schalter wird nie versteckt, auch über Tailscale nicht
+        self.assertNotIn("Ändern lässt sich das nur von dort.", PAGE)
+        self.assertIn("Sie lässt sich unter „Verbindungen → Zugriff auf diese Oberfläche“ erlauben.", PAGE)
+        self.assertIn('running()&&(st.why==="off"||st.why==="kein-bild")) return waiting();', PAGE)  # "extern" wartet nicht endlos, der Grund steht da
         self.assertIn('extern:"Die Vorschau ist von außen nicht freigegeben.', PAGE)
         self.assertIn('st.origin==="extern"?"Vorschau von außen: klein', PAGE)
 
