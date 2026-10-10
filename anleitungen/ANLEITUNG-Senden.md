@@ -60,6 +60,8 @@ Das Passwort gibt die Oberfläche nur an das Netzwerkprogramm der Box weiter. Di
 
 **Über fremde WLANs sperren** (Karte Verbindungen, Bereich **Zugriff auf diese Oberfläche**): Die Oberfläche ist unverschlüsselt (HTTP). In einem fremden WLAN (Hotel, Handy-Hotspot) kann dort jeder mitlesen. Ist der Schalter an, antwortet die Box in solchen WLANs nicht. Erreichbar bleiben Ethernet, der eigene Hotspot der Box, USB und Tailscale (HTTPS). Sperrst du dich aus, schaltest du den Schalter über Ethernet oder Tailscale wieder aus. Der Schalter ist standardmäßig aus.
 
+**USB-WLAN-Stick UGREEN AX900 (Chip AIC8800D80):** Der Kernel der BELABOX kennt den Chip nicht, der Stick meldet sich zuerst als USB-Laufwerk. Die Box richtet den Treiber **beim Einstecken selbst ein** (einmal aus dem Internet, per Prüfsumme geprüft, dauert einige Minuten, nie während einer Übertragung) und schaltet den Stick auf WLAN um; danach erscheint er unter **Verbindungen** als WLAN-Karte. Der Fortschritt und eine Meldung stehen im Abschnitt **WLAN-Verbindungen**. Geprüft an der Orange Pi 5 Plus (Treiber und Idee von Bittersweet1987). Ohne Internet versucht die Box es später erneut.
+
 ## 4. Bildaufbau
 
 Karte **Bildaufbau**. Ohne gespeicherten Bildaufbau kann nicht gesendet werden.

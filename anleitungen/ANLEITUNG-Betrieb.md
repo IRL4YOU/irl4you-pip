@@ -7,17 +7,17 @@ Diese Anleitung zeigt dir, wie du die IRL4YOU BOX installierst, aktuell hältst,
 Du brauchst eine BELABOX mit dem BELABOX-Image (getestet: Radxa ROCK 5B+ und Orange Pi 5 Plus), Internet auf der Box und ein Terminal auf der Box (SSH oder Tastatur). Nicht während einer Übertragung installieren.
 
 1. **BELABOX-Passwort:** Hat deine BELABOX noch kein Passwort (frisches Image), lege zuerst eines in der BELABOX-Oberfläche fest (`http://<Adresse der Box>/`). Die Oberfläche der IRL4YOU BOX nutzt dasselbe Passwort. Einen eigenen Setup-Code gibt es nicht.
-2. **Installieren:** Gib auf der Box im Terminal ein:
+2. **Installieren:** Gib auf der Box im Terminal diesen **einen Befehl** ein (er lädt das Paket, aktualisiert zuerst das Grundsystem, installiert dann die IRL4YOU BOX und meldet am Ende das Ergebnis):
 
 ```sh
-cd /tmp
-wget -O irl4you-pip.tar.gz https://github.com/IRL4YOU/irl4you-pip/archive/refs/heads/main.tar.gz
-tar xzf irl4you-pip.tar.gz
-cd irl4you-pip-main
-sudo sh install/install.sh
+cd /tmp && rm -rf irl4you-pip-main irl4you-pip.tar.gz && wget -q -O irl4you-pip.tar.gz https://github.com/IRL4YOU/irl4you-pip/archive/refs/heads/main.tar.gz && tar xzf irl4you-pip.tar.gz && cd irl4you-pip-main && sudo sh install/setup.sh
 ```
 
-   Die Installation lädt fehlende Pakete nach und baut den Bild-in-Bild-Baustein und den SRTLA-Sender selbst. Das kann einige Minuten dauern. Gelingt die Installation der Bluetooth-Bibliothek `bleak` (für den DJI-Dienst) nicht, bricht sie mit einer Meldung ab, bevor etwas verändert wurde.
+   - **Schritt 1 von 2, Grundsystem:** nur ein Fortschrittsbalken (die Paketliste steht im Protokoll). Das Skript macht dasselbe wie die Update-Funktion von belaUI: `apt-get update`, dann `dist-upgrade`. Mit `sudo sh install/setup.sh --ohne-systemupdate` überspringst du das.
+   - **Schritt 2 von 2, Installation:** eine Zeile je Schritt (Pakete prüfen, Benutzer und Daten, Programme kopieren, Bild-in-Bild-Baustein, SRTLA-Sender und Encoder bauen, Dienste starten). Das Bauen dauert einige Minuten. Gelingt die Installation der Bluetooth-Bibliothek `bleak` (für den DJI-Dienst) nicht, bricht sie mit einer Meldung ab, bevor etwas verändert wurde.
+   - **Ergebnis:** Am Ende steht **„Alles fehlerfrei installiert.“** (grün) und der **Link zur Oberfläche** (türkis); gibt es Hinweise, stehen sie dort. Bringt das Systemupdate einen neuen Kernel mit, erscheint ein gelber Kasten **„NEUSTART NÖTIG“**: dann `sudo reboot`.
+   - **Protokoll:** Alles, was apt und die Installation ausgeben, steht vollständig in `~/install-ausgabe.txt` (`cat ~/install-ausgabe.txt`). Bei Problemen diese Datei beilegen. Harmlose Zeilen aus Ubuntu-Paketen (zum Beispiel „rehash: warning: skipping ca-certificates.crt“) stehen nur dort.
+   - Nur die Installation ohne Hilfsskript (ohne Systemupdate und Fortschrittsanzeige): in `irl4you-pip-main` `sudo sh install/install.sh`.
 3. **Anmelden:** Öffne im Browser `http://<Adresse der Box>:8780` und melde dich mit dem BELABOX-Passwort an. Mit dem Haken **Angemeldet bleiben** bleibst du 30 Tage angemeldet, auch über Updates hinweg. Ist noch kein Passwort gesetzt, steht auf der Seite, dass du es zuerst in der BELABOX-Oberfläche festlegen musst; die Seite zeigt die Anmeldung dann von selbst.
 
 Spätere Versionen spielst du über die Karte **Software-Update** ein, ein erneutes Installieren ist nicht nötig.
@@ -64,11 +64,15 @@ Praktisch zum Beispiel nach dem Neu-Aufspielen der SD-Karte. Öffne die Karte **
 
 **Enthalten** sind unter anderem: Kameras, Bildaufbau, SRTLA-Server, DJI-Kameras (Einstellungen), HDMI-Eingang, Akku-Warnung im Twitch-Chat (ohne Token), Hotspots und gespeicherte WLAN-Netze. **Nicht enthalten** sind die Einstellungen unter **Optionen** (Reihenfolge und Ausblenden der Menüs, Überschriften von Chat und Vorschau): Sie gelten je Gerät und stehen nur im jeweiligen Browser.
 **Nicht enthalten:** das Passwort der Oberfläche, SSH, Schlüssel, der Twitch-Token samt Twitch-Anmeldung, **Tailscale (Anmeldung und Freigaben: auf der neuen Karte unter Fernzugriff neu verbinden und die Freigabe wieder einschalten)** und die Bluetooth-Kopplung der DJI-Kameras (diese musst du neu koppeln). Unternehmens-WLANs lassen sich nicht übertragen.
-Das Einspielen von WLAN-Netzen und DJI-Kameras ist noch nicht mit einer echten Box geprüft.
+Das Einspielen wurde am 10. Oktober 2026 auf einer frisch geflashten Karte vollständig mit einer echten Box durchgespielt (auch WLAN-Netze und DJI-Einstellungen).
+
+**Nach dem Einspielen** steht unter dem Ergebnis ein Hinweis **„Nach dem Einspielen noch zu erledigen“** mit Haken (der Browser merkt sie, sind alle gesetzt, verschwindet er): **DJI-Kameras** einmal neu koppeln und verbinden, bei **Twitch** neu anmelden, **Tailscale** neu verbinden und die Freigabe wieder einschalten, **Sendewege und Netzwerk für Kameras prüfen**.
+
+**Achtung bei einer neuen Karte:** Die Netzwerkkarten können dort andere Namen haben (`eth0` und `eth1` vertauscht). Die Sicherung speichert Sendewege und das Kameranetz unter diesen Namen. Prüfe darum unter **Senden**, welche Wege aktiv sind, und beim **Netzwerk für Kameras**, ob die Karte mit dem Kameranetz gewählt ist. Meldungen wie „1 Netze zum Senden gibt es hier nicht (ausgelassen)“ weisen darauf hin.
 
 ## 4. Protokolle
 
-**Protokolle herunterladen:** In der Karte **Protokolle** erzeugt dieser Knopf eine Textdatei mit den Meldungen der Box (Kameras, Senden, Updates, Netzwerk), etwa für ein GitHub-Issue. Vorher werden Passwörter, Stream-ID, Servername, WLAN-Namen sowie IP- und MAC-Adressen durch Platzhalter ersetzt. **Sieh die Datei trotzdem kurz durch**, bevor du sie weitergibst.
+**Protokolle herunterladen:** In der Karte **Protokolle** erzeugt dieser Knopf eine Textdatei mit den Meldungen der Box (Kameras, Senden, Updates, Netzwerk inklusive des Abschnitts „Netzwerk beim Start“), etwa für ein GitHub-Issue. Vorher werden Passwörter, Stream-ID, Servername, WLAN-Namen sowie IP- und MAC-Adressen durch Platzhalter ersetzt. **Sieh die Datei trotzdem kurz durch**, bevor du sie weitergibst.
 
 **Zwei Stufen** (gleiche Karte):
 - **Sparsam** (Standard bei neuen Installationen): Protokolle nur im Arbeitsspeicher. Das schont die Speicherkarte. Nach einem Absturz oder Stromausfall bleibt aber keine Spur.
@@ -137,14 +141,15 @@ In den ersten 30 Sekunden nach dem Start wird nichts bewertet. Zwischen zwei Ein
 |---|---|
 | Die Seite auf Port 8780 öffnet sich nicht | Adresse der Box und `:8780` prüfen. Du musst in einem privaten Netz sein (oder Tailscale nutzen), öffentliche Adressen werden abgewiesen. |
 | Anmeldung geht nicht | Es gilt das BELABOX-Passwort. Nach 5 Fehlversuchen gibt es eine Sperre. Steht auf der Seite, dass zuerst ein Passwort gesetzt werden muss, lege es in der BELABOX-Oberfläche fest. |
-| Installation bricht ab | Meldung lesen. Häufig fehlt Internet auf der Box (`bleak` oder Pakete konnten nicht installiert werden). Internet prüfen und `install.sh` erneut ausführen. |
-| Software-Update lässt sich nicht starten | Läuft gerade eine Übertragung? Dann ist es gesperrt. Übertragung beenden. Steht dort, der Update-Helfer sei nicht installiert, einmal `install.sh` erneut ausführen. |
+| Installation bricht ab oder meldet Hinweise | Meldung lesen und `~/install-ausgabe.txt` ansehen. Häufig fehlt Internet auf der Box (`bleak` oder Pakete konnten nicht installiert werden). Internet prüfen und den Befehl aus Abschnitt 1 erneut ausführen (er ist wiederholbar). Die Datei beim Melden anhängen. |
+| Software-Update lässt sich nicht starten | Läuft gerade eine Übertragung? Dann ist es gesperrt. Übertragung beenden. Steht dort, der Update-Helfer sei nicht installiert, den Installationsbefehl aus Abschnitt 1 erneut ausführen. |
 | Update schlägt fehl | Der Update-Helfer stellt die vorige Version automatisch wieder her. Nach dem Neuladen steht die Meldung in der Karte. Protokoll herunterladen und melden. |
 | Neue Version macht Probleme | In der Karte Software-Update auf eine frühere Version wechseln. |
 | Upload bricht ein, Bitrate fällt auf unter 1 Mbit/s oder „Prozesse blockiert (D-State)“ erscheint (die Meldung kommt erst **2 Minuten nach dem Start** der Box und nur, wenn **mindestens 15 Sekunden am Stück** etwas blockiert ist; Threads, die nur auf die Speicherkarte oder den CPU-Regler warten, zählen nicht, denn die warten beim Start kurz auf apt-get und das Journal; hinter dem **i** stehen die wartenden Kernel-Aufgaben, im Protokoll bei „Zustandsprotokoll“ als `blocked=… d=Name@Wartestelle`; oft ein USB-Modem oder -Stick, der sich zusätzlich als CD-Laufwerk meldet, das hat mit dem Mischer nichts zu tun) | Meist hängt der Mischer der Sendekette nach dem Ausfall und Wiederkommen einer Kamera (Issue #51). Die Box erkennt das seit 0.9.170 selbst (Statistik steht still, Threads im Kernel-Zustand D, oder eine sendende Kamera liefert dem Mischer keine Bilder), sichert ein Diagnosepaket und startet den Encoder neu (dauert einige Sekunden). Das Paket steht in den Protokollen unter „Hänger der Sendekette“; bitte Protokoll herunterladen und melden. Hilft der Neustart nicht, Stop und dann Live drücken. |
 | Nach dem Neustart ist die Seite weg | Etwa eine Minute warten, dann neu laden. |
 | Box nach dem Herunterfahren aus | Strom kurz trennen oder Ein-Taste nutzen. |
 | Box schaltet sich von selbst aus | Stromversorgung prüfen. Stufe "Ausführlich" einschalten, damit nach einem Ausfall Spuren bleiben, und das Protokoll melden. |
-| Einspielen einer Sicherung geht nicht | Es darf nicht gesendet werden. Bei verschlüsselter Datei das richtige Passwort eingeben. Mit "Letzten Stand zurückholen" geht es zurück. |
+| Einspielen einer Sicherung geht nicht | Es darf nicht gesendet werden. Bei verschlüsselter Datei das richtige Passwort eingeben. Mit "Letzten Stand zurückholen" geht es zurück. Nach dem Einspielen auf einer neuen Karte Sendewege und Kameranetz prüfen (Netzwerkkarten können andere Namen haben). |
+| Nach einem Neustart ist die feste Zusatzadresse weg | Neues Protokoll laden (Karte Protokolle) und an das Issue hängen: Der Abschnitt „Netzwerk beim Start“ zeigt Adressen (fest oder per DHCP), Netzdateien und die Meldungen von ifupdown, ifplugd, DHCP und des Skripts `pipbox-extra-ip`. |
 | SSH-Passwort unbekannt | Karte Entwickler: **Passwort anzeigen** oder **Passwort zurücksetzen**. |
 | Seite in fremdem WLAN nicht erreichbar | Ist "Über fremde WLANs sperren" an? Dann nur über Tailscale, Ethernet, eigenen Hotspot oder USB gehen. |

@@ -4,11 +4,11 @@ Kurze Anleitungen für Anwender. Der Stand ist **Beta**: Was noch nicht mit echt
 
 | Thema | Anleitung |
 |---|---|
-| Kameras anschließen: RTMP-Kameras und Handy-Apps, DJI per Bluetooth, HDMI/USB, Kamera-Ampel | [ANLEITUNG-Kameras.md](ANLEITUNG-Kameras.md) |
+| Kameras anschließen: RTMP-Kameras und Handy-Apps, DJI per Bluetooth, HDMI/USB, Handyverbindungen und Controller, Kamera-Ampel | [ANLEITUNG-Kameras.md](ANLEITUNG-Kameras.md) |
 | GoPro (Hero 8 bis 13): über die GoPro-App oder mit QR-Codes | [ANLEITUNG-GoPro.md](ANLEITUNG-GoPro.md) |
 | Senden: SRTLA-Server, Sendewege, WLAN/Hotspot, Bildaufbau, Live | [ANLEITUNG-Senden.md](ANLEITUNG-Senden.md) |
 | Twitch-Chat, Moderation, Ereignisse, Akku-Warnung mit Bot-Konto | [ANLEITUNG-Twitch-Chat.md](ANLEITUNG-Twitch-Chat.md) |
-| Installation, Updates, Sichern, Protokolle, Fehler melden | [ANLEITUNG-Betrieb.md](ANLEITUNG-Betrieb.md) |
+| Installation (ein Befehl, mit Systemupdate), Updates, Sichern, Protokolle, Fehler melden, feste Zusatzadresse | [ANLEITUNG-Betrieb.md](ANLEITUNG-Betrieb.md) |
 | Fernzugriff von unterwegs über Tailscale | [../ANLEITUNG-Fernzugriff.md](../ANLEITUNG-Fernzugriff.md) |
 
 Zum Aufbau der Software siehe [../KONZEPT.md](../KONZEPT.md), zu den Änderungen [../CHANGELOG.md](../CHANGELOG.md).

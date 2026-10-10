@@ -80,6 +80,14 @@ Die eingebauten Bluetooth-Module der Boxen empfangen schlecht, ein USB-Stick ist
 Der Treiber wird nie während einer Übertragung eingerichtet. Nach einem Wechsel des Sticks fragt die Kamera eventuell einmal
 erneut nach der Kopplung.
 
+### Handyverbindungen und Controller
+
+*Beitrag von Bittersweet1987; auf der Entwicklerbox nicht selbst mit echten Geräten geprüft.* Beides steht unter **Verbindungen** im Abschnitt **Bluetooth**.
+
+- **Handyverbindungen:** Koppeln: Die Box ist dafür zwei Minuten sichtbar, am Handy wählst du „belabox“. Danach liest die Box alle 10 Minuten kurz den **Akkustand des Handys** und trennt wieder (keine Dauerverbindung). Die Liste zeigt je Handy Akku, Zeit der letzten Abfrage und eine Meldung, wenn es nicht erreichbar ist; **Jetzt lesen** fragt sofort, **Entfernen** hebt die Kopplung auf. Android meldet den Akku in 20-%-Schritten, ein iPhone in Schritten von etwa 10 %.
+- **Controller:** Bluetooth-Geräte mit Tasten (Gamepad, Mini-Tastenfeld, Fernauslöser). **Nach Controllern suchen** zeigt die Geräte in der Nähe, **Koppeln** koppelt, vertraut und verbindet. Gekoppelte Controller stehen mit Zustand und Akku (falls das Gerät ihn meldet) in der Liste; **Entfernen** hebt die Kopplung auf.
+- **Menü „Controller-Tasten“:** Sobald ein Controller gekoppelt ist, erscheint ein eigenes Hauptmenü (zwischen „Bildaufbau“ und „Fernzugriff“). Du wählst je Taste eine Funktion: **Hauptbild**, **Kleines Bild 1, 2, 3**, **Aktuelle Tonquelle stumm schalten** oder **Zur nächsten Tonquelle wechseln**. Die Bild-Funktionen tauschen das Hauptbild wie der Knopf in der Oberfläche (ein zweiter Druck tauscht zurück). Bei Xbox-Controllern zählen die Trigger LT/RT und das Steuerkreuz wie Tasten.
+
 ## 3. HDMI-Eingang als Kamera "HDMI"
 
 Der HDMI-Eingang der Box (zum Beispiel eine DJI Action 5 per USB-C-HDMI-Kabel) wird zu einer normalen Kamera namens "HDMI".
