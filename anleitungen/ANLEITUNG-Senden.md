@@ -22,6 +22,7 @@ Karte **Verbindungen**, Bereich **Verbindungen zum Senden (Upload)**:
 
 1. Setze ein Häkchen bei jedem Netz, über das die Box senden soll. Das können Ethernet, WLAN, ein USB-/Mobilfunk-Router oder ein Hotspot sein.
 2. Das Häkchen wird sofort gespeichert. Es wirkt auch während der Sendung nach wenigen Sekunden, ohne Neustart.
+3. **Netzwerkkarten folgen der MAC-Adresse (seit 0.9.206):** Der Kernel zählt `eth0`, `eth1`, `usb0` nach der Startreihenfolge; nach dem Neu-Flashen oder einem Neustart können die Namen vertauscht sein. Die Box merkt sich, welche Karte (MAC-Adresse) hinter welchem Namen stand, und lässt **Sendewege, das Netzwerk für Kameras und den Anschluss je Kamera** mit der Karte wandern, wenn die Namen wechseln (Zeile `iface_macs: eth0->eth1, …` im Journal). Fehlt eine Karte, geschieht nichts. Gilt ab dem ersten Start mit 0.9.206: Was vorher schon falsch zugeordnet war, bitte einmal von Hand richtigstellen.
 
 Die Box bündelt alle angehakten Netze gleichzeitig (SRTLA). Mindestens ein vorhandenes Netz muss angehakt sein.
 
