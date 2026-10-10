@@ -114,12 +114,13 @@ class Dictionaries(unittest.TestCase):
 
     def test_the_other_languages_are_nearly_complete(self):
         # Neue Texte bekommen je Version nur Deutsch und Englisch; die anderen Sprachen werden am Schluss einmal komplett nachgezogen (fehlt ein Text, gilt Englisch).
+        # (Nutzerwunsch 10. Okt 2026: nie auf Übersetzungen warten; die Schwelle bleibt locker, der Rückstand wird ein- bis zweimal am Tag gemeldet und in einem Rutsch nachgetragen.)
         for c in FILES:
             if c == "en":
                 continue
             ex = load(c)["exact"]
             filled = sum(1 for k in keys() if ex.get(k))
-            self.assertGreaterEqual(filled / len(keys()), 0.98, "%s: %d von %d" % (c, filled, len(keys())))
+            self.assertGreaterEqual(filled / len(keys()), 0.90, "%s: %d von %d" % (c, filled, len(keys())))
 
     def test_no_german_text_left_in_the_latin_script_languages(self):
         for c in FILES:

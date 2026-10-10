@@ -196,7 +196,10 @@ class ImportProgress(unittest.TestCase):
     def test_twitch_roles_per_browser_in_the_page(self):
         """Ohne eigene Anmeldung: nur lesen; Moderator meldet sich selbst an; der Streamer weist sich im neuen Browser aus."""
         self.assertIn('id="tw_acc_owner"', PAGE)
-        self.assertIn('twAcc&&twAcc.role==="none"?{action:"start",as:"mod"}:{action:"start",all:true}', PAGE)
+        self.assertIn('twAcc&&twAcc.role==="none"?{action:"start",as:"user"}:{action:"start",all:true}', PAGE)      # Zuschauer: nur Chat
+        self.assertIn('id="tw_acc_asmod"', PAGE)
+        self.assertIn('{action:"start",as:"mod"}', PAGE)                                                             # Moderator: Moderatorenrechte
+        self.assertIn('a.role==="user"?`Angemeldet als ${a.login} · Zuschauer`', PAGE)
         self.assertIn('a.role==="none"&&!!a.box_login', PAGE)
         self.assertIn('hdr["x-pb-owner"]=pbOwnerKey()', PAGE)
         self.assertIn('"x-pb-owner":pbOwnerKey()', PAGE)                                    # auch der Chat-Abruf nennt den Schlüssel

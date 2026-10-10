@@ -286,6 +286,7 @@ class FakeHelix(http.server.BaseHTTPRequestHandler):
     sub_status = 202
     sub_script = []
     chat_reply = {"data": [{"message_id": "m1", "is_sent": True}]}
+    mods = {"99"}                                                                   # Konten, die im Kanal Moderator sind
 
     def log_message(self, *a):
         pass
@@ -297,6 +298,9 @@ class FakeHelix(http.server.BaseHTTPRequestHandler):
         if method == "GET" and self.path.startswith("/helix/users?login=bob"):
             out = json.dumps({"data": [{"id": "777", "login": "bob"}]}).encode()
             code = 200
+        elif method == "GET" and self.path.startswith("/helix/moderation/moderators"):
+            uid = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("user_id", [""])[0]
+            out, code = json.dumps({"data": [{"user_id": uid}] if uid in FakeHelix.mods else []}).encode(), (FakeHelix.status if FakeHelix.status >= 400 else 200)
         elif method == "GET" and self.path.startswith("/helix/games?name=Just"):
             out, code = json.dumps({"data": [{"id": "509658", "name": "Just Chatting"}]}).encode(), 200
         elif method == "GET" and self.path.startswith("/helix/games"):
@@ -336,7 +340,7 @@ class HelixBase(Base):
     """Fake-Twitch (Anmeldung) und Fake-Helix (Schnittstelle) auf 127.0.0.1."""
     def setUp(self):
         super().setUp()
-        FakeHelix.log, FakeHelix.status = [], 204
+        FakeHelix.log, FakeHelix.status, FakeHelix.mods = [], 204, {"99"}
         self.hx = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeHelix)
         threading.Thread(target=self.hx.serve_forever, daemon=True).start()
 
@@ -601,9 +605,9 @@ class Moderators(HelixBase):
         self.accounts = server.TwitchAccounts(tl, self.sessions)
         return m, tl
 
-    def moderator(self, key, login="Modfrau", uid="99"):
+    def moderator(self, key, login="Modfrau", uid="99", mod=True):
         FakeTwitch.state["login"], FakeTwitch.state["user_id"] = login, uid
-        self.sessions.start(key)
+        self.sessions.start(key, mod=mod)
         s = self.sessions.get(key)
         self.wait(s, "angemeldet")
         return s
@@ -718,6 +722,61 @@ class Moderators(HelixBase):
         self.sessions.start(KEY4)                                                        # frei geworden
         with self.assertRaises(ValueError):
             self.sessions.start("zu kurz")
+
+    def test_a_viewer_signs_in_for_chat_only_and_can_write_but_not_moderate(self):
+        m, tl = self.box()
+        s = self.moderator(KEY3, login="Zuschauer", uid="55", mod=False)
+        dev = [f for p, f in FakeTwitch.state["seen"] if p == "/oauth2/device"][-1]
+        self.assertEqual(sorted(dev["scopes"].split()), ["chat:edit", "chat:read", "user:write:chat"])      # nichts zum Moderieren
+        self.assertEqual(self.accounts.pick(KEY3), ("user", s))
+        st = self.accounts.status(KEY3)
+        self.assertEqual((st["role"], st["login"], st["mod"], st["box_login"]), ("user", "zuschauer", False, "streamer"))
+        view = m.view(s)
+        chat = FakeChat()
+        snd = server.TwitchSender(m.store, chat=chat, clock=lambda: self.now[0], mod=m)
+        self.now[0] += 2
+        FakeHelix.log.clear()
+        snd.say_as(view, server.HelixChat(s, view), "Hallo aus dem Chat", KEY3, commands=False)
+        post = [x for x in FakeHelix.log if x[1] == "/helix/chat/messages"][0]
+        self.assertEqual(json.loads(post[4])["sender_id"], "55")                         # als er selbst
+        self.now[0] += 2
+        for text in ("/ban bob", "/clear", "/vip bob"):
+            with self.assertRaises(ValueError) as c:
+                snd.say_as(view, server.HelixChat(s, view), text, KEY3, commands=False)
+            self.assertEqual(str(c.exception), "Befehle gibt es nur für den Streamer und Moderatoren")
+            self.now[0] += 2
+        self.assertEqual([x for x in FakeHelix.log if x[0] != "GET" and "chat/messages" not in x[1]], [])      # nichts ging zu Twitch
+        self.moderator(KEY3, login="Zuschauer", uid="55", mod=True)                      # später als Moderator anmelden: die Rechte kommen dazu
+        self.assertEqual(self.accounts.pick(KEY3)[0], "mod")                             # (ohne Nachfrage bei Twitch gelten die angemeldeten Rechte)
+
+    def test_the_box_asks_twitch_whether_a_moderator_really_is_one_in_the_channel(self):
+        m, tl = self.box(channel="")                                                     # eigener Kanal des Streamers: Nachfragen möglich
+        self.accounts = server.TwitchAccounts(tl, self.sessions, check=m.is_moderator, clock=lambda: self.now[0])
+        s = self.moderator(KEY2)
+        FakeHelix.mods = set()                                                           # sie ist (noch) keine Moderatorin
+        FakeHelix.log.clear()
+        self.assertEqual(self.accounts.pick(KEY2)[0], "user")
+        st = self.accounts.status(KEY2)
+        self.assertEqual((st["role"], st["mod"]), ("user", False))
+        asks = [x for x in FakeHelix.log if "moderation/moderators" in x[1]]
+        self.assertEqual(len(asks), 1)                                                   # die Antwort wird gemerkt
+        self.assertIn("broadcaster_id=42&user_id=99", asks[0][1])
+        FakeHelix.mods = {"99"}
+        self.now[0] += 400                                                               # nach fünf Minuten fragt die Box erneut
+        self.assertEqual(self.accounts.pick(KEY2)[0], "mod")
+        FakeHelix.mods = set()
+        self.now[0] += 400
+        FakeHelix.status = 500                                                           # Twitch antwortet nicht: es gelten die angemeldeten Rechte
+        self.assertEqual(self.accounts.pick(KEY2)[0], "mod")
+        FakeHelix.status = 204
+
+    def test_without_a_possible_check_the_signed_in_rights_count(self):
+        m, tl = self.box(channel="bob")                                                  # fremder Kanal: das Konto des Streamers kann nicht nachfragen
+        self.assertIsNone(m.is_moderator("99"))
+        self.accounts = server.TwitchAccounts(tl, self.sessions, check=m.is_moderator)
+        self.moderator(KEY2)
+        self.assertEqual(self.accounts.pick(KEY2)[0], "mod")
+        self.assertIsNone(m.is_moderator("abc"))
 
 
 class FakeChat:
