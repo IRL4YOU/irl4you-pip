@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.9.222 (Beta)
+- **Karte „Live“: der Verlauf (Pulsanzeige) steht jetzt auch am Rechner dabei (Wunsch des Nutzers).** Dort stand nur „Live“ und die Megabit-Zahl, daneben war viel Platz frei. Jetzt einheitlich: erst **Live**, dann der kleine **Verlauf mit Pulspunkt**, dann die **Megabit-Zahl** (`placeSig`: das Element zieht aus der Chat-Kopfzeile in die Live-Zeile; am Handy während der Sendung bleibt er in der Kopfleiste). Die Kamerapunkte bleiben im Chat. Die kleine Zahl im Verlauf ist in der Live-Zeile ausgeblendet (sie wäre dieselbe wie die Megabit-Zahl).
+- **Handy: Wechsel hell/dunkel zwischen den Chat-Zeilen nur noch ganz leicht (Wunsch des Nutzers):** 3 % statt 6 % Aufhellung; der Rechner bleibt bei 6 %.
+- Keine neuen Texte. Tests: `tools/test_ui_layout.py` 38.
+
 ## 0.9.221 (Beta)
 - **Übersetzungen nachgetragen.** Die 3 Texte der neuen Anmelde-Auswahl („Zuschauer“, „Streamer: Name. Anmelden als:“, „Streamer (Name) noch nicht angemeldet. Anmelden als:“) aus 0.9.219 sind jetzt in allen 12 weiteren Sprachen da. Maschinell übersetzt. Rückstand: 0.
 
