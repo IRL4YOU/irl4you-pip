@@ -91,6 +91,7 @@ class Setup(unittest.TestCase):
             self.assertIn(t, out)
         self.assertIn("Alles fehlerfrei installiert.", out)
         self.assertIn("http://192.168.1.9:8780", out)
+        self.assertNotIn("\033[", out)                                             # ohne Terminal keine Farbcodes
         self.assertNotIn("geheimes-paket", out)                                   # Paketnamen und Bauausgabe stehen nur im Protokoll
         self.assertNotIn("viel Bauausgabe", out)
         self.assertIn("geheimes-paket", log)
@@ -131,8 +132,23 @@ class Setup(unittest.TestCase):
     def test_kernel_packages_ask_for_a_restart(self):
         rc, out, _, _ = run(FAKE_KERNEL="1")
         self.assertEqual(rc, 0, out)
+        self.assertIn("NEUSTART NÖTIG", out)
         self.assertIn("neuen Kernel", out)
+        self.assertIn("muss jetzt neu gestartet werden", out)
         self.assertIn("sudo reboot", out)
+        self.assertLess(out.index("http://192.168.1.9:8780"), out.index("NEUSTART NÖTIG"))    # erst der Link, dann der deutliche Hinweis
+
+    def test_link_and_restart_notice_are_colored_on_a_terminal(self):
+        rc, out, _, _ = run(FAKE_KERNEL="1", PB_COLOR="1")
+        self.assertIn("\033[1;4;36mhttp://192.168.1.9:8780\033[0m", out)                     # Link: fett, unterstrichen, cyan
+        self.assertIn("\033[1;30;43m NEUSTART NÖTIG \033[0m", out)                          # Hinweis: schwarz auf gelb
+        self.assertIn("\033[1;32mAlles fehlerfrei installiert.\033[0m", out)
+
+    def test_no_restart_notice_without_a_new_kernel(self):
+        rc, out, _, _ = run()
+        self.assertNotIn("NEUSTART", out)
+        self.assertNotIn("sudo reboot", out)
+        self.assertIn("http://192.168.1.9:8780", out)                                      # der Link steht auch ohne Neustart
 
     def test_up_to_date_system_skips_the_upgrade(self):
         rc, out, _, calls = run(FAKE_UPTODATE="1")
