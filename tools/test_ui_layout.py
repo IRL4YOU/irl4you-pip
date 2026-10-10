@@ -277,6 +277,14 @@ class ImportProgress(unittest.TestCase):
         self.assertIn("const err=await wifiDo({action:\"scan\",iface:$(\"w_if\").value},\"Suche läuft …\");", PAGE)
         self.assertIn('return x.message||"Fehler"; }', PAGE)                                   # wifiDo meldet den Fehler zurück
 
+    def test_live_card_hints_missing_layout(self):
+        """Kamera da, Bildaufbau noch nicht gespeichert: Live ist grau; die Live-Karte sagt warum und führt zum Bildaufbau (Wunsch des Nutzers)."""
+        self.assertIn('<div id="livehint" class="pending" hidden>', PAGE)
+        self.assertIn('id="live_topipe"', PAGE)
+        self.assertIn('$("livehint").hidden=!(!d.active&&d.no_layout);', PAGE)
+        self.assertIn('$("live_topipe").addEventListener("click"', PAGE)
+        self.assertIn('out["no_layout"] = not active and not self.pipeline.cfg.get("main")', open(os.path.join(ROOT, "server.py"), encoding="utf-8").read())
+
 
 class LiveAlwaysReachable(unittest.TestCase):
     def test_header_live_button_appears_when_the_footer_is_gone_for_good(self):
