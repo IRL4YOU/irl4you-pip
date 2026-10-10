@@ -2,7 +2,7 @@
 
 **Webseite:** [irl4you.de](https://irl4you.de) (Anleitungen, Server, Rechner, Blog) · **Discord:** [Community beitreten](https://discord.gg/nrBCEarMup) (Fragen, Fehler, Ideen)
 
-**Version 1.0.0.** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
+**Version 1.0.1.** Zusatzpaket für eine BELABOX mit eigener Weboberfläche (Port 8780): mehrere Kameras zu **einem** Bild mischen, über mehrere Leitungen senden,
 Twitch-Chat und Fernzugriff, ohne die Original-Oberfläche anzufassen. Sie läuft **getrennt** davon.
 
 > Neue Versionen kommen oft; zurück auf eine frühere geht in der Oberfläche. Was geprüft ist und was nicht, steht unter „Stand“.

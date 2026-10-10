@@ -2,6 +2,10 @@
 
 Ältere Versionen (0.1.0 bis 0.9.199) stehen in [CHANGELOG-Archiv.md](CHANGELOG-Archiv.md).
 
+## 1.0.1
+- **Fernzugriff: fester Link zur Freischaltung von HTTPS (Wunsch des Nutzers).** Ein Nutzer kam bei Tailscale nicht weiter: Das Konto war angemeldet, die Freigabe scheiterte aber viermal, weil „Serve“ (HTTPS) im Tailscale-Konto nie freigeschaltet war. Der kleine Link stand nur kurz nach einem Versuch da und war leicht zu übersehen. Jetzt steht in der Karte „Fernzugriff“, sobald die Box verbunden und noch nicht freigegeben ist, ein **auffälliger Kasten in der Warnfarbe** mit dem großen Knopf **Tailscale-Einstellungen öffnen** (Seite DNS, oder der genaue Freischaltlink, wenn Tailscale ihn geliefert hat): dort „MagicDNS“ und „HTTPS Certificates“ einschalten, danach einmal „Oberfläche im privaten Netz freigeben“.
+- Neue Texte nur Deutsch und Englisch. Tests: `tools/test_ui_layout.py` 41.
+
 ## 1.0.0
 - **Version 1.0 ohne „Beta“.** Der Stand ist im Alltag erprobt: Kameras über Tage am Stück (zuletzt 47,5 Stunden), Twitch am 10. Oktober 2026 mit echtem Konto getestet (Anmeldung, Chat, Moderation) und die Vorschau über Tailscale von einem Streamer mit seiner Box bestätigt. Was nicht ausprobiert ist (GoPro Hero 9 bis 13, DJI Osmo Action 2 und 3, Starlink), steht in der README; bei Problemen bitte ein Ticket aufmachen.
 - Die Oberfläche zeigt unten nur noch „IRL4YOU BOX Version 1.0.0“ ohne den Satz, dass sich Funktionen noch ändern können. „Alle Kameras immer bereit“ bleibt eine Option, die standardmäßig aus ist.
