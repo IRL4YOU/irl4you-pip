@@ -3735,6 +3735,30 @@ class SwUpdate:
                 break
         return "\n".join(out)
 
+    @staticmethod
+    def _oldest(text):
+        """Die älteste Versionsnummer, die als Überschrift im Text steht (als Zahlentripel), sonst None."""
+        out = None
+        for m in re.finditer(r"(?m)^##\s+(\d+)\.(\d+)\.(\d+)", text):
+            v = tuple(int(x) for x in m.groups())
+            out = v if out is None or v < out else out
+        return out
+
+    def _changelog(self, current=None):
+        """Der Text der Änderungsliste: CHANGELOG.md; die ältere Hälfte steht in CHANGELOG-Archiv.md und wird nur dazugeladen, wenn sie gebraucht wird (current:
+        die installierte Version ist älter als die älteste Überschrift der Liste; ohne current: immer, für die Suche im ganzen Verlauf). Fehlt das Archiv, bleibt die Liste."""
+        text = self._get("CHANGELOG.md", self.CHANGELOG_MAX)
+        oldest = self._oldest(text)
+        m = re.match(r"^(\d+)\.(\d+)\.(\d+)", current or "")
+        cur = tuple(int(x) for x in m.groups()) if m else None
+        need = current is None or cur is None or (oldest is not None and cur < oldest)
+        if need:
+            try:
+                text = text.rstrip("\n") + "\n\n" + self._get(b"CHANGELOG-Archiv.md".decode(), self.CHANGELOG_MAX)
+            except OSError:
+                pass
+        return text
+
     @classmethod
     def _sections_since(cls, text, current, max_sections=100, max_lines=4000, max_chars=200_000):
         """Die Änderungen aller Versionen, die neuer sind als die installierte (neueste zuerst), aus dem Text der CHANGELOG.md. Wer mehrere
@@ -3789,7 +3813,7 @@ class SwUpdate:
                     # installierte Version ist dann die neueste, die wir kennen; nach wenigen Minuten wird noch einmal gefragt.
                     res["latest"], res["stale"] = self.version, True
                 try:
-                    res["notes"] = self._sections_since(self._get("CHANGELOG.md", self.CHANGELOG_MAX), self.version)
+                    res["notes"] = self._sections_since(self._changelog(self.version), self.version)
                 except OSError:
                     res["notes"] = ""
             except (OSError, ValueError):
@@ -3811,7 +3835,7 @@ class SwUpdate:
                 return self.hist or {"text": "", "error": "Während der Übertragung wird nichts von GitHub geladen. Bitte nach dem Senden noch einmal öffnen."}
         else:
             try:
-                res = {"text": self._get("CHANGELOG.md", self.CHANGELOG_MAX), "error": ""}
+                res = {"text": self._changelog(), "error": ""}
             except OSError:
                 with self.lock:
                     return self.hist or {"text": "", "error": "GitHub ist nicht erreichbar."}
