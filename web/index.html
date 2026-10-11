@@ -723,6 +723,10 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <details class="subsec" id="net_bt"><summary>Bluetooth</summary>
     <div class="ph" style="margin-top:0">Die Bluetooth-Sticks dieser Box. Steht ein Stick als nicht nutzbar da, fehlt ihm der Treiber oder er wird nicht unterstützt.</div>
     <div id="btcard"><div class="ph">Wird geladen …</div></div>
+    <div id="btdrvprog" class="prog" hidden><div class="bar"><i></i></div><div class="progline"><span><b class="progpct"></b> <span class="progtxt"></span></span><span class="progel muted"></span></div></div>
+    <div id="btdrvmsg" class="ph" role="status"></div>
+    <div class="actions"><button id="btdrv_go" type="button" disabled>Treiber jetzt einrichten</button></div>
+    <div class="ph" data-hlp>Baut und lädt den Bluetooth-Treiber für Sticks, die der Kernel nicht kennt (zum Beispiel TP-Link UB500 oder UGREEN BT6.0). Das dauert einige Minuten, Bluetooth fehlt dabei kurz. Während einer Übertragung wartet die Box damit bis zum Ende.</div>
     <div class="sech">Handyverbindungen</div>
     <div class="ph" data-hlp>Zeigt den Akkustand gekoppelter Handys. Die Box fragt alle 10 Minuten kurz nach und trennt danach wieder, es gibt keine Dauerverbindung. Android meldet den Akku in Schritten von 20 %, ein iPhone in Schritten von etwa 10 %. Das Handy muss in der Nähe sein und Bluetooth an haben.</div>
     <div id="phonecard"></div>
@@ -1575,6 +1579,29 @@ function btRender(d){
   }
   setHtml(el,h);
 }
+// Treiber von Hand einrichten (Helfer pipbox-btdriver): Fortschritt aus /api/btdriver, nicht aus dem Bluetooth-Dienst (der fehlt beim Neuladen kurz)
+let btdrvTimer=0;
+function btdrvRender(d){
+  const msg=$("btdrvmsg"), go=$("btdrv_go"); if(!msg||!go) return;
+  const run=d.state==="working";
+  progSet("btdrvprog",run,d.steps?Math.round(100*(d.step||0)/d.steps):0,d.step_text||"");
+  go.disabled=!d.helper_installed||run;
+  const bad=d.state==="failed"||d.state==="unsupported";
+  const show=d.helper_installed?(d.manual||bad||run||d.state==="waiting")&&d.message:"Der Treiber-Helfer ist auf dieser Box noch nicht installiert (install.sh erneut ausführen).";
+  msg.textContent=show||"";
+  msg.style.color=bad||!d.helper_installed?"var(--crit)":"";
+  clearTimeout(btdrvTimer);
+  btdrvTimer=setTimeout(btdrvLoad,run?1500:15000);
+}
+async function btdrvLoad(){ try{ const r=await fetch("/api/btdriver"); if(r.ok) btdrvRender(await r.json()); }catch(e){ clearTimeout(btdrvTimer); btdrvTimer=setTimeout(btdrvLoad,3000); } }
+$("btdrv_go").onclick=async()=>{
+  $("btdrv_go").disabled=true;
+  try{ const r=await fetch("/api/btdriver",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); const j=await r.json().catch(()=>({}));
+    if(!r.ok){ $("btdrvmsg").textContent=j.error||"Fehler"; $("btdrvmsg").style.color="var(--crit)"; $("btdrv_go").disabled=false; return; }
+    $("btdrvmsg").textContent="Wird gestartet …"; $("btdrvmsg").style.color=""; clearTimeout(btdrvTimer); btdrvTimer=setTimeout(btdrvLoad,1500);
+  }catch(e){ $("btdrvmsg").textContent="Keine Verbindung zur Box"; $("btdrv_go").disabled=false; }
+};
+btdrvLoad();
 // Handyverbindungen (Verbindungen, Bluetooth): gekoppelte Handys mit Akkustand; während der Kopplung zählt die Zeit herunter
 function phoneAge(s){ return s==null?"":s<90?"gerade eben":s<5400?`vor ${Math.round(s/60)} Min.`:`vor ${Math.round(s/3600)} Std.`; }
 function phoneRender(d){

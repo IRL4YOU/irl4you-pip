@@ -3466,6 +3466,48 @@ class LogMode:
             f.write(mode + "\n")
 
 
+class BtDriver:
+    """Bluetooth-Treiber (Realtek- und Barrot-Sticks) von Hand einrichten und den Fortschritt zeigen. Dieser Dienst hat keine Root-Rechte: er legt nur
+    das Stichwort "install" in eine Auslösedatei, der Root-Helfer pipbox-btdriver.py baut und lädt den Treiber und schreibt seinen Stand nach
+    /run/pipbox-btdriver/status.json (hier nur gelesen). Die Anzeige liest von hier und nicht aus dem Bluetooth-Dienst, weil der beim Neuladen kurz fehlt."""
+    STATUS = "/run/pipbox-btdriver/status.json"
+    UNIT = "/etc/systemd/system/pipbox-btdriver.path"
+    STATES = ("working", "waiting", "failed", "unsupported", "ok", "none")
+
+    def __init__(self, state_dir, demo):
+        self.req = os.path.join(state_dir, "btdriver-request")
+        self.demo = demo
+        self.fake = {}
+
+    def status(self):
+        if self.demo:
+            return {"helper_installed": True, "state": "", "message": "", **self.fake}
+        out = {"helper_installed": os.path.exists(self.UNIT), "state": "", "message": ""}
+        try:
+            with open(self.STATUS) as f:
+                raw = json.load(f)
+            if raw.get("state") in self.STATES:
+                out.update(state=raw["state"], message=str(raw.get("message", ""))[:300], manual=bool(raw.get("manual")),
+                           step=int(raw.get("step") or 0), steps=int(raw.get("steps") or 0), step_text=str(raw.get("step_text", ""))[:80],
+                           time=int(raw.get("time") or 0))
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        return out
+
+    def request(self):
+        st = self.status()
+        if not st["helper_installed"]:
+            raise ValueError("Der Helfer ist nicht installiert (Software-Update einspielen oder install.sh erneut ausführen)")
+        if st.get("state") == "working" and time.time() - st.get("time", 0) < 1800:
+            raise ValueError("Der Treiber wird gerade eingerichtet")
+        if self.demo:
+            self.fake = {"state": "working", "manual": True, "step": 2, "steps": 5, "step_text": "Treiber wird gebaut", "message": "Treiber für TP-Link UB500 wird gebaut und eingerichtet (einige Minuten) …"}
+            return
+        fd = os.open(self.req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write("install\n")
+
+
 class LogBundle:
     """Protokolle zum Herunterladen: eine einzige Textdatei mit den Journalen der IRL4YOU-Dienste, dem Zustandsprotokoll und
     den Einstellungen, von Passwörtern, Stream-ID, WLAN-Namen und Adressen bereinigt. Dieser Dienst hat keine Root-Rechte und
@@ -8939,6 +8981,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.ckeys.snapshot())
         if path == "/api/logmode":
             return self.reply(200, self.logmode.status())
+        if path == "/api/btdriver":
+            return self.reply(200, self.btdriver.status())
         if path == "/api/logs":
             return self.reply(200, self.logbundle.status())
         if path == "/api/settings/progress":
@@ -9058,6 +9102,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/logmode":
                 self.logmode.request(d.get("mode"))
                 return self.reply(200, {"ok": True})
+            if path == "/api/btdriver":
+                self.btdriver.request()
+                return self.reply(200, self.btdriver.status())
             if path == "/api/developer":
                 self.developer.request(d.get("action"), d.get("confirm") is True)
                 return self.reply(200, self.developer.status())
@@ -9348,6 +9395,7 @@ def main():
     Handler.wifi = Wifi(args.state, args.demo, Handler.netchoice, Handler.names, Handler.srtla)
     Handler.power = Power(args.state, args.demo, Handler.send)
     Handler.logmode = LogMode(args.state, args.demo)
+    Handler.btdriver = BtDriver(args.state, args.demo)
     Handler.logbundle = LogBundle(args.state, args.demo)
     Handler.developer = Developer(args.state, args.demo, args.bela_config or None)
     Handler.autostart = AutoStart(args.state, Handler.send, args.demo)

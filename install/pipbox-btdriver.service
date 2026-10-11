@@ -7,12 +7,12 @@ Type=oneshot
 ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-btdriver.py auto
 TimeoutStartSec=25min
 Nice=10
-# Root-Rechte nur für diese eine Aufgabe: Der Dienst nimmt keine Eingaben an (feste Aufrufe "auto" und "uninstall"), darf nur Kernelmodule laden und
+# Root-Rechte nur für diese eine Aufgabe: Der Dienst nimmt keine Eingaben an (feste Aufrufe "auto" und "uninstall", dazu die Auslösedatei der Oberfläche mit festem Stichwort), darf nur Kernelmodule laden und
 # Kernelmeldungen lesen, schreibt nur in die unten genannten Ordner und kann keine neuen Rechte erlangen.
 CapabilityBoundingSet=CAP_SYS_MODULE CAP_SYSLOG CAP_DAC_OVERRIDE CAP_FOWNER CAP_CHOWN
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/lib/modules /run
+ReadWritePaths=/lib/modules /run /var/lib/pipbox
 StateDirectory=pipbox-btdriver
 ProtectHome=yes
 PrivateTmp=yes

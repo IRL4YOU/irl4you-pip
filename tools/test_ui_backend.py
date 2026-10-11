@@ -466,6 +466,59 @@ class RootHelperHardening(unittest.TestCase):
         self.assertTrue(os.path.isdir(target))               # das Ziel des Verweises bleibt unangetastet
 
 
+class BtDriverButton(unittest.TestCase):
+    """Treiber von Hand einrichten: die Oberfläche legt nur das Stichwort "install" ab und liest den Stand des Root-Helfers."""
+
+    def make(self, status=None, unit=True):
+        d = tempfile.mkdtemp()
+        bd = server.BtDriver(d, demo=False)
+        bd.STATUS = os.path.join(d, "status.json")
+        bd.UNIT = os.path.join(d, "unit") if unit else os.path.join(d, "fehlt")
+        open(os.path.join(d, "unit"), "w").close()
+        if status is not None:
+            with open(bd.STATUS, "w") as f:
+                json.dump(status, f)
+        return bd, d
+
+    def test_request_writes_the_keyword_only(self):
+        bd, d = self.make({"state": "ok"})
+        bd.request()
+        self.assertEqual(open(os.path.join(d, "btdriver-request")).read(), "install\n")
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(d, "btdriver-request")).st_mode), 0o600)
+
+    def test_request_needs_the_helper_and_refuses_while_working(self):
+        bd, d = self.make({"state": "ok"}, unit=False)
+        with self.assertRaises(ValueError):
+            bd.request()
+        bd, d = self.make({"state": "working", "time": int(time.time())})
+        with self.assertRaises(ValueError):
+            bd.request()
+        self.assertFalse(os.path.exists(os.path.join(d, "btdriver-request")))
+        bd, d = self.make({"state": "working", "time": int(time.time()) - 7200})            # hängengebliebener Stand: neu anstoßen erlaubt
+        bd.request()
+
+    def test_status_passes_only_known_fields(self):
+        bd, _ = self.make({"state": "working", "step": 3, "steps": 5, "step_text": "Treiber wird eingespielt", "message": "m", "manual": True, "time": 5, "geheim": "x"})
+        st = bd.status()
+        self.assertEqual((st["state"], st["step"], st["steps"], st["manual"], st["helper_installed"]), ("working", 3, 5, True, True))
+        self.assertNotIn("geheim", st)
+
+    def test_status_survives_missing_or_broken_file(self):
+        bd, d = self.make()
+        self.assertEqual(bd.status()["state"], "")
+        with open(bd.STATUS, "w") as f:
+            f.write("{kaputt")
+        self.assertEqual(bd.status()["state"], "")
+        with open(bd.STATUS, "w") as f:
+            json.dump({"state": "boese", "step": "x"}, f)
+        self.assertEqual(bd.status()["state"], "")
+
+    def test_demo_runs(self):
+        bd = server.BtDriver(tempfile.mkdtemp(), demo=True)
+        bd.request()
+        self.assertEqual(bd.status()["state"], "working")
+
+
 class LogModeSwitch(unittest.TestCase):
     """Protokoll-Modus: Oberfläche legt nur ein festes Stichwort ab, der Root-Helfer stellt um."""
 
