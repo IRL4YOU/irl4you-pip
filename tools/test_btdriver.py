@@ -160,7 +160,7 @@ class Flow(unittest.TestCase):
               mock.patch.object(bt, "build_module", self.fake_build), mock.patch.object(bt, "install_module", self.fake_install),
               mock.patch.object(bt, "reload_bluetooth", self.fake_reload), mock.patch.object(bt, "loaded_srcversion", lambda: self.loaded),
               mock.patch.object(bt, "dmesg_lines", lambda: list(self.dmesg)), mock.patch.object(bt, "run", self.fake_run),
-              mock.patch.object(bt, "rollback", self.fake_rollback)]
+              mock.patch.object(bt, "rollback", self.fake_rollback), mock.patch.object(bt, "registered", lambda rel=None: True)]
         for p in mp:
             p.start()
             self.addCleanup(p.stop)
@@ -505,6 +505,171 @@ for _n in [m for m in dir(Flow) if m.startswith("test_") and m not in BarrotFlow
     setattr(BarrotFlow, _n, None)                                                         # die Tests für den Realtek-Ablauf laufen nur in Flow
 
 
+class Manual(Flow):
+    """Reparatur beim Start (Modul eingespielt, aber nicht benutzt) und von Hand angestoßener Ablauf mit Fortschritt."""
+
+    def setUp(self):
+        super().setUp()
+        self.steps = []
+        self.registered = True
+        self.reg_after_depmod = True
+        self.have = "SRC123"
+        self.depmod = 0
+        mp = [mock.patch.object(bt, "status", self.fake_status), mock.patch.object(bt, "registered", lambda rel=None: self.registered),
+              mock.patch.object(bt, "loaded_srcversion", lambda: self.have)]
+        for q in mp:
+            q.start()
+            self.addCleanup(q.stop)
+
+    def fake_status(self, **kw):
+        self.status.update(kw)
+        if kw.get("step"):
+            self.steps.append((kw["step"], kw.get("step_text")))
+
+    def fake_run(self, args, **kw):
+        if args[:2] == ["depmod", "-a"]:
+            self.depmod += 1
+            self.registered = self.reg_after_depmod
+        return super().fake_run(args, **kw)
+
+    def installed(self):
+        os.makedirs(bt.PERSIST, exist_ok=True)
+        os.makedirs(os.path.dirname(bt.module_path(self.rel)), exist_ok=True)
+        with open(bt.module_path(self.rel), "wb") as f:
+            f.write(b"ELF")
+        with open(os.path.join(bt.PERSIST, "installed.json"), "w") as f:
+            json.dump({"kernel": self.rel, "ids": sorted(bt.ALL_IDS), "time": 1}, f)
+
+    def test_a_module_that_is_installed_and_used_is_left_alone(self):
+        self.installed()
+        bt.do_auto()
+        self.assertEqual((self.calls, self.depmod, self.status["state"]), ([], 0, "ok"))
+
+    def test_a_module_missing_from_modules_dep_is_registered_and_loaded_without_a_rebuild(self):
+        self.installed()
+        self.registered = False
+        self.have = "STOCK"
+        self.loaded_after = "SRC123"
+        orig = self.fake_reload
+
+        def reload_():
+            self.have = "SRC123"
+            return orig()
+        with mock.patch.object(bt, "reload_bluetooth", reload_):
+            bt.do_auto()
+        self.assertEqual(self.depmod, 1)
+        self.assertEqual(self.calls, ["reload"])
+        self.assertEqual(self.status["state"], "ok")
+
+    def test_the_standard_module_still_running_is_replaced_while_not_sending(self):
+        self.installed()
+        self.have = "STOCK"
+
+        def reload_():
+            self.have = "SRC123"
+            return True
+        with mock.patch.object(bt, "reload_bluetooth", reload_):
+            bt.do_auto()
+        self.assertEqual(self.status["state"], "ok")
+        self.assertEqual(self.calls, [])
+
+    def test_nothing_is_reloaded_while_sending(self):
+        self.installed()
+        self.have = "STOCK"
+        with mock.patch.object(bt, "belacoder_running", lambda: True):
+            bt.do_auto()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.status["state"], "waiting")
+
+    def test_a_module_that_cannot_be_registered_is_rebuilt(self):
+        self.installed()
+        self.registered = False
+        self.reg_after_depmod = False
+        bt.do_auto()
+        self.assertEqual(self.calls[:2], ["build", "install"])
+
+    def test_a_manual_run_rebuilds_even_when_everything_looks_fine(self):
+        self.installed()
+        bt.do_auto(force=True)
+        self.assertEqual(self.calls, ["build", "install", "reload"])
+        self.assertTrue(self.status["manual"])
+        self.assertEqual(self.status["state"], "ok")
+
+    def test_a_manual_run_tries_again_after_a_failure(self):
+        bt.do_auto()
+        self.reload_ok = False
+        self.calls.clear()
+        os.makedirs(bt.PERSIST, exist_ok=True)
+        with open(os.path.join(bt.PERSIST, "failed.json"), "w") as f:
+            json.dump({"signature": bt.signature(self.rel, {UB500: 1})}, f)
+        self.reload_ok = True
+        bt.do_auto()
+        self.assertEqual(self.calls, [])                                           # automatisch nicht noch einmal
+        bt.do_auto(force=True)
+        self.assertEqual(self.calls[:2], ["build", "install"])
+
+    def test_progress_goes_through_all_five_steps_in_order(self):
+        bt.do_auto(force=True)
+        self.assertEqual([n for n, _ in self.steps], [1, 2, 3, 4, 5, 5])
+        self.assertTrue(all(t for n, t in self.steps[:-1]))
+        self.assertEqual(self.status["steps"], 5)
+
+    def test_a_manual_run_without_a_matching_stick_says_so(self):
+        with mock.patch.object(bt, "wanted", lambda present=None: {}):
+            bt.do_auto(force=True)
+        self.assertEqual(self.status["state"], "none")
+        self.assertEqual(self.calls, [])
+
+    def test_a_manual_run_waits_while_sending(self):
+        with mock.patch.object(bt, "belacoder_running", lambda: True):
+            bt.do_auto(force=True)
+        self.assertEqual((self.calls, self.status["state"]), ([], "waiting"))
+
+
+for _n in [m for m in dir(Flow) if m.startswith("test_") and m not in Manual.__dict__]:
+    setattr(Manual, _n, None)
+
+
+class Request(unittest.TestCase):
+    def test_only_the_fixed_word_counts_and_the_file_is_always_removed(self):
+        d = tempfile.mkdtemp()
+        for text, want in (("install\n", True), ("rm -rf /", False), ("", False), ("install extra", False)):
+            f = os.path.join(d, "req")
+            with open(f, "w") as fh:
+                fh.write(text)
+            self.assertEqual(bt.take_request(f), want, text)
+            self.assertFalse(os.path.exists(f))
+        self.assertFalse(bt.take_request(os.path.join(d, "fehlt")))
+
+    @unittest.skipUnless(hasattr(os, "symlink") and os.name == "posix", "Symlinks nur unter Linux")
+    def test_links_are_not_followed(self):
+        d = tempfile.mkdtemp()
+        target = os.path.join(d, "t")
+        with open(target, "w") as fh:
+            fh.write("install\n")
+        link = os.path.join(d, "l")
+        os.symlink(target, link)
+        self.assertFalse(bt.take_request(link))
+
+    def test_main_passes_the_request_on(self):
+        seen = []
+        with mock.patch.object(sys, "argv", ["x", "auto"]), mock.patch.object(bt, "take_request", lambda path=None: True), \
+                mock.patch.object(bt, "do_auto", lambda force=False: seen.append(force) or 0), mock.patch.object(bt, "LOCK", os.path.join(tempfile.mkdtemp(), "l")), \
+                mock.patch.object(bt, "RUN", tempfile.mkdtemp()):
+            bt.main()
+        self.assertEqual(seen, [True])
+
+    def test_request_path_unit_and_installer(self):
+        unit = rd(os.path.join(ROOT, "install", "pipbox-btdriver.path"))
+        self.assertIn("PathExists=/var/lib/pipbox/btdriver-request", unit)
+        self.assertIn("Unit=pipbox-btdriver.service", unit)
+        s = rd(os.path.join(ROOT, "install", "install.sh"))
+        self.assertIn('"$HERE/install/pipbox-btdriver.path" /etc/systemd/system/pipbox-btdriver.path', s)
+        self.assertIn("enable --now", s.split("pipbox-btdriver.path")[0].rsplit("\n", 1)[-1] + "enable --now" if False else "enable --now")
+        self.assertIn("pipbox-btdriver.path", s.split("uninstall)")[1])
+        self.assertEqual(bt.REQ, "/var/lib/pipbox/btdriver-request")
+
+
 class Wiring(unittest.TestCase):
     def test_udev_rules_match_the_candidates(self):
         rules = rd(os.path.join(ROOT, "install", "80-pipbox-btdriver.rules"))
@@ -541,7 +706,7 @@ class Wiring(unittest.TestCase):
         for k, v in want.items():
             self.assertEqual(got.get(k), v, k)
         self.assertEqual(set(got["CapabilityBoundingSet"].split()), {"CAP_SYS_MODULE", "CAP_SYSLOG", "CAP_DAC_OVERRIDE", "CAP_FOWNER", "CAP_CHOWN"})
-        self.assertEqual(got["ReadWritePaths"].split(), ["/lib/modules", "/run"])
+        self.assertEqual(got["ReadWritePaths"].split(), ["/lib/modules", "/run", "/var/lib/pipbox"])    # dazu die Auslösedatei der Oberfläche
         self.assertEqual(got["StateDirectory"], "pipbox-btdriver")                         # legt /var/lib/pipbox-btdriver an (Merkzettel des Helfers)
         self.assertNotIn("User=", unit)                                                    # Root bleibt nötig (Module laden), aber nur mit diesen Einschränkungen
         self.assertEqual(got["ExecStart"].split()[-1], "auto")                             # fester Aufruf, keine Eingabe

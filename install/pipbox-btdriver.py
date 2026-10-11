@@ -15,7 +15,9 @@ Paket behoben. Der Helfer übernimmt diese Prüfung und ergänzt die zweite für
 beginnt nie mit weniger Bytes als ein Ereigniskopf. Der Stick selbst braucht keine Firmware.
 
 Aufruf (nur durch pipbox-btdriver.service/.timer, keine Eingaben von außen):
-  auto       prüft, ob ein Stick steckt, der den Treiber braucht, und richtet ihn dann ein (udev beim Einstecken, Zeitgeber alle 15 min)
+  auto       prüft, ob ein Stick steckt, der den Treiber braucht, und richtet ihn dann ein (udev beim Einstecken, Zeitgeber alle 15 min).
+             Liegt die Auslösedatei der Oberfläche da (Knopf "Treiber jetzt einrichten"), wird von Hand angestoßen: neu bauen, mit Fortschrittsanzeige.
+             Ist das Modul eingespielt, wird aber nicht benutzt (Standardmodul geladen), wird es eingetragen und geladen.
   uninstall  entfernt das eingespielte Modul (das Standardmodul gilt nach dem nächsten Neustart wieder)
 
 Sicherheitsnetz: gebaut wird in einem Temporärordner; geprüft werden Kernel, Werkzeuge und die Modulversion; während einer Übertragung
@@ -42,6 +44,8 @@ LIB_MODULES = "/lib/modules"
 RUN = "/run/pipbox-btdriver"
 STATUS = f"{RUN}/status.json"
 LOCK = "/run/pipbox-btdriver.lock"
+REQ = "/var/lib/pipbox/btdriver-request"      # legt der Dienst pipbox (ohne Root) per Knopf in der Oberfläche an; Inhalt nur "install"
+STEPS = 5                                     # Schritte der Anzeige beim Einrichten
 PERSIST = "/var/lib/pipbox-btdriver"         # gehört root: Merkzettel "hat nicht geklappt" und "eingespielt"
 SYSFS_USB = "/sys/bus/usb/devices"
 ANCHOR = "\t{ USB_DEVICE(0x0bda, 0xb009), .driver_info = BTUSB_REALTEK },\n"
@@ -116,6 +120,31 @@ def status(**kw):
         json.dump(s, f)
     os.chmod(tmp, 0o644)
     os.replace(tmp, STATUS)
+
+
+def step(n, text, **kw):
+    """Meldung mit Fortschritt (Schritt n von STEPS) für die Anzeige in der Oberfläche."""
+    status(state="working", step=n, steps=STEPS, step_text=text, **kw)
+
+
+def take_request(path=None):
+    """Auslösedatei aus der Oberfläche lesen (ohne Verweisen zu folgen) und löschen. True nur bei dem festen Stichwort "install"."""
+    path = path or REQ
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return False
+    try:
+        ok = stat.S_ISREG(os.fstat(fd).st_mode) and os.read(fd, 16).strip() == b"install"
+    except OSError:
+        ok = False
+    finally:
+        os.close(fd)
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    return ok
 
 
 def run(args, timeout=60, **kw):
@@ -233,6 +262,31 @@ def installed_ok(rel=None, ids=None):
     rec = read_json(marker("installed.json"))
     return (os.path.isfile(module_path(rel)) and rec.get("kernel") == rel
             and set(ids or ()) <= set(rec.get("ids", [])))
+
+
+def registered(rel=None):
+    """Findet der Kernel unser Modul als btusb (Eintrag in modules.dep)? Sonst wird beim Start das Standardmodul geladen."""
+    rel = rel or release()
+    out = run(["modinfo", "-k", rel, "-n", "btusb"]).stdout.strip()
+    return bool(out) and os.path.realpath(out) == os.path.realpath(module_path(rel))
+
+
+def heal(rel):
+    """Das Modul ist eingespielt, wird aber vielleicht nicht benutzt (modules.dep ohne den Eintrag oder das Standardmodul läuft). Trägt es neu ein und lädt
+    es, wenn nötig. Gibt "ok", "waiting" (Übertragung läuft) oder "rebuild" zurück."""
+    if not registered(rel):
+        run(["depmod", "-a", rel], timeout=120)
+        if not registered(rel):
+            return "rebuild"
+    want = run(["modinfo", "-F", "srcversion", module_path(rel)]).stdout.strip()
+    have = loaded_srcversion()
+    if want and have and have != want:
+        if belacoder_running():
+            return "waiting"
+        step(4, "Bluetooth wird neu geladen", manual=False)
+        if not reload_bluetooth() or loaded_srcversion() != want:
+            return "rebuild"
+    return "ok"
 
 
 def belacoder_running():
@@ -413,41 +467,57 @@ def rollback(backup, rel=None):
     reload_bluetooth()
 
 
-def do_auto():
+def do_auto(force=False):
+    """force: von Hand angestoßen (Knopf in der Oberfläche): baut neu, auch wenn alles eingerichtet scheint oder es schon einmal nicht ging."""
     rel = release()
     need = wanted()
+
+    def st(**kw):
+        status(manual=bool(force), **kw)
     if not need:
+        if force:
+            st(state="none", ids=[], message="Es steckt kein Bluetooth-Stick, der diesen Treiber braucht.")
         return 0
     names = ", ".join(need.values())
     if not kernel_supported(rel):
-        status(state="unsupported", ids=sorted(need), message=f"Für den Kernel {rel} gibt es keinen vorbereiteten Treiber ({names}). Dieser Stick läuft dort möglicherweise nicht richtig.")
+        st(state="unsupported", ids=sorted(need), message=f"Für den Kernel {rel} gibt es keinen vorbereiteten Treiber ({names}). Dieser Stick läuft dort möglicherweise nicht richtig.")
         return 0
-    if installed_ok(rel, need):
-        status(state="ok", ids=sorted(need), message=f"Treiber für {names} ist eingerichtet.")
-        return 0
+    if not force and installed_ok(rel, need):
+        h = heal(rel)
+        if h == "ok":
+            st(state="ok", ids=sorted(need), message=f"Treiber für {names} ist eingerichtet.")
+            return 0
+        if h == "waiting":
+            st(state="waiting", ids=sorted(need), message=f"Der Treiber für {names} wird nach der Übertragung geladen (er lädt Bluetooth neu).")
+            return 0
+        log("Eingespieltes Modul wird nicht benutzt und ließ sich nicht eintragen: wird neu gebaut")
     sig = signature(rel, need)
-    if read_json(marker("failed.json")).get("signature") == sig:
+    if not force and read_json(marker("failed.json")).get("signature") == sig:
         return 0                                                          # hat bei dieser Kombination nicht geklappt: nicht in einer Schleife versuchen
     if belacoder_running():
-        status(state="waiting", ids=sorted(need), message=f"Der Treiber für {names} wird nach der Übertragung eingerichtet (er lädt Bluetooth neu).")
+        st(state="waiting", ids=sorted(need), message=f"Der Treiber für {names} wird nach der Übertragung eingerichtet (er lädt Bluetooth neu).")
         return 0
+    step(1, "Voraussetzungen werden geprüft", manual=bool(force), ids=sorted(need), message=f"Treiber für {names} wird gebaut und eingerichtet (einige Minuten) …")
     miss = tools_ok(rel)
     if miss:
         write_json(marker("failed.json"), {"signature": sig, "message": "fehlt: " + ", ".join(miss)})
-        status(state="failed", ids=sorted(need), message="Der Treiber kann nicht gebaut werden, es fehlt: " + ", ".join(miss) + ".")
+        st(state="failed", ids=sorted(need), message="Der Treiber kann nicht gebaut werden, es fehlt: " + ", ".join(miss) + ".")
         return 0
-    status(state="working", ids=sorted(need), message=f"Treiber für {names} wird gebaut und eingerichtet (einige Minuten) …")
     backup, tmpdir, done = None, None, False
     try:
+        step(2, "Treiber wird gebaut", manual=bool(force))
         ko = build_module(rel, list(REALTEK_IDS))
         tmpdir = os.path.dirname(ko)
         want_src = run(["modinfo", "-F", "srcversion", ko]).stdout.strip()
         before = len(dmesg_lines())
+        step(3, "Treiber wird eingespielt", manual=bool(force))
         backup = install_module(ko, rel)
+        step(4, "Bluetooth wird neu geladen", manual=bool(force))
         if not reload_bluetooth():
             raise RuntimeError("Nach dem Laden des Treibers gibt es keinen Bluetooth-Adapter (oder das alte Modul ließ sich nicht entladen)")
         if want_src and loaded_srcversion() != want_src:
             raise RuntimeError("Das neue Modul wurde nicht geladen (das alte läuft noch)")
+        step(5, "Stick wird geprüft", manual=bool(force))
         new = dmesg_lines()[before:]
         if any(i not in BARROT for i in need):
             bad = firmware_errors("\n".join(new))
@@ -465,7 +535,7 @@ def do_auto():
             os.remove(marker("failed.json"))
         done = True
         log(f"Treiber eingerichtet für {names}")
-        status(state="ok", ids=sorted(need), message=f"Treiber für {names} ist eingerichtet. Eine Kamera fragt nach dem Wechsel des Sticks eventuell einmal nach der Kopplung.")
+        st(state="ok", ids=sorted(need), step=STEPS, message=f"Treiber für {names} ist eingerichtet. Eine Kamera fragt nach dem Wechsel des Sticks eventuell einmal nach der Kopplung.")
     except Exception as e:
         log(f"Treiber nicht eingerichtet: {e!r}")
         if not done:
@@ -475,7 +545,7 @@ def do_auto():
                 except Exception as e2:
                     log(f"Rückbau fehlgeschlagen: {e2!r}")
             write_json(marker("failed.json"), {"signature": sig, "message": str(e)[:200]})
-            status(state="failed", ids=sorted(need), message=f"Der Treiber für {names} ließ sich nicht einrichten, es läuft der Standardtreiber weiter: {str(e)[:160]}")
+            st(state="failed", ids=sorted(need), message=f"Der Treiber für {names} ließ sich nicht einrichten, es läuft der Standardtreiber weiter: {str(e)[:160]}")
     finally:
         if tmpdir and tmpdir.startswith("/var/tmp/pipbox-btdriver-"):
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -511,7 +581,7 @@ def main():
     except OSError:
         return 0
     try:
-        return do_auto() if mode == "auto" else do_uninstall()
+        return do_auto(force=take_request()) if mode == "auto" else do_uninstall()
     except Exception as e:                                                # nie ohne Meldung enden
         log(f"Fehler: {e!r}")
         status(state="failed", message=str(e)[:200])
