@@ -230,14 +230,14 @@ PY
     echo "PIPBOX-STEP belacoder"      # Fortschrittsanzeige des Update-Helfers (pipbox-swupdate.py liest diese Zeilen)
     install -d /opt/pipbox/belacoder
     bc_changed=0
-    for bp in belacoder-jitter-tolerant.patch belacoder-stall-output.patch belacoder-stats.patch belacoder-live-feeds.patch belacoder-frame-copy.patch belacoder-no-reconfigure.patch belacoder-audio-eos.patch belacoder-feed-shift.patch; do
+    for bp in belacoder-jitter-tolerant.patch belacoder-stall-output.patch belacoder-stats.patch belacoder-live-feeds.patch belacoder-frame-copy.patch belacoder-no-reconfigure.patch belacoder-audio-eos.patch belacoder-feed-shift.patch belacoder-fast-decrease.patch; do
       cmp -s "$HERE/belacoder/$bp" "/opt/pipbox/belacoder/$bp" || bc_changed=1
     done
-    cmp -s "$HERE/belacoder/build.sh" /opt/pipbox/belacoder/build.sh || bc_changed=1       # auch das Bauskript: Es trägt die Kennung ("-sb12-eos-sh") und die Reihenfolge der Patches; ändert sich nur es, muss trotzdem neu gebaut werden (1.0.39 blieb sonst auf der Kennung sb13 von 1.0.38)
+    cmp -s "$HERE/belacoder/build.sh" /opt/pipbox/belacoder/build.sh || bc_changed=1       # auch das Bauskript: Es trägt die Kennung ("-sb12-eos-sh-fd") und die Reihenfolge der Patches; ändert sich nur es, muss trotzdem neu gebaut werden (1.0.39 blieb sonst auf der Kennung sb13 von 1.0.38)
     [ -x /opt/pipbox/bin/belacoder ] || bc_changed=1
     if [ "$bc_changed" = 1 ]; then
       if sh "$HERE/belacoder/build.sh"; then
-        for bp in belacoder-jitter-tolerant.patch belacoder-stall-output.patch belacoder-stats.patch belacoder-live-feeds.patch belacoder-frame-copy.patch belacoder-no-reconfigure.patch belacoder-audio-eos.patch belacoder-feed-shift.patch; do
+        for bp in belacoder-jitter-tolerant.patch belacoder-stall-output.patch belacoder-stats.patch belacoder-live-feeds.patch belacoder-frame-copy.patch belacoder-no-reconfigure.patch belacoder-audio-eos.patch belacoder-feed-shift.patch belacoder-fast-decrease.patch; do
           install -m 644 "$HERE/belacoder/$bp" "/opt/pipbox/belacoder/$bp"
         done
         install -m 644 "$HERE/belacoder/build.sh" /opt/pipbox/belacoder/build.sh
