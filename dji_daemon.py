@@ -437,7 +437,7 @@ def friendly_error(e):
     return None
 
 
-STATUS_ONLY_KEY = "hdmi"     # Schlüssel des HDMI-Eingangs der Box: Der Akkustand erscheint bei der HDMI-Kamera (Status, Twitch-Warnung)
+STATUS_ONLY_KEY = "hdmi"     # Schlüssel des HDMI-Eingangs der Box: Der Akkustand erscheint bei der HDMI-Kamera (Status)
 
 
 def camera_key(addr, taken=()):

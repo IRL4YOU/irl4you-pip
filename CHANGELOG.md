@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.62
+- Der Twitch-Chat ist ausgebaut: Die Karte Chat bettet jetzt das Chat-Widget von Twitch ein (Kanalname über ⚙, nur im Browser gespeichert). Anmeldung, Moderation, Ereignisse, Akku-Warnung und Systemwarnungen im Chat entfallen; alte Zugangsdaten werden gelöscht.
+- Entfernt: NPU-Auslastung und Neuübertragungen aus den Details. Arbeitsspeicher steht als „x GiB frei“.
+- HTML-Dateien der Oberfläche minimiert, nicht benutzte Übersetzungen entfernt.
+
 ## 1.0.61
 - Behoben: Bei plötzlichem Einbruch der Verbindung sank die Bitrate zu langsam, SRT verwarf Pakete (Bild-Artefakte, Tonaussetzer, Issue #1). Der Regler halbiert jetzt bei starkem Stau; im Test 60 % weniger verworfene Pakete. Der belacoder wird beim Update neu gebaut.
 - Behoben: Eine DJI-Kamera, die nur noch Ton und kaum Video liefert (Action 5 Pro), wird nach 25 s neu verbunden.
