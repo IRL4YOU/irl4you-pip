@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.59
+- Bildrate von Handys schon vor dem Livegang: Verbundene Kameras ohne Bildrate in den Stream-Daten zeigen sie jetzt auch, wenn die Sendung noch nicht läuft. Die Box liest den Stream etwa 6 Sekunden vom eigenen nginx und zählt nur Bilder (kein Dekodieren, höchstens eine Messung gleichzeitig). Werte nahe 24, 25, 30, 50 oder 60 werden gerundet. Gilt für die Statusseite und die Statistik.
+
 ## 1.0.58
 - Statistik: alles, was unter „Status“ steht, einschließlich der Details (Senden mit allen Zahlen, Upload und Download je Netz, alle Temperaturzonen, jeder Prozessorkern mit Takt, GPU, NPU, Speicherplatz). Jeder Block einzeln wählbar (neu: „Prozessor-Details“, „Speicherplatz“). Schon erzeugte Links und heruntergeladene Seiten laufen weiter (es kamen nur Felder dazu). Die Seite zeigt „Box offline“ mit „letzte Daten vor …“, wenn die Verbindung ausfällt, und verbindet sich von selbst neu.
 - Bildrate von Kameras ohne Angabe (zum Beispiel Handys): Die Oberfläche und die Statistik zeigen die von belacoder gemessene Rate, wenn die Kamera keine meldet (bei laufender Sendung in der Betriebsart „Alle Kameras immer bereit“).
