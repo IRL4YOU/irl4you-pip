@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.58
+- Statistik: alles, was unter „Status“ steht, einschließlich der Details (Senden mit allen Zahlen, Upload und Download je Netz, alle Temperaturzonen, jeder Prozessorkern mit Takt, GPU, NPU, Speicherplatz). Jeder Block einzeln wählbar (neu: „Prozessor-Details“, „Speicherplatz“). Schon erzeugte Links und heruntergeladene Seiten laufen weiter (es kamen nur Felder dazu). Die Seite zeigt „Box offline“ mit „letzte Daten vor …“, wenn die Verbindung ausfällt, und verbindet sich von selbst neu.
+- Bildrate von Kameras ohne Angabe (zum Beispiel Handys): Die Oberfläche und die Statistik zeigen die von belacoder gemessene Rate, wenn die Kamera keine meldet (bei laufender Sendung in der Betriebsart „Alle Kameras immer bereit“).
+
 ## 1.0.57
 - Die Verzögerung der Kameras verschiebt jetzt wirklich Bild und Ton (bis 3000 ms, vorher ohne Wirkung, höchstens 750). Nötig: belacoder wird beim Update neu gebaut.
 

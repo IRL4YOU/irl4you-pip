@@ -612,6 +612,24 @@ def read_lags(path=LIVE_STATS, now=None):
     return {int(m.group(1)): int(m.group(3)) for m in re.finditer(r" in_f(\d)_lag=(-?\d+)/(-?\d+)/(-?\d+)", text)}
 
 
+def read_fps(path=LIVE_STATS, now=None):
+    """Bilder je Sekunde, die jeder Zweig am Mischer liefert, von belacoder gemessen (in_f<N>=fps/verworfen/..., Platz N): {Platz: fps}. Nur Zweige mit Bildern (fps > 0).
+    Leer, wenn die Datei fehlt oder alt ist. Das ist die Quelle für Kameras, die ihre Bildrate nicht melden (Handys: nginx kennt sie nur aus den Metadaten des Streams)."""
+    try:
+        if (now if now is not None else time.time()) - os.stat(path).st_mtime > STATS_MAX_AGE_S:
+            return {}
+        with open(path) as f:
+            text = f.readline()
+    except OSError:
+        return {}
+    out = {}
+    for m in re.finditer(r" in_f(\d)=(\d+(?:\.\d+)?)/", text):
+        v = float(m.group(2))
+        if v > 0:
+            out[int(m.group(1))] = round(v, 1)
+    return out
+
+
 def parse_rtmp_stats(xml):
     """Aus der nginx-Statistik: {Schlüssel: {"w":…, "h":…, "audio": bool}} der Kameras, die gerade senden."""
     out = {}

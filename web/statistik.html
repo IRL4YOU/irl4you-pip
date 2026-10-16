@@ -15,7 +15,7 @@
     Homepage:  <iframe src="https://…/statistik.html?url=wss://…/ws?t=…" width="400" height="500"></iframe>  oder diese Datei auf die Homepage legen.
   Alles lässt sich in der Adresse ändern (nach ? mit & verbunden), ohne die Datei zu bearbeiten:
     url=wss://…        Adresse der Box (WebSocket) | every=2  Takt in Sekunden (1 bis 10) | bg=transparent  Hintergrund (oder 1e3c72) | size=1.3  Schriftgröße
-    show=net,send,cams,sys,temp,alerts,total  nur diese Teile | names=eth1:Vodafone,wlan0:WLAN  eigene Namen | title=Mein Name  Überschrift
+    show=net,send,cams,sys,temp,zones,cores,disk,alerts,total  nur diese Teile | names=eth1:Vodafone,wlan0:WLAN  eigene Namen | title=Mein Name  Überschrift
     speed=450,1100  Schwellen für Rot/Gelb in kbit/s | tempc=55,65  Schwellen Temperatur
   Unter CONFIG unten stehen dieselben Einstellungen (Farben, Texte, Schwellen).
 
@@ -25,9 +25,11 @@
 <style>
   :root { --text:#ffd700; --label:#e6e6e6; --good:#4caf50; --middle:#ff9800; --bad:#f44336; --muted:#9aa4b2; --card:rgba(255,255,255,.10); --line:rgba(255,255,255,.20); --bg:transparent; }
   * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; }
-  body { background:var(--bg); color:var(--label); font:15px/1.35 system-ui, "Segoe UI", Roboto, Arial, sans-serif; overflow:hidden; }
-  #wrap { height:100%; padding:10px; display:flex; flex-direction:column; gap:8px; overflow:hidden; }
+  html, body { margin:0; min-height:100%; }
+  body { background:var(--bg); color:var(--label); font:15px/1.35 system-ui, "Segoe UI", Roboto, Arial, sans-serif; overflow-x:hidden; overflow-y:auto; scrollbar-width:none; }
+  body::-webkit-scrollbar { display:none; }
+  #wrap { min-height:100vh; padding:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:8px; align-content:start; }
+  #head, #offline, #msg { grid-column:1 / -1; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 12px; backdrop-filter:blur(8px); }
   .head { display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:600; }
   .dot { display:inline-block; width:.7em; height:.7em; border-radius:50%; background:var(--muted); margin-right:.45em; vertical-align:baseline; }
@@ -42,15 +44,25 @@
   .alert.err { color:var(--bad); }
   #msg { color:var(--bad); font-size:.85em; text-align:center; display:none; }
   .stale { opacity:.55; }
+  .bar { height:4px; background:rgba(255,255,255,.15); border-radius:3px; margin:1px 0 5px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--good); }
+  .bar i.middle { background:var(--middle); } .bar i.bad { background:var(--bad); }
+  #offline { display:none; text-align:center; border-color:var(--bad); }
+  #offline b { color:var(--bad); font-size:1.15em; letter-spacing:.04em; text-transform:uppercase; }
+  #offline div { color:var(--muted); font-size:.85em; margin-top:2px; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <div class="card head" id="head"><span><span class="dot" id="dot"></span><span id="title"></span></span><span id="headr" class="v"></span></div>
+  <div class="card" id="offline"><b id="offlineTitle"></b><div id="offlineSub"></div></div>
   <div class="card" id="c_net"><div class="sec" id="s_net"></div><div id="net"></div></div>
   <div class="card" id="c_send"><div id="send"></div></div>
   <div class="card" id="c_cam"><div class="sec" id="s_cam"></div><div id="cams"></div></div>
   <div class="card" id="c_sys"><div class="sec" id="s_sys"></div><div id="sys"></div></div>
+  <div class="card" id="c_temps"><div class="sec" id="s_temps"></div><div id="temps"></div></div>
+  <div class="card" id="c_cores"><div class="sec" id="s_cores"></div><div id="cores"></div></div>
+  <div class="card" id="c_disk"><div class="sec" id="s_disk"></div><div id="disk"></div></div>
   <div class="card" id="c_alerts"><div id="alerts"></div></div>
   <div id="msg"></div>
 </div>
@@ -67,12 +79,13 @@ const CONFIG = {
   tempC: { green: 55, yellow: 65 },             // Temperatur: unter green grün, unter yellow orange, sonst rot
   loadPct: { yellow: 70, red: 90 },             // Prozessor
   // Was angezeigt wird (nur, was auf der Box freigegeben ist, kommt überhaupt an)
-  show: { net: true, onlyUplinks: true, total: true, send: true, cams: true, sys: true, temp: true, alerts: true },
+  show: { net: true, onlyUplinks: false, total: true, send: true, cams: true, sys: true, temp: true, zones: true, cores: true, disk: true, alerts: true },
   names: {},                                    // Eigene Namen für Netzkarten, zum Beispiel { eth1: "Vodafone", wlan0: "WLAN" }
   labels: { net: "Sendewege", total: "Gesamt", cameras: "Kameras", system: "System", cpu: "Prozessor", memory: "Speicher", temperature: "Temperatur",
-            live: "LIVE", offline: "nicht auf Sendung", lost: "Verbindung zur Box verloren", connecting: "verbinde …", busy: "Die Box hat schon 3 Betrachter",
+            live: "LIVE", offline: "nicht auf Sendung", lost: "Verbindung zur Box verloren", boxOffline: "Box offline", lastData: "letzte Daten vor {t}", neverData: "noch keine Daten empfangen (Box aus, ohne Netz oder Schlüssel ungültig)", retrying: "neuer Versuch läuft …", connecting: "verbinde …", busy: "Die Box hat schon 3 Betrachter",
             denied: "Schlüssel ungültig oder Freigabe aus", rtt: "Laufzeit", loss: "Verlust", retrans: "Neuübertragung", buffer: "Sendepuffer", bitrate: "Bitrate",
-            fps: "Bilder/s", state_an: "aktiv", state_reserve: "Reserve", state_aus: "aus", noCameras: "keine Kamera", waiting: "warte auf Daten …", off: "aus" }
+            fps: "Bilder/s", set: "eingestellt", packets: "Pakete", temps: "Temperaturen", cores: "Prozessor", core: "Kern", disk: "Speicherplatz", used: "Belegt", free: "Frei",
+            gpu: "GPU", npu: "NPU", fan: "Lüfter", encoder: "Encoder-Bilder/s", sent: "gesendet", state_an: "aktiv", state_reserve: "Reserve", state_aus: "aus", noCameras: "keine Kamera", waiting: "warte auf Daten …", off: "aus" }
 };
 // ------------------------------------------------------------------ Einstellungen aus der Adresse (überschreiben CONFIG)
 const Q = new URLSearchParams(location.search);
@@ -122,11 +135,14 @@ function tempClass(c) { return c < CONFIG.tempC.green ? "good" : c < CONFIG.temp
 function loadClass(p) { return p < CONFIG.loadPct.yellow ? "good" : p < CONFIG.loadPct.red ? "middle" : "bad"; }
 function show(id, on) { $(id).style.display = on ? "" : "none"; }
 
+function bar(pct, cls) { const b = el("div", "bar"), i = el("i", cls || ""); i.style.width = Math.max(0, Math.min(100, pct || 0)) + "%"; b.appendChild(i); return b; }
+function rowsWithBars(items) { const out = []; for (const [r, pct, cls] of items) { out.push(r); if (pct != null) out.push(bar(pct, cls)); } return out; }
 function render(d) {
   const sh = CONFIG.show;
   $("dot").className = "dot " + (d.live ? "live" : "off");
   $("headr").textContent = d.live ? L.live : L.offline;
   $("headr").className = "v " + (d.live ? "good" : "muted");
+  // Up- und Download
   const hasNet = sh.net && Array.isArray(d.net);
   show("c_net", hasNet);
   if (hasNet) {
@@ -137,23 +153,28 @@ function render(d) {
       const kbps = (n.tx_mbit || 0) * 1000;
       const name = CONFIG.names[n.id] || n.name || n.id;
       const off = n.uplink && n.state === "aus";
-      const sub = [n.uplink && n.state !== "an" ? (L["state_" + n.state] || n.state) : "", n.srtt_ms != null && n.state !== "aus" ? n.srtt_ms + " ms" : ""].filter(Boolean).join(" · ");
-      rows.push(row(name, off ? L.state_aus : fmt(n.tx_mbit, 2) + " Mbit/s", off ? "muted" : speedClass(kbps), sub));
+      const sub = [n.rx_mbit != null ? "↓ " + fmt(n.rx_mbit, 2) : "", n.uplink && n.state !== "an" ? (L["state_" + n.state] || n.state) : "", n.srtt_ms != null && n.state !== "aus" ? n.srtt_ms + " ms" : ""].filter(Boolean).join(" · ");
+      rows.push(row(name, off ? L.state_aus : "↑ " + fmt(n.tx_mbit, 2) + " Mbit/s", off ? "muted" : (n.uplink ? speedClass(kbps) : ""), sub));
     }
-    if (sh.total && d.uplink_tx_mbit !== undefined && list.length > 1) rows.push(row("Σ " + L.total, fmt(d.uplink_tx_mbit, 2) + " Mbit/s", speedClass((d.uplink_tx_mbit || 0) * 1000)));
+    if (sh.total && d.uplink_tx_mbit !== undefined && list.filter(n => n.uplink).length > 1) rows.push(row("Σ " + L.total, fmt(d.uplink_tx_mbit, 2) + " Mbit/s", speedClass((d.uplink_tx_mbit || 0) * 1000)));
     fill("net", rows);
   }
+  // Senden (Details)
   const hasSend = sh.send && d.send;
   show("c_send", hasSend);
   if (hasSend) {
     const s = d.send, rows = [];
-    if (s.bitrate_kbps != null) rows.push(row(L.bitrate, fmt(s.bitrate_kbps / 1000, 2) + " Mbit/s", speedClass(s.bitrate_kbps), s.fps != null ? fmt(s.fps) + " " + L.fps : ""));
+    const shown = s.shown_mbit != null ? s.shown_mbit : (s.bitrate_kbps != null ? s.bitrate_kbps / 1000 : null);
+    if (shown != null) rows.push(row(L.bitrate, fmt(shown, 2) + " Mbit/s", speedClass(shown * 1000), s.bitrate_kbps != null ? L.set + " " + fmt(s.bitrate_kbps / 1000, 2) : ""));
     if (s.rtt_ms != null) rows.push(row(L.rtt, fmt(s.rtt_ms, 0) + " ms", s.rtt_ms < 150 ? "good" : s.rtt_ms < 400 ? "middle" : "bad"));
-    if (s.loss_pct != null) rows.push(row(L.loss, fmt(s.loss_pct, 2) + " %", s.loss_pct < 0.5 ? "good" : s.loss_pct < 2 ? "middle" : "bad", s.retrans_pct != null ? L.retrans + " " + fmt(s.retrans_pct, 2) + " %" : ""));
-    if (s.buffer_ms != null) rows.push(row(L.buffer, fmt(s.buffer_ms, 0) + " ms", ""));
+    if (s.buffer_ms != null) rows.push(row(L.buffer, fmt(s.buffer_ms, 0) + " ms", s.buffer_ms < 1500 ? "" : s.buffer_ms < 3000 ? "middle" : "bad", s.buf_pkts != null ? fmt(s.buf_pkts, 0) + " " + L.packets : ""));
+    if (s.retrans_pct != null || s.retrans_total != null) rows.push(row(L.retrans, s.retrans_total != null ? fmt(s.retrans_total, 0) : fmt(s.retrans_pct, 2) + " %", "", s.retrans_total != null && s.retrans_pct != null ? fmt(s.retrans_pct, 2) + " %" : ""));
+    if (s.loss_pct != null || s.loss_total != null) rows.push(row(L.loss, s.loss_total != null ? fmt(s.loss_total, 0) : fmt(s.loss_pct, 2) + " %", s.loss_pct == null ? "" : s.loss_pct < 0.5 ? "good" : s.loss_pct < 2 ? "middle" : "bad", s.loss_total != null && s.loss_pct != null ? fmt(s.loss_pct, 2) + " %" : ""));
+    if (s.fps != null) rows.push(row(L.encoder, fmt(s.fps), ""));
     fill("send", rows);
     show("c_send", rows.length > 0);
   }
+  // Kameras
   const hasCam = sh.cams && Array.isArray(d.cameras);
   show("c_cam", hasCam);
   if (hasCam) {
@@ -167,29 +188,72 @@ function render(d) {
     });
     fill("cams", rows.length ? rows : [row(L.noCameras, "", "muted")]);
   }
+  // System: Prozessor, Speicher, Temperatur, Lüfter
   const hasSys = (sh.sys && d.cpu) || (sh.temp && d.temp);
   show("c_sys", !!hasSys);
   if (hasSys) {
     $("s_sys").textContent = L.system;
-    const rows = [];
+    const items = [];
     if (sh.sys && d.cpu) {
-      rows.push(row(L.cpu, fmt(d.cpu.avg, 0) + " %", loadClass(d.cpu.avg || 0)));
-      if (d.cpu.mem_used_pct != null) rows.push(row(L.memory, fmt(d.cpu.mem_used_pct, 0) + " %", loadClass(d.cpu.mem_used_pct)));
+      items.push([row(L.cpu, fmt(d.cpu.avg, 0) + " %", loadClass(d.cpu.avg || 0), d.cpu.max != null ? "max " + fmt(d.cpu.max, 0) + " %" : ""), d.cpu.avg, loadClass(d.cpu.avg || 0)]);
+      if (d.cpu.mem_used_pct != null) items.push([row(L.memory, fmt(d.cpu.mem_used_pct, 0) + " %", loadClass(d.cpu.mem_used_pct), d.cpu.mem_avail_mb != null ? L.free + " " + fmt(d.cpu.mem_avail_mb, 0) + " MB" : ""), d.cpu.mem_used_pct, loadClass(d.cpu.mem_used_pct)]);
     }
-    if (sh.temp && d.temp && d.temp.max_c != null) rows.push(row(L.temperature, fmt(d.temp.max_c, 0) + " °C", tempClass(d.temp.max_c)));
-    fill("sys", rows);
+    if (sh.temp && d.temp && d.temp.max_c != null) items.push([row(L.temperature, fmt(d.temp.max_c, 0) + " °C", tempClass(d.temp.max_c), d.temp.fan_pct != null ? L.fan + " " + fmt(d.temp.fan_pct, 0) + " %" : ""), null]);
+    fill("sys", rowsWithBars(items));
   }
+  // Temperaturen (Details)
+  const zones = sh.temp && sh.zones && d.temp && Array.isArray(d.temp.zones) ? d.temp.zones : [];
+  show("c_temps", zones.length > 0);
+  if (zones.length) { $("s_temps").textContent = L.temps; fill("temps", zones.map(z => row(z.name, fmt(z.c, 1) + " °C", z.c == null ? "" : tempClass(z.c)))); }
+  // Prozessor-Details: jeder Kern mit Takt, GPU, NPU
+  const hasCores = sh.cores && d.cores;
+  show("c_cores", !!hasCores);
+  if (hasCores) {
+    $("s_cores").textContent = L.cores;
+    const items = [], c = d.cores, fr = c.freq_mhz || [];
+    (c.load || []).forEach((v, i) => items.push([row(L.core + " " + i, fmt(v, 0) + " %", loadClass(v || 0), fr[i] ? (fr[i] >= 1000 ? fmt(fr[i] / 1000, 1) + " GHz" : fr[i] + " MHz") : ""), v, loadClass(v || 0)]));
+    if (c.gpu) items.push([row(L.gpu, c.gpu.load_pct != null ? fmt(c.gpu.load_pct, 0) + " %" : "–", c.gpu.load_pct != null ? loadClass(c.gpu.load_pct) : "", c.gpu.mhz != null ? c.gpu.mhz + " MHz" : ""), c.gpu.load_pct, c.gpu.load_pct != null ? loadClass(c.gpu.load_pct) : ""]);
+    if (c.npu) items.push([row(L.npu, c.npu.load_pct != null ? fmt(c.npu.load_pct, 0) + " %" : "–", "", c.npu.mhz != null ? c.npu.mhz + " MHz" : ""), c.npu.load_pct, c.npu.load_pct != null ? loadClass(c.npu.load_pct) : ""]);
+    fill("cores", rowsWithBars(items));
+  }
+  // Speicherplatz
+  const hasDisk = sh.disk && d.disk;
+  show("c_disk", !!hasDisk);
+  if (hasDisk) {
+    $("s_disk").textContent = L.disk;
+    const k = d.disk;
+    fill("disk", rowsWithBars([[row(L.used, fmt(k.used_gb, 1) + " GB", loadClass(k.used_pct || 0), k.used_pct != null ? fmt(k.used_pct, 1) + " %" : ""), k.used_pct, loadClass(k.used_pct || 0)],
+                               [row(L.free, fmt(k.free_gb, 1) + " GB", ""), null], [row(L.total, fmt(k.total_gb, 1) + " GB", ""), null]]));
+  }
+  // Meldungen
   const al = sh.alerts && Array.isArray(d.alerts) ? d.alerts : [];
   show("c_alerts", al.length > 0);
   fill("alerts", al.map(a => el("div", "alert" + (a.level === "err" || a.level === "error" ? " err" : ""), a.text)));
 }
 
 // ------------------------------------------------------------------ Verbindung (WebSocket): schläft, solange die Seite nicht sichtbar ist; nach Abbruch neuer Versuch mit wachsender Pause
-let ws = null, retryTimer = null, watchdog = null, fails = 0, lastMsg = 0;
-function setMsg(t, stale) { const m = $("msg"); m.textContent = t || ""; m.style.display = t ? "block" : "none"; $("wrap").classList.toggle("stale", !!stale); }
+let ws = null, retryTimer = null, watchdog = null, fails = 0, lastMsg = 0, lastData = 0, resumedAt = Date.now(), offlineShown = false;
+function setMsg(t, stale) { const m = $("msg"); m.textContent = t || ""; m.style.display = t ? "block" : "none"; if (!offlineShown) $("wrap").classList.toggle("stale", !!stale); }
+// "Box offline": Kommt länger als die Frist keine Meldung an (Box aus, ohne Netz, Verbindung weg, Schlüssel ungültig), zeigt die Seite es deutlich an und lässt die letzten Werte blass stehen.
+// Die Frist richtet sich nach dem Takt; nach dem Wiederaufnehmen (Seite war unsichtbar) zählt sie ab dann.
+function offlineAfterMs(every) { return 5000 + 1500 * Math.max(1, every || 1); }
+function isOffline(now, lastData, resumedAt, every) { return now - Math.max(lastData, resumedAt) > offlineAfterMs(every); }
+function fmtAge(sec) { return sec < 90 ? Math.round(sec) + " s" : sec < 5400 ? Math.round(sec / 60) + " min" : Math.round(sec / 3600) + " h"; }
+function offlineWatch() {
+  const off = !document.hidden && isOffline(Date.now(), lastData, resumedAt, CONFIG.every);
+  if (off !== offlineShown) {
+    offlineShown = off;
+    $("offline").style.display = off ? "block" : "none";
+    $("wrap").classList.toggle("stale", off);
+    if (off) { $("dot").className = "dot off"; $("headr").textContent = L.boxOffline; $("headr").className = "v bad"; $("offlineTitle").textContent = L.boxOffline; }
+    else if (lastData) $("msg").style.display = "none";
+  }
+  if (off) $("offlineSub").textContent = lastData ? L.lastData.replace("{t}", fmtAge((Date.now() - lastData) / 1000)) : L.neverData;
+}
+setInterval(offlineWatch, 1000);
 function schedule() {
   clearTimeout(retryTimer);
-  const wait = Math.min(30000, 1000 * Math.pow(2, Math.min(fails, 5)));
+  const wait = Math.min(10000, 1000 * Math.pow(2, Math.min(fails, 5)));
   retryTimer = setTimeout(connect, wait);
 }
 function disconnect() {
@@ -202,21 +266,22 @@ function connect() {
   const url = resolveUrl();
   if (!url) { setMsg("Adresse der Box fehlt (CONFIG.url oder ?url=wss://…)", true); return; }
   disconnect();
-  setMsg(L.connecting, true);
+  if (!offlineShown) setMsg(L.connecting, true);
   let opened = false;
-  try { ws = new WebSocket(url); } catch (e) { fails++; setMsg(L.lost, true); schedule(); return; }
+  try { ws = new WebSocket(url); } catch (e) { fails++; schedule(); return; }
   const mine = ws;
   ws.onopen = () => { opened = true; };
   ws.onmessage = ev => {
     let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
-    fails = 0; lastMsg = Date.now(); setMsg("", false);
+    fails = 0; lastMsg = lastData = Date.now(); setMsg("", false);
+    offlineWatch();
     render(d);
   };
   ws.onclose = () => {
     if (ws !== mine) return;
     ws = null; clearInterval(watchdog);
     fails++;
-    setMsg(opened ? L.lost : (fails >= 3 ? L.denied + " / " + L.busy : L.lost), true);
+    if (!offlineShown) setMsg(L.retrying, true);
     schedule();
   };
   ws.onerror = () => {};
@@ -226,7 +291,8 @@ function connect() {
   }, 2000);
   lastMsg = Date.now();
 }
-document.addEventListener("visibilitychange", () => { if (document.hidden) disconnect(); else { fails = 0; connect(); } });
+document.addEventListener("visibilitychange", () => { if (document.hidden) disconnect(); else { fails = 0; resumedAt = Date.now(); connect(); } });
+for (const id of ["c_send", "c_cam", "c_sys", "c_temps", "c_cores", "c_disk", "c_alerts"]) show(id, false);          // bis die ersten Werte da sind
 fill("net", [row(L.waiting, "", "muted")]);
 connect();
 </script>
