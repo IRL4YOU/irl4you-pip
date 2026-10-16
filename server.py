@@ -3503,6 +3503,88 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
     return out
 
 
+class FpsProbe:
+    """Bildrate einer sendenden Kamera messen, die sie nicht meldet (Handys: der nginx kennt sie nur aus den Metadaten des Streams, und dort steht bei vielen Apps 0), solange
+    belacoder sie nicht misst (die Sendung läuft noch nicht). Der Stream wird WINDOW_S Sekunden lang vom nginx der Box gelesen und es werden nur Bilder gezählt (kein Dekodieren,
+    gst-launch mit fpsdisplaysink). Das Ergebnis bleibt TTL_S Sekunden gültig und wird im Hintergrund erneuert (get() blockiert nie, der alte Wert bleibt sichtbar); höchstens
+    eine Messung gleichzeitig. Werte nahe einer üblichen Bildrate (24, 25, 30, 50, 60) werden auf sie gerundet: die Zählung über wenige Sekunden schwankt um etwa 2 Prozent."""
+    TTL_S, FAIL_TTL_S, WINDOW_S = 120.0, 20.0, 6.0
+    COMMON = (24, 25, 30, 50, 60)
+    RE_AVG = re.compile(r"rendered: (\d+), dropped: \d+, current: ([\d.]+), average: ([\d.]+)")
+
+    def __init__(self, base="rtmp://127.0.0.1:1935/publish", registry="", demo=False, runner=None):
+        self.base, self.registry, self.demo = base, registry, demo
+        self.runner = runner or self._gst
+        self.lock = threading.Lock()
+        self.cache = {}                      # Schlüssel -> (Zeit, fps oder None)
+        self.busy = False
+
+    @classmethod
+    def snap(cls, fps):
+        for c in cls.COMMON:
+            if abs(fps - c) <= 0.04 * c:
+                return float(c)
+        return round(fps, 1)
+
+    @classmethod
+    def parse(cls, out):
+        """Bildrate aus den Meldungen von fpsdisplaysink (eine je Sekunde): Mittel der Sekundenwerte ohne die erste, die das Anlaufen mitzählt. None bei zu wenig Bildern."""
+        found = [(int(f), float(c)) for f, c, a in cls.RE_AVG.findall(out or "")]
+        if len(found) < 2 or found[-1][0] < 45:
+            return None
+        cur = [c for f, c in found[1:] if c > 0]
+        return cls.snap(sum(cur) / len(cur)) if cur else None
+
+    def _gst(self, key):
+        cmd = ["gst-launch-1.0", "-v", "rtmpsrc", "location=%s/%s" % (self.base, key), "!", "flvdemux", "name=d", "d.video", "!", "queue", "!", "h264parse", "!",
+               "fpsdisplaysink", "text-overlay=false", "video-sink=fakesink", "fps-update-interval=1000", "signal-fps-measurements=true"]
+        env = dict(os.environ)
+        if self.registry:
+            env["GST_REGISTRY"] = self.registry                # sonst baut jeder Aufruf die Liste der Bausteine neu (rund eine Sekunde Rechenzeit)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+        try:
+            out, _ = p.communicate(timeout=self.WINDOW_S + 1.0)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            out, _ = p.communicate()
+        return out
+
+    def _run(self, key):
+        fps = None
+        try:
+            fps = self.parse(self.runner(key))
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
+            print("Bildrate-Messung von %s: %r" % (key, e), flush=True)
+            fps = None
+        finally:
+            with self.lock:
+                now = time.monotonic()
+                old = self.cache.get(key)
+                if fps is None and old and old[1] is not None and now - old[0] < 3 * self.TTL_S:
+                    fps = old[1]                                   # eine fehlgeschlagene Messung löscht einen noch jungen Wert nicht
+                self.cache[key] = (now, fps)
+                self.busy = False
+
+    def get(self, key):
+        """Letzte gemessene Bildrate dieser Kamera oder None; stößt bei Bedarf eine Messung im Hintergrund an."""
+        if self.demo or not isinstance(key, str) or not KEY_RE.match(key):
+            return None
+        now = time.monotonic()
+        with self.lock:
+            hit = self.cache.get(key)
+            ttl = self.TTL_S if hit and hit[1] is not None else self.FAIL_TTL_S
+            if (hit is None or now - hit[0] >= ttl) and not self.busy:
+                self.busy = True
+                threading.Thread(target=self._run, args=(key,), daemon=True).start()
+            return hit[1] if hit else None
+
+    def keep(self, live_keys):
+        """Nur Kameras, die gerade senden, behalten ihren Wert: eine Kamera, die neu verbindet, wird neu gemessen (sie kann eine andere Bildrate eingestellt haben)."""
+        with self.lock:
+            for k in [k for k in self.cache if k not in live_keys]:
+                del self.cache[k]
+
+
 class LayoutStore:
     """Ansichten der Oberfläche für Desktop und Mobil, gespeichert auf der Box (gilt für alle Geräte): je Ansicht die eigene Reihenfolge der Hauptmenüs, die
     ausgeblendeten Menüpunkte und das Design. Beide Ansichten haben denselben Aufbau. Gespeichert werden nur Abweichungen vom Standard (Reihenfolge, Ausgeblendetes),
@@ -9674,6 +9756,7 @@ class Handler(BaseHTTPRequestHandler):
     uiaccess = None
     statsshare = None
     statsserver = None
+    fpsprobe = None
 
     def log_message(self, *a):
         pass
@@ -9906,6 +9989,8 @@ class Handler(BaseHTTPRequestHandler):
             p = pic.get(c["key"]) if pic else None
             c["pic"], c["pic_wait"] = (p[0], p[1]) if p else (None, 0)
         measured = self.send.measured_fps()
+        if self.fpsprobe:
+            self.fpsprobe.keep({c["key"] for c in m["cameras"] if c.get("state") == "live"})
         for c in m["cameras"]:
             if c.get("state") == "live" and not c.get("fps"):
                 if c["key"] in measured:
@@ -9914,6 +9999,10 @@ class Handler(BaseHTTPRequestHandler):
                 f = self.djisvc.fps_for_key(c["key"])
                 if f:
                     c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
+                elif self.fpsprobe and c["key"] != HDMI_KEY:
+                    p = self.fpsprobe.get(c["key"])              # noch nicht gesendet: kurz den Stream lesen und Bilder zählen (im Hintergrund, der Wert erscheint beim nächsten Abruf)
+                    if p:
+                        c["fps"], c["fps_measured"] = p, True
         return m
 
     @classmethod
@@ -10443,6 +10532,7 @@ def main():
     Handler.names = DeviceNames(args.state)
     Handler.layout = LayoutStore(args.state)
     Handler.statsshare = StatsShare(args.state, demo=args.demo)
+    Handler.fpsprobe = FpsProbe("rtmp://127.0.0.1:%d/%s" % (args.rtmp_port, args.rtmp_app), os.path.join(args.state, "gst-registry.bin"), demo=args.demo)
     Handler.statsserver = StatsServer(Handler.statsshare, Handler.stats_snapshot_now)
     if not args.demo:
         Handler.statsserver.start()
