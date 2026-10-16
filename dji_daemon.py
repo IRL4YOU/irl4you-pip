@@ -234,6 +234,12 @@ def build_start_payload(kind, rtmp_url, resolution, bitrate_kbps, fps):
             b"\x00\x00\x00" + pack_url(rtmp_url))
 
 
+def camera_rtmp_url(kind, rtmp_url):
+    """Adresse, die der Kamera genannt wird. Die Action 6 hängt dem Streamnamen ein Leerzeichen an ("dji-xxxxxx "): nginx kennt dann keinen Stream "dji-xxxxxx",
+    die Box erkennt die Kamera nicht als sendend und ihr Bild ist nicht abrufbar. Hinter einem "?" trennt nginx ab: der Name bleibt sauber, das Leerzeichen landet in den Argumenten."""
+    return rtmp_url + "?c=6" if kind == "action6" and "?" not in rtmp_url else rtmp_url
+
+
 def build_configure_payload(kind, stabilization):
     return b"\x01\x01" + bytes([CONFIGURE_KINDS[kind]]) + b"\x00\x01" + bytes([STABILIZATION.get(stabilization, 0)])
 
@@ -350,7 +356,7 @@ def rtmp_publishing(key, stat_url=None):
             body = r.read().decode("utf-8", "replace")
     except Exception:
         return None
-    m = re.search(r"<stream>\s*<name>%s</name>[\s\S]*?</stream>" % re.escape(key), body)
+    m = re.search(r"<stream>\s*<name>\s*%s\s*</name>[\s\S]*?</stream>" % re.escape(key), body)
     return bool(m and "<publishing/>" in m.group(0))
 
 
@@ -828,7 +834,8 @@ class Camera:
                     self.set_state("starting", "Wartet, bis der alte Stream beendet ist")
                     await asyncio.sleep(1)
                 self.set_state("starting", "Stream wird gestartet")
-                payload = build_start_payload(model_kind, rtmp_url, cfg.get("resolution", "1080p"),
+                send_url = camera_rtmp_url(model_kind, rtmp_url)
+                payload = build_start_payload(model_kind, send_url, cfg.get("resolution", "1080p"),
                                               int(cfg.get("bitrate", 6000)), int(cfg.get("fps", 30)))
                 await send(Message(T_START, ID_START, TY_START, payload))
                 if model_kind in NEW_PROTOCOL:

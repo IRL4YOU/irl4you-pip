@@ -310,7 +310,7 @@ def rtmp_publishing(key, stat_url=None):
             body = r.read().decode("utf-8", "replace")
     except Exception:
         return None
-    m = re.search(r"<stream>\s*<name>%s</name>[\s\S]*?</stream>" % re.escape(key), body)
+    m = re.search(r"<stream>\s*<name>\s*%s\s*</name>[\s\S]*?</stream>" % re.escape(key), body)
     return bool(m and "<publishing/>" in m.group(0))
 
 

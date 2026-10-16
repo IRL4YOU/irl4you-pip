@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.56
+- Behoben: Bei starkem Bitratenabfall konnten Bild und Ton aussetzen. Der Regler reagiert jetzt früher (Meldung von Bittersweet, Issue #1).
+- Behoben: Die DJI Osmo Action 6 riss etwa jede Minute ab und war nie als sendend erkannt. Die Kamera hängt dem Streamnamen ein Leerzeichen an, das wird jetzt abgefangen.
+
 ## 1.0.55
 - Öffentliche Statistik für OBS und Homepage: Schalter „Statistik öffentlich“ in der Karte „Fernzugriff“ gibt nur die Statistik über Tailscale Funnel auf Port 8443 frei (die Oberfläche bleibt privat). Neue Seite `statistik.html` (WebSocket, jede Sekunde, Einstellungen in der Adresse), Zugriff nur mit geheimem Schlüssel, höchstens 3 Betrachter, im Schnappschuss nie IP/MAC, Stream-ID oder Serveradresse.
 - „Freigabe beenden“ entfernt nur noch die eigene Freigabe (je Port statt `funnel reset`); die Selbstheilung prüft Oberfläche und Statistik getrennt.

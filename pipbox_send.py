@@ -111,7 +111,7 @@ def stream_live(key):
     except OSError:
         return None
     for m in re.finditer(r"<stream>.*?</stream>", x, re.S):
-        if re.search(rf"<name>{re.escape(key)}</name>", m.group(0)) and "<publishing/>" in m.group(0):
+        if re.search(rf"<name>\s*{re.escape(key)}\s*</name>", m.group(0)) and "<publishing/>" in m.group(0):
             return True
     return False
 
@@ -127,7 +127,7 @@ def live_keys():
     for m in re.finditer(r"<stream>.*?</stream>", x, re.S):
         n = re.search(r"<name>([^<]+)</name>", m.group(0))
         if n and "<publishing/>" in m.group(0):
-            out.add(n.group(1))
+            out.add(n.group(1).strip())
     return out
 
 
@@ -722,6 +722,7 @@ class Sender:
 
     def run(self):
         env = dict(os.environ, GST_PLUGIN_PATH=PLUGIN_DIR)
+        env.setdefault("SB_CTL", "B")                    # Regler: Schwellen höchstens 1000 ms der SRT-Latenz (bei 4000 ms wartete er bis 1333 ms Laufzeit, der Sendepuffer lief über, SRT verwarf Bild und Ton)
         env["BELACODER_STATS_FILE"] = BC_STATS            # Kennzahlen für "Details" im Status (belacoder-stats.patch), sonst nichts
         if self.live:
             env["GST_MPP_NO_RGA"] = "1"                   # der Encoder bekommt nur Bilder aus dem Compositor (Systemspeicher): Software-Kopie statt RGA über virtuelle Adresse

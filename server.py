@@ -2607,7 +2607,7 @@ class CameraStore:
                     continue
                 bw = (int(st.findtext("bw_video") or 0) + int(st.findtext("bw_audio") or 0))
                 fps = st.findtext("meta/video/frame_rate")
-                key = st.findtext("name")
+                key = (st.findtext("name") or "").strip()
                 w, h = st.findtext("meta/video/width"), st.findtext("meta/video/height")
                 res[key] = {"fps": float(fps) if fps else None, "mbit": round(bw / 1e6, 1),
                             "w": int(w) if w and w.isdigit() else 0, "h": int(h) if h and h.isdigit() else 0}

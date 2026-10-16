@@ -602,7 +602,7 @@ def parse_rtmp_stats(xml):
         if not n or "<publishing/>" not in s:
             continue
         w, h = re.search(r"<width>(\d+)</width>", s), re.search(r"<height>(\d+)</height>", s)
-        out[n.group(1)] = {"w": int(w.group(1)) if w else 0, "h": int(h.group(1)) if h else 0, "audio": "<audio>" in s}
+        out[n.group(1).strip()] = {"w": int(w.group(1)) if w else 0, "h": int(h.group(1)) if h else 0, "audio": "<audio>" in s}
     return out
 
 
