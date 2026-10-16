@@ -1,0 +1,16 @@
+[
+ {"code": "en", "name": "English", "label": "EN"},
+ {"code": "de", "name": "Deutsch", "label": "DE"},
+ {"code": "fr", "name": "Français", "label": "FR"},
+ {"code": "es", "name": "Español", "label": "ES"},
+ {"code": "pt", "name": "Português (Brasil)", "label": "PT"},
+ {"code": "it", "name": "Italiano", "label": "IT"},
+ {"code": "nl", "name": "Nederlands", "label": "NL"},
+ {"code": "pl", "name": "Polski", "label": "PL"},
+ {"code": "tr", "name": "Türkçe", "label": "TR"},
+ {"code": "ru", "name": "Русский", "label": "RU"},
+ {"code": "zh", "name": "简体中文", "label": "ZH"},
+ {"code": "ja", "name": "日本語", "label": "JA"},
+ {"code": "ko", "name": "한국어", "label": "KO"},
+ {"code": "th", "name": "ไทย", "label": "TH"}
+]
