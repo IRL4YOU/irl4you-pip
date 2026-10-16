@@ -183,6 +183,7 @@ PY
     install -m 644 "$HERE/install/pipbox-health.service" /etc/systemd/system/pipbox-health.service
     install -m 644 "$HERE/web/index.html" /opt/pipbox/web/index.html
     install -m 644 "$HERE/web/login.html" /opt/pipbox/web/login.html
+    install -m 644 "$HERE/web/statistik.html" /opt/pipbox/web/statistik.html      # Seite der öffentlichen Statistik (der Statistik-Server liefert sie aus)
     install -m 644 "$HERE/web/i18n.js" /opt/pipbox/web/i18n.js
     install -d /opt/pipbox/web/i18n
     rm -f /opt/pipbox/web/i18n/*.json

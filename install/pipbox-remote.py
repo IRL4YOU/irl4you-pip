@@ -10,6 +10,8 @@ Liest aus der Auslösedatei ausschließlich ein Stichwort aus fester Liste:
   funnel_on  Oberfläche ÖFFENTLICH im Internet freigeben (Funnel), nur auf ausdrückliche Anforderung; bleibt an (auch nach einem
              Neustart der Box), bis "funnel_off" kommt
   funnel_off öffentliche Freigabe beenden (die Freigabe im privaten Netz bleibt)
+  stats_on   NUR die Statistik öffentlich im Internet freigeben (Funnel auf Port 8443 → 127.0.0.1:8781, der Statistik-Server der Box); die Oberfläche bleibt davon unberührt
+  stats_off  Freigabe der Statistik beenden
   logout     Gerät aus dem Tailscale-Konto abmelden
 Nimmt keine Adressen, Pfade oder Befehle von der Weboberfläche an. Funnel wird nie von selbst eingeschaltet.
 
@@ -40,6 +42,10 @@ LOCK = "/run/pipbox-remote.lock"
 PORT = 8780
 INTENT_DIR = "/var/lib/pipbox-remote"                   # nur für root: die Freigabe war vom Nutzer gewollt (der Benutzer pipbox kann sie damit nicht von selbst einschalten)
 INTENT = f"{INTENT_DIR}/funnel-wanted"
+STATS_INTENT = f"{INTENT_DIR}/stats-wanted"             # die öffentliche Statistik war vom Nutzer gewollt
+STATS_LOCAL = 8781                                      # Statistik-Server der Box (nur 127.0.0.1)
+STATS_HTTPS = 8443                                      # Port, auf dem Funnel ihn öffentlich macht (Funnel erlaubt 443, 8443 und 10000)
+PROBE_STATS_PATH = "/health"
 HEAL_STATE = f"{RUN}/heal.json"                         # Zustand der Selbstheilung (nur dieser Start)
 HEAL_PROBE_EVERY_S = 600
 HEAL_COOLDOWN_S = 600
@@ -48,7 +54,7 @@ HEAL_AFTER_OFFLINE_S = 300
 CLOCK_JUMP_S = 120
 PROBE_PATH = "/api/auth"                                # öffentlich, ohne Anmeldung (antwortet mit 200)
 HOSTNAME = "irl4you-box"
-MODES = ("install", "login", "down", "serve_on", "serve_off", "funnel_on", "funnel_off", "logout")
+MODES = ("install", "login", "down", "serve_on", "serve_off", "funnel_on", "funnel_off", "stats_on", "stats_off", "logout")
 CODENAMES = ("jammy", "noble", "focal")
 KEY_URL = "https://pkgs.tailscale.com/stable/ubuntu/{}.noarmor.gpg"
 LIST_URL = "https://pkgs.tailscale.com/stable/ubuntu/{}.tailscale-keyring.list"
@@ -206,7 +212,8 @@ def do_serve_on():
 
 def do_serve_off():
     set_intent(False)
-    ts("serve", "reset", timeout=30)
+    ts("funnel", "--https=443", "off", timeout=30)           # die Oberfläche (Port 443); die öffentliche Statistik (Port 8443) bleibt, wie sie ist
+    ts("serve", "--https=443", "off", timeout=30)
     status(state="idle", step="", hint_url="", message="Freigabe beendet.")
 
 
@@ -231,16 +238,17 @@ def funnel_active(cfg=None):
     return False
 
 
-def set_intent(on):
-    """Merkzettel: der Nutzer will die öffentliche Freigabe (nur root lesbar und schreibbar)."""
+def set_intent(on, path=None):
+    """Merkzettel: der Nutzer will die öffentliche Freigabe (nur root lesbar und schreibbar). path: Standard ist der der Oberfläche (INTENT), STATS_INTENT der der Statistik."""
+    path = path or INTENT
     try:
         if on:
-            os.makedirs(INTENT_DIR, mode=0o700, exist_ok=True)
-            with open(INTENT, "w") as f:
+            os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+            with open(path, "w") as f:
                 f.write("1\n")
-            os.chmod(INTENT, 0o600)
+            os.chmod(path, 0o600)
         else:
-            os.remove(INTENT)
+            os.remove(path)
     except FileNotFoundError:
         pass
     except OSError as e:
@@ -264,9 +272,52 @@ def do_funnel_on():
            message="Die Oberfläche ist öffentlich im Internet erreichbar. Die Freigabe bleibt an, auch nach einem Neustart der Box, bis sie beendet wird.")
 
 
+def stats_active(cfg=None):
+    """Ist Funnel für den Statistik-Server (Ziel 127.0.0.1:STATS_LOCAL) eingeschaltet?"""
+    cfg = serve_config() if cfg is None else cfg
+    web = cfg.get("Web") or {}
+    for hostport, on in (cfg.get("AllowFunnel") or {}).items():
+        if not on:
+            continue
+        for h in ((web.get(hostport) or {}).get("Handlers") or {}).values():
+            if f"127.0.0.1:{STATS_LOCAL}" in str(h.get("Proxy", "")):
+                return True
+    return False
+
+
+def stats_command():
+    return ["tailscale", "funnel", "--bg", "--yes", f"--https={STATS_HTTPS}", f"http://127.0.0.1:{STATS_LOCAL}"]
+
+
+def do_stats_on():
+    status(state="working", step="Gebe die Statistik öffentlich frei", message="", hint_url="")
+    rc, out, timed_out = run_capture(stats_command(), SERVE_TIMEOUT)
+    if rc != 0 or timed_out or not stats_active():
+        low = out.lower()
+        if "funnel" in low and ("not enabled" in low or "not available" in low or "enable" in low or "policy" in low or "visit" in low):
+            m = URL_RE.search(out)
+            status(state="needs_funnel", step="", hint_url=m.group(0) if m else "",
+                   message="Tailscale muss „Funnel“ (und HTTPS) für dein Netz einmal erlauben. Öffne den Link, erlaube es und versuche es dann erneut.")
+            return
+        raise RuntimeError("Freigabe der Statistik fehlgeschlagen: " + out[-150:].replace("\n", " "))
+    log("Statistik öffentlich (Port %d)" % STATS_HTTPS)
+    set_intent(True, STATS_INTENT)
+    status(state="idle", step="", hint_url="", message="Die Statistik ist öffentlich erreichbar (nur sie, nicht die Oberfläche).")
+
+
+def do_stats_off():
+    status(state="working", step="Beende die öffentliche Freigabe der Statistik", message="")
+    set_intent(False, STATS_INTENT)
+    ts("funnel", f"--https={STATS_HTTPS}", "off", timeout=30)
+    if stats_active():
+        raise RuntimeError("Die Freigabe der Statistik ließ sich nicht beenden. Bitte in einer Konsole auf der Box: sudo tailscale funnel --https=%d off" % STATS_HTTPS)
+    log("Statistik nicht mehr öffentlich")
+    status(state="idle", step="", hint_url="", message="Die Statistik ist nicht mehr öffentlich.")
+
+
 def do_funnel_off(message="Die öffentliche Freigabe ist beendet. Die Oberfläche bleibt im privaten Tailscale-Netz erreichbar."):
     status(state="working", step="Beende die öffentliche Freigabe", message="")
-    ts("funnel", "reset", timeout=30)                        # setzt die Freigaben zurück; danach nur die der Oberfläche wieder im PRIVATEN Netz
+    ts("funnel", "--https=443", "off", timeout=30)           # nur die öffentliche Freigabe der Oberfläche; die der Statistik (Port 8443) bleibt
     subprocess.run(["tailscale", "serve", "--bg", "--https=443", f"http://127.0.0.1:{PORT}"], capture_output=True, text=True, timeout=40)
     if funnel_active():
         raise RuntimeError("Die öffentliche Freigabe ließ sich nicht beenden. Bitte in einer Konsole auf der Box: sudo tailscale funnel reset")
@@ -342,24 +393,25 @@ def tailscaled_clock_jumped():
     return (time.time() - up + mono / 1e6) - wall > CLOCK_JUMP_S
 
 
-def probe(dns):
-    """Ist die öffentliche Freigabe von außen erreichbar? True/False, None = nicht zu prüfen. Die Box ruft ihre eigene öffentliche Adresse auf (öffentliche Anmeldeseite, ohne
-    Anmeldung). Jede Antwort des Servers zählt (auch ein Fehlercode: dann hat die Freigabe den Weg gefunden). Löst der Name zu einer Adresse im Tailscale-Netz auf (100.64.0.0/10),
-    ginge der Aufruf nur lokal und sagte nichts: nicht zu prüfen."""
+def probe(dns, port=443, path=None):
+    """Ist die öffentliche Freigabe von außen erreichbar? True/False, None = nicht zu prüfen. Die Box ruft ihre eigene öffentliche Adresse auf (Oberfläche: öffentliche Anmeldeseite,
+    Statistik: /health; beides ohne Anmeldung und ohne Daten). Jede Antwort des Servers zählt (auch ein Fehlercode: dann hat die Freigabe den Weg gefunden). Löst der Name zu einer
+    Adresse im Tailscale-Netz auf (100.64.0.0/10), ginge der Aufruf nur lokal und sagte nichts: nicht zu prüfen."""
     import ipaddress
     import socket
     import urllib.error
     if not dns:
         return None
+    path = path or PROBE_PATH
     try:
-        infos = socket.getaddrinfo(dns, 443, type=socket.SOCK_STREAM)
+        infos = socket.getaddrinfo(dns, port, type=socket.SOCK_STREAM)
     except OSError:
         return None
     nets = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
     addrs = [ipaddress.ip_address(i[4][0].split("%")[0]) for i in infos]
     if not addrs or all(any(a in n for n in nets if a.version == n.version) for a in addrs):
         return None
-    req = urllib.request.Request(f"https://{dns}{PROBE_PATH}", headers={"User-Agent": "irl4you-box"})
+    req = urllib.request.Request(f"https://{dns}{'' if port == 443 else ':%d' % port}{path}", headers={"User-Agent": "irl4you-box"})
     for _ in range(3):
         try:
             with urllib.request.urlopen(req, timeout=15):
@@ -372,9 +424,9 @@ def probe(dns):
 
 
 def reapply_funnel():
-    """Dasselbe wie 'Öffentliche Freigabe beenden' und wieder einschalten, aber ohne die Meldung der Oberfläche zu ändern. Gelingt das Einschalten nicht, bleibt der Merkzettel,
-    und der nächste Durchlauf versucht es wieder."""
-    ts("funnel", "reset", timeout=30)
+    """Öffentliche Freigabe der Oberfläche neu anwenden (aus, privat freigeben, öffentlich), ohne die Meldung der Oberfläche zu ändern. Gelingt es nicht, bleibt der Merkzettel,
+    und der nächste Durchlauf versucht es wieder. Die Freigabe der Statistik bleibt unberührt."""
+    ts("funnel", "--https=443", "off", timeout=30)
     run_capture(["tailscale", "serve", "--bg", "--https=443", f"http://127.0.0.1:{PORT}"], SERVE_TIMEOUT)
     rc, out, timed_out = run_capture(["tailscale", "funnel", "--bg", "--yes", str(PORT)], SERVE_TIMEOUT)
     ok = rc == 0 and not timed_out and funnel_active()
@@ -383,17 +435,69 @@ def reapply_funnel():
     return ok
 
 
+def reapply_stats():
+    """Öffentliche Freigabe der Statistik neu anwenden; die der Oberfläche bleibt unberührt."""
+    ts("funnel", f"--https={STATS_HTTPS}", "off", timeout=30)
+    rc, out, timed_out = run_capture(stats_command(), SERVE_TIMEOUT)
+    ok = rc == 0 and not timed_out and stats_active()
+    if not ok:
+        log("Selbstheilung: Funnel der Statistik ließ sich nicht neu einschalten: " + out[-150:].replace("\n", " "))
+    return ok
+
+
+def heal_target(name, t, now, dns, offline_for):
+    """Ein Ziel (name: "ui" Oberfläche oder "stats" Statistik) prüfen und bei Bedarf neu anwenden. t: Zustand dieses Ziels (boot_done, probe_t, fixes ...)."""
+    ui = name == "ui"
+    label = "öffentliche Freigabe" if ui else "öffentliche Statistik"
+    active = funnel_active if ui else stats_active
+    reapply = reapply_funnel if ui else reapply_stats
+    port, path = (443, PROBE_PATH) if ui else (STATS_HTTPS, PROBE_STATS_PATH)
+    reason = ""
+    if not active():
+        reason = "die Freigabe fehlt in der Konfiguration"
+    elif not t.get("boot_done"):
+        res = probe(dns, port, path)
+        t["probe_t"] = now
+        if res is True:
+            t["boot_done"] = int(now)
+            log(f"Selbstheilung: {label} von außen erreichbar, nichts zu tun")
+        else:
+            reason = "nach dem Start" + (" (Prüfung von außen fehlgeschlagen)" if res is False else " (von außen nicht zu prüfen)")
+    elif offline_for >= HEAL_AFTER_OFFLINE_S:
+        reason = f"Netz war {int(offline_for // 60)} Minuten weg"
+    elif now - t.get("probe_t", 0) >= HEAL_PROBE_EVERY_S:
+        t["probe_t"] = now
+        if probe(dns, port, path) is False:
+            reason = "Prüfung von außen fehlgeschlagen"
+    if not reason:
+        return "ok"
+    fixes = [x for x in t.get("fixes", []) if now - x < 3600]
+    t["fixes"] = fixes
+    if fixes and now - fixes[-1] < HEAL_COOLDOWN_S:
+        return "zu früh nach der letzten Neuanwendung"
+    if len(fixes) >= HEAL_MAX_PER_HOUR:
+        return "zu oft in der letzten Stunde"
+    log(f"Selbstheilung: wende die {label} neu an ({reason})")
+    ok = reapply()
+    fixes.append(int(now))
+    t.update(fixes=fixes, last_fix=int(now), last_fix_ok=ok, last_reason=reason)
+    if ok:
+        t["boot_done"] = int(now)
+    return "neu angewendet" if ok else "Neuanwendung fehlgeschlagen"
+
+
 def heal(now=None):
     """Ein Durchlauf der Selbstheilung (der Zeitgeber ruft ihn jede Minute). Gibt kurz zurück, was er getan hat (für Tests und das Protokoll)."""
     now = time.time() if now is None else now
     st = heal_load()
     if not installed():
         return "nicht installiert"
-    wanted = os.path.exists(INTENT)
-    if not wanted and funnel_active():          # Freigabe aus einer Version ohne Merkzettel: gilt als gewollt
+    ui_wanted = os.path.exists(INTENT)
+    if not ui_wanted and funnel_active():          # Freigabe aus einer Version ohne Merkzettel: gilt als gewollt
         set_intent(True)
-        wanted = True
-    if not wanted:
+        ui_wanted = True
+    stats_wanted = os.path.exists(STATS_INTENT)
+    if not ui_wanted and not stats_wanted:
         st["wanted"] = False
         heal_save(st)
         return "Freigabe nicht gewollt"
@@ -415,41 +519,13 @@ def heal(now=None):
         subprocess.run(["systemctl", "restart", "tailscaled"], capture_output=True, timeout=60)
         heal_save(st)
         return "tailscaled neu gestartet"
-    reason = ""
-    if not funnel_active():
-        reason = "die Freigabe fehlt in der Konfiguration"
-    elif not st.get("boot_done"):
-        res = probe(dns)
-        st["probe_t"] = now
-        if res is True:
-            st["boot_done"] = int(now)
-            log("Selbstheilung: Freigabe von außen erreichbar, nichts zu tun")
-        else:
-            reason = "nach dem Start" + (" (Prüfung von außen fehlgeschlagen)" if res is False else " (von außen nicht zu prüfen)")
-    elif offline_for >= HEAL_AFTER_OFFLINE_S:
-        reason = f"Netz war {int(offline_for // 60)} Minuten weg"
-    elif now - st.get("probe_t", 0) >= HEAL_PROBE_EVERY_S:
-        st["probe_t"] = now
-        if probe(dns) is False:
-            reason = "Prüfung von außen fehlgeschlagen"
-    if not reason:
-        heal_save(st)
-        return "ok"
-    fixes = [t for t in st.get("fixes", []) if now - t < 3600]
-    if fixes and now - fixes[-1] < HEAL_COOLDOWN_S:
-        heal_save(dict(st, fixes=fixes))
-        return "zu früh nach der letzten Neuanwendung"
-    if len(fixes) >= HEAL_MAX_PER_HOUR:
-        heal_save(dict(st, fixes=fixes))
-        return "zu oft in der letzten Stunde"
-    log(f"Selbstheilung: wende die öffentliche Freigabe neu an ({reason})")
-    ok = reapply_funnel()
-    fixes.append(int(now))
-    st.update(fixes=fixes, last_fix=int(now), last_fix_ok=ok, last_reason=reason)
-    if ok:
-        st["boot_done"] = int(now)
+    results = {}
+    if ui_wanted:
+        results["ui"] = heal_target("ui", st, now, dns, offline_for)
+    if stats_wanted:
+        results["stats"] = heal_target("stats", st.setdefault("stats", {}), now, dns, offline_for)
     heal_save(st)
-    return "neu angewendet" if ok else "Neuanwendung fehlgeschlagen"
+    return results.get("ui") or results.get("stats")
 
 
 def heal_main():
@@ -517,8 +593,13 @@ def main():
             do_funnel_on()
         elif mode == "funnel_off":
             do_funnel_off()
+        elif mode == "stats_on":
+            do_stats_on()
+        elif mode == "stats_off":
+            do_stats_off()
         elif mode == "logout":
             set_intent(False)
+            set_intent(False, STATS_INTENT)
             ts("serve", "reset", timeout=30)
             ts("logout", timeout=40)
             status(state="idle", step="", login_url="", message="Vom Tailscale-Konto abgemeldet.")

@@ -997,6 +997,29 @@ html[data-design] :is(.pbpick,.langbtns) button.on{background:var(--bar);border-
     <div id="r_warn" class="err" hidden>Achtung: „Funnel“ ist an, die Oberfläche ist öffentlich im Internet erreichbar. Mit „Freigabe beenden“ abschalten.</div>
     <div class="actions" id="r_actions"></div>
     <div id="r_msg" class="ph"></div>
+    <details class="dsec" id="statshare"><summary>Statistik öffentlich (für OBS und Homepage)</summary>
+      <p class="ph">Gibt <b>nur die Statistik</b> (Sendewege, Bitrate, Temperatur, Kameras …) über eine eigene öffentliche Adresse frei, zum Beispiel für eine Browserquelle in OBS oder eine Homepage. Die Oberfläche der Box bleibt davon unberührt und kann privat bleiben. Der Zugriff geht nur mit einem geheimen Schlüssel in der Adresse, höchstens 3 Betrachter gleichzeitig. Die Adresse bleibt fest, auch wenn die Box ihr Netz wechselt.</p>
+      <div id="ss_nc" class="pending" hidden>Zuerst oben mit Tailscale verbinden.</div>
+      <label class="chk"><input type="checkbox" id="ss_on"> Statistik öffentlich freigeben</label>
+      <div id="ss_body" hidden>
+        <div class="muted" style="margin-top:8px">Was darf nach außen?</div>
+        <label class="chk"><input type="checkbox" data-ssg="send"> Senden (Bitrate, Verlust, Laufzeit)</label>
+        <label class="chk"><input type="checkbox" data-ssg="net"> Sendewege und Netze</label>
+        <label class="chk"><input type="checkbox" data-ssg="cpu"> Prozessor und Speicher</label>
+        <label class="chk"><input type="checkbox" data-ssg="temp"> Temperaturen</label>
+        <label class="chk"><input type="checkbox" data-ssg="cameras"> Kameras</label>
+        <label class="chk"><input type="checkbox" data-ssg="alerts"> Meldungen</label>
+        <div class="muted" style="margin-top:8px">Adresse der Seite (zum Beispiel für die Browserquelle in OBS)</div>
+        <input type="text" id="ss_page" readonly aria-label="Adresse der Statistik-Seite mit Schlüssel" style="width:100%">
+        <div class="muted" style="margin-top:6px">WebSocket-Adresse (für die eigene statistik.html oder andere Programme)</div>
+        <input type="text" id="ss_ws" readonly aria-label="WebSocket-Adresse der Statistik mit Schlüssel" style="width:100%">
+        <div class="actions"><button type="button" id="ss_cpage" class="sec small">Adresse der Seite kopieren</button> <button type="button" id="ss_cws" class="sec small">WebSocket-Adresse kopieren</button> <button type="button" id="ss_dl" class="sec small">statistik.html herunterladen</button> <button type="button" id="ss_new" class="sec small">Neuen Schlüssel erzeugen</button></div>
+        <div class="muted" id="ss_clients"></div>
+        <p class="ph">Wer die Adresse kennt, sieht diese Werte. Gib sie nicht weiter und stelle die Datei nicht öffentlich ins Netz: Auf einer Homepage sehen Besucher die Adresse der Box und den Schlüssel.</p>
+      </div>
+      <div class="ph" id="ss_msg"></div>
+      <div class="err" id="ss_err"></div>
+    </details>
     <div class="ph" style="margin-top:14px">Tailscale-App für Ihre Geräte (offizielle Stores):</div>
     <div class="actions" id="r_apps">
       <a class="btnlink" target="_blank" rel="noopener noreferrer" href="https://play.google.com/store/apps/details?id=com.tailscale.ipn">Android (Play Store)</a>
@@ -3074,7 +3097,47 @@ async function rLoad(){
   if(d.hint_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.hint_url)&&$("r_https").hidden){ msg+=" "; $("r_msg").textContent=msg; const a=document.createElement("a"); a.href=d.hint_url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent="Tailscale-Seite öffnen"; $("r_msg").append(a); }
   else $("r_msg").textContent=msg;
   $("r_msg").style.color=d.state==="failed"?"var(--crit)":"";
+  ssLoad();
 }
+// Statistik öffentlich (Tailscale Funnel nur für Port 8443, die Oberfläche bleibt unberührt)
+function ssRender(d){
+  $("ss_nc").hidden=!(d.installed&&!d.connected);
+  const on=$("ss_on"); if(on!==document.activeElement) on.checked=!!d.enabled;
+  on.disabled=!d.installed||!d.connected||d.busy;
+  $("ss_body").hidden=!d.enabled;
+  document.querySelectorAll("[data-ssg]").forEach(c=>{ if(c!==document.activeElement) c.checked=(d.groups||{})[c.dataset.ssg]!==false; });
+  $("ss_page").value=d.page_url||""; $("ss_ws").value=d.ws_url||"";
+  $("ss_cpage").disabled=!d.page_url; $("ss_cws").disabled=!d.ws_url; $("ss_dl").disabled=!d.ws_url;
+  $("ss_clients").textContent=d.public?`Betrachter jetzt: ${d.clients} von 3`:"";
+  const m=$("ss_msg"); m.textContent="";
+  if(d.busy) m.textContent="Wird ausgeführt …";
+  else if(d.enabled&&!d.public) m.textContent=d.message||"Die Freigabe ist noch nicht aktiv.";
+  else if(d.state==="needs_funnel"&&d.message) m.textContent=d.message;
+  if(d.hint_url&&/^https:\/\/(login|console)\.tailscale\.com\//.test(d.hint_url)&&(d.state==="needs_funnel")){ const a=document.createElement("a"); a.href=d.hint_url; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent=" Tailscale-Seite öffnen"; m.append(a); }
+}
+async function ssLoad(){ try{ const r=await fetch("/api/statsshare"); if(r.ok) ssRender(await r.json()); }catch(e){} }
+async function ssPost(body){ $("ss_err").textContent=""; try{ ssRender(await srtlaCall("POST","/api/statsshare",body)); setTimeout(rLoad,1500); }catch(x){ $("ss_err").textContent=x.message; ssLoad(); } }
+$("ss_on").addEventListener("change",e=>{
+  if(e.target.checked){
+    if(!confirm("Die Statistik öffentlich im Internet freigeben?\n\nDanach kann JEDER, der die Adresse mit dem Schlüssel kennt, die freigegebenen Werte lesen (höchstens 3 gleichzeitig), auch ohne Tailscale. Die Oberfläche der Box bleibt davon unberührt.\n\nDie Freigabe bleibt auch nach einem Neustart der Box, bis Sie sie wieder ausschalten.")){ e.target.checked=false; return; }
+    ssPost({enabled:true});
+  } else ssPost({enabled:false});
+});
+document.querySelectorAll("[data-ssg]").forEach(c=>c.addEventListener("change",()=>ssPost({groups:{[c.dataset.ssg]:c.checked}})));
+$("ss_new").addEventListener("click",()=>{ if(confirm("Neuen Schlüssel erzeugen? Die bisherige Adresse und schon heruntergeladene Dateien funktionieren danach nicht mehr.")) ssPost({new_token:true}); });
+for(const [btn,field] of [["ss_cpage","ss_page"],["ss_cws","ss_ws"]]) $(btn).addEventListener("click",async()=>{
+  const b=$(btn), old=b.textContent, ok=await copyText($(field).value);
+  b.textContent=ok?"Kopiert":old; clearTimeout(b._t); b._t=setTimeout(()=>{ b.textContent=old; },1800);
+});
+$("ss_dl").addEventListener("click",async()=>{
+  $("ss_err").textContent="";
+  try{
+    const r=await fetch("/api/statsshare/widget");
+    if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||"Fehler"); }
+    const a=document.createElement("a"); a.href=URL.createObjectURL(await r.blob()); a.download="statistik.html";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  }catch(x){ $("ss_err").textContent=x.message; }
+});
 // Text in die Zwischenablage kopieren. Ohne HTTPS (Adresse im lokalen Netz) gibt es die Clipboard-Schnittstelle nicht: dann Text markieren und mit
 // execCommand kopieren (muss im selben Klick geschehen, darum vor jedem await).
 function copyFallback(t){

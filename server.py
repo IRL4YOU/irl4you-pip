@@ -21,6 +21,7 @@ import collections
 import random
 import re
 import secrets
+import select
 import shutil
 import socket
 import sys
@@ -2068,6 +2069,17 @@ class SendControl:
         except (OSError, ValueError):
             return {}
 
+    def live_fast(self):
+        """Läuft die Sendung? Billig (eine kleine Datei lesen, kein systemctl, keine Prozessliste): der Sende-Dienst schreibt seinen Zustand alle 2 Sekunden. Für die Statistik,
+        die jede Sekunde fragt; status() prüft dagegen vieles mehr."""
+        if self.demo:
+            return False
+        st = self._detail()
+        try:
+            return time.time() - float(st.get("time", 0)) < 15 and st.get("state") not in ("stopping", "refused")
+        except (TypeError, ValueError):
+            return False
+
     def picture(self):
         """Welche eingestellte Kamera ist gerade im Bild? {Schlüssel: ("an"|"wartet"|"aus", Sekunden bis zur Aufnahme)}
         oder None, wenn nicht gesendet wird oder keine Automatik läuft."""
@@ -2931,7 +2943,7 @@ class Remote:
     ausdrückliche Anforderung (funnel_on mit Bestätigung "public"); sie hat keine Zeitgrenze und bleibt auch nach einem Neustart der
     Box bis zum Beenden bestehen."""
     STATUS = "/run/pipbox-remote/status.json"
-    ACTIONS = ("install", "login", "down", "serve_on", "serve_off", "funnel_on", "funnel_off", "logout")
+    ACTIONS = ("install", "login", "down", "serve_on", "serve_off", "funnel_on", "funnel_off", "stats_on", "stats_off", "logout")
 
     def __init__(self, state_dir, demo):
         self.req = os.path.join(state_dir, "remote-request")
@@ -2962,13 +2974,13 @@ class Remote:
             d = {"installed": True, "backend": "Running", "connected": True, "name": "irl4you-box.demo.ts.net",
                  "ip": "100.64.0.1", "tailnet": "demo",
                  "serve": bool(self.fake.get("serve")), "url": "https://irl4you-box.demo.ts.net/" if self.fake.get("serve") else "",
-                 "funnel": bool(self.fake.get("funnel")),
+                 "funnel": bool(self.fake.get("funnel")), "stats": bool(self.fake.get("stats")), "stats_base": "https://irl4you-box.demo.ts.net:8443" if self.fake.get("stats") else "",
                  "state": "idle", "step": "", "message": self.fake.get("message", ""), "login_url": "",
                  "hint_url": "", "helper_installed": True}
             return d
         installed = bool(shutil.which("tailscale"))
         out = {"installed": installed, "backend": "", "connected": False, "name": "", "ip": "", "tailnet": "",
-               "serve": False, "url": "", "funnel": False, "state": "idle", "step": "", "message": "", "login_url": "",
+               "serve": False, "url": "", "funnel": False, "stats": False, "stats_base": "", "state": "idle", "step": "", "message": "", "login_url": "",
                "hint_url": "", "helper_installed": os.path.exists("/etc/systemd/system/pipbox-remote.path")}
         try:
             with open(self.STATUS) as f:
@@ -2995,11 +3007,16 @@ class Remote:
             out["login_url"] = ""
             sv = self._ts("serve", "status", "--json")
             web = sv.get("Web") or {}
+            allow = sv.get("AllowFunnel") or {}
             for host, cfg in web.items():
                 for h2 in (cfg.get("Handlers") or {}).values():
-                    if "127.0.0.1:%d" % 8780 in str(h2.get("Proxy", "")):
+                    px = str(h2.get("Proxy", ""))
+                    if "127.0.0.1:%d" % 8780 in px:
                         out["serve"], out["url"] = True, "https://" + host.replace(":443", "") + "/"
-            out["funnel"] = any((sv.get("AllowFunnel") or {}).values())
+                        if allow.get(host):
+                            out["funnel"] = True                            # öffentlich ist nur die Oberfläche (Port 443); die Statistik hat ihren eigenen Schalter
+                    if "127.0.0.1:%d" % 8781 in px and allow.get(host):
+                        out["stats"], out["stats_base"] = True, "https://" + host
         return out
 
     def request(self, action, confirm, public=False):
@@ -3022,6 +3039,10 @@ class Remote:
             raise ValueError("Zuerst mit Tailscale verbinden")
         if action == "funnel_off" and not st["funnel"]:
             raise ValueError("Die öffentliche Freigabe ist nicht an")
+        if action == "stats_on" and (public is not True or not st["connected"]):
+            raise ValueError("Zuerst mit Tailscale verbinden" if public is True else "Die öffentliche Freigabe braucht eine ausdrückliche Bestätigung")
+        if action == "stats_off" and not st["stats"]:
+            raise ValueError("Die öffentliche Statistik ist nicht an")
         if self.demo:
             if action == "serve_on":
                 self.fake = {"serve": True, "message": "Demo: freigegeben."}
@@ -3031,6 +3052,8 @@ class Remote:
                 self.fake = {"serve": True, "funnel": True, "message": "Demo: öffentlich freigegeben."}
             elif action == "funnel_off":
                 self.fake = {"serve": True, "funnel": False, "message": "Demo: öffentliche Freigabe beendet."}
+            elif action in ("stats_on", "stats_off"):
+                self.fake = dict(self.fake, stats=action == "stats_on", message="Demo: Statistik " + ("öffentlich." if action == "stats_on" else "nicht mehr öffentlich."))
             return
         fd = os.open(self.req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -3090,6 +3113,360 @@ class DeviceNames:
             with os.fdopen(fd, "w") as f:
                 json.dump(d, f, indent=1, ensure_ascii=False)
             os.replace(tmp, self.path)
+
+
+class StatsServer:
+    """Kleiner eigener Webserver NUR für die Statistik (127.0.0.1:8781). Von außen kommt man nur über Tailscale Funnel auf Port 8443 heran (Schalter "Statistik öffentlich");
+    die Oberfläche der Box (Port 8780) ist darüber nicht erreichbar. Wege:
+      /ws?t=<Token>[&every=n]   WebSocket: schickt jede Sekunde (every = 1 bis 10) den Schnappschuss als JSON, höchstens MAX_CLIENTS gleichzeitig
+      /stats?t=<Token>          derselbe Schnappschuss einmalig (zum Prüfen)
+      /health                   "ok" (für die Prüfung der Freigabe von außen, ohne Daten)
+      /  oder /statistik.html   die Seite statistik.html (ohne Daten; sie holt sie mit dem Token aus der Adresse)
+    Alles andere: 404. Ohne gültigen Token (oder bei ausgeschalteter Freigabe) ebenfalls 404, zu viele Versuche: 429 (siehe StatsShare.check)."""
+    HOST, PORT = "127.0.0.1", 8781
+    MAX_CLIENTS = 3
+    GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    MAX_FRAME = 1024                         # Rahmen der Gegenstelle (Ping, Schließen): mehr gibt es nicht
+
+    def __init__(self, share, snapshot, host=None, port=None):
+        self.share, self.snapshot = share, snapshot
+        self.host, self.port = host or self.HOST, self.PORT if port is None else port
+        self.lock = threading.Lock()
+        self.n = 0
+        self.httpd = None
+
+    def clients(self):
+        with self.lock:
+            return self.n
+
+    def _acquire(self):
+        with self.lock:
+            if self.n >= self.MAX_CLIENTS:
+                return False
+            self.n += 1
+            return True
+
+    def _release(self):
+        with self.lock:
+            self.n = max(0, self.n - 1)
+
+    @staticmethod
+    def frame(op, payload=b""):
+        n = len(payload)
+        head = bytes([0x80 | op, n]) if n < 126 else bytes([0x80 | op, 126]) + struct.pack(">H", n)
+        return head + payload
+
+    @classmethod
+    def read_frame(cls, buf):
+        """Ein Rahmen der Gegenstelle aus buf (bytearray) lesen und abschneiden. (Befehl, Nutzdaten), None wenn noch nicht vollständig; wirft ValueError bei Unzulässigem
+        (nicht maskiert, zu groß, in Teile zerlegt)."""
+        if len(buf) < 2:
+            return None
+        b0, b1 = buf[0], buf[1]
+        n, pos = b1 & 0x7f, 2
+        if n == 126:
+            if len(buf) < 4:
+                return None
+            n, pos = struct.unpack(">H", bytes(buf[2:4]))[0], 4
+        elif n == 127:
+            raise ValueError("zu groß")
+        if not b1 & 0x80:
+            raise ValueError("nicht maskiert")
+        if n > cls.MAX_FRAME or not b0 & 0x80:
+            raise ValueError("zu groß")
+        if len(buf) < pos + 4 + n:
+            return None
+        mask = buf[pos:pos + 4]
+        data = bytes(c ^ mask[i % 4] for i, c in enumerate(buf[pos + 4:pos + 4 + n]))
+        del buf[:pos + 4 + n]
+        return b0 & 0x0f, data
+
+    def serve_ws(self, sock, every):
+        """Schleife einer WebSocket-Verbindung: Schnappschuss im Takt senden, Ping beantworten, bei Schließen oder Fehler enden."""
+        buf = bytearray()
+        next_t = time.monotonic()
+        while True:
+            now = time.monotonic()
+            if now >= next_t:
+                if not self.share.status()["enabled"]:
+                    sock.sendall(self.frame(8, struct.pack(">H", 1001)))
+                    return
+                sock.settimeout(5)
+                sock.sendall(self.frame(1, json.dumps(self.snapshot(), separators=(",", ":")).encode()))
+                next_t = max(next_t + every, now + 0.2)
+            try:
+                r, _, _ = select.select([sock], [], [], max(0.05, next_t - time.monotonic()))
+                if r:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        return
+                    buf += chunk
+                    while True:
+                        fr = self.read_frame(buf)
+                        if fr is None:
+                            break
+                        op, data = fr
+                        if op == 8:
+                            sock.sendall(self.frame(8, data[:2]))
+                            return
+                        if op == 9:
+                            sock.sendall(self.frame(10, data[:125]))
+            except ValueError:
+                try:
+                    sock.sendall(self.frame(8, struct.pack(">H", 1002)))
+                except OSError:
+                    pass
+                return
+
+    def make_handler(self):
+        outer = self
+
+        class H(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+            timeout = 15
+
+            def log_message(self, *a):
+                pass
+
+            def ip(self):
+                peer = self.client_address[0]
+                if peer in ("127.0.0.1", "::1"):
+                    last = (self.headers.get("X-Forwarded-For", "") or "").split(",")[-1].strip()
+                    try:
+                        ipaddress.ip_address(last)
+                        return last
+                    except ValueError:
+                        pass
+                return peer
+
+            def out(self, code, body, ctype="application/json", extra=None):
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                for k, v in (extra or {}).items():
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(body)
+                self.close_connection = True
+
+            def do_GET(self):
+                u = urllib.parse.urlsplit(self.path)
+                q = urllib.parse.parse_qs(u.query)
+                if u.path == "/health":
+                    return self.out(200, b"ok", "text/plain")
+                if u.path in ("/", "/statistik.html"):
+                    page = read(os.path.join(WEB_DIR, "statistik.html"), None)
+                    if page is None:
+                        return self.out(404, b'{"error": "not found"}')
+                    return self.out(200, page.replace("__STATS_URL__", "").encode("utf-8"), "text/html; charset=utf-8")
+                if u.path not in ("/ws", "/stats"):
+                    return self.out(404, b'{"error": "not found"}')
+                res = outer.share.check((q.get("t") or [""])[0][:200], self.ip())
+                if res == "limit":
+                    return self.out(429, b'{"error": "zu viele Versuche"}', extra={"Retry-After": "30"})
+                if res != "ok":
+                    return self.out(404, b'{"error": "not found"}')
+                if u.path == "/stats":
+                    return self.out(200, json.dumps(outer.snapshot(), separators=(",", ":")).encode())
+                key = (self.headers.get("Sec-WebSocket-Key") or "").strip()
+                if "websocket" not in (self.headers.get("Upgrade") or "").lower() or not key or len(key) > 64:
+                    return self.out(400, b'{"error": "WebSocket erwartet"}')
+                if not outer._acquire():
+                    return self.out(503, b'{"error": "zu viele Betrachter"}', extra={"Retry-After": "10"})
+                try:
+                    every = 1
+                    try:
+                        every = max(1, min(10, int((q.get("every") or ["1"])[0])))
+                    except ValueError:
+                        pass
+                    accept = base64.b64encode(hashlib.sha1(key.encode() + outer.GUID).digest())
+                    self.wfile.write(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept
+                                     + b"\r\nAccess-Control-Allow-Origin: *\r\n\r\n")
+                    self.wfile.flush()
+                    outer.serve_ws(self.connection, every)
+                except OSError:
+                    pass
+                finally:
+                    outer._release()
+                    self.close_connection = True
+
+        return H
+
+    def start(self):
+        """Server im Hintergrund starten; ein belegter Port darf die Oberfläche nicht verhindern."""
+        class Srv(ThreadingHTTPServer):
+            daemon_threads = True
+            allow_reuse_address = True
+        try:
+            self.httpd = Srv((self.host, self.port), self.make_handler())
+        except OSError as e:
+            print("Statistik-Server:", e)
+            return False
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        return True
+
+    def stop(self):
+        if self.httpd is not None:
+            self.httpd.shutdown()
+            self.httpd.server_close()
+            self.httpd = None
+
+
+class StatsShare:
+    """Freigabe der Statistik (alles unter "Status") für statistik.html, zum Beispiel als Browserquelle in OBS oder auf einer Homepage.
+    Die Seite verbindet sich mit dem Statistik-Server (StatsServer, Port 8781, von außen über Tailscale Funnel auf Port 8443) mit ?t=<Token>. Der Token (32 Zeichen, zufällig) erlaubt nur das Lesen des Schnappschusses; er steht in <Zustand>/stats-share.json (Modus 0600),
+    lässt sich erneuern (der alte gilt sofort nicht mehr) und die Freigabe ist ab Werk aus. Je Gruppe (Senden, Netze, Prozessor, Temperaturen, Kameras, Meldungen) lässt sich
+    einstellen, was nach außen geht. Zugriffsbegrenzung je Absender; der Schnappschuss wird eine Sekunde zwischengespeichert (viele Zuschauer kosten nicht mehr als einer)."""
+    GROUPS = ("send", "net", "cpu", "temp", "cameras", "alerts")
+    WINDOW_S, MAX_HITS = 10.0, 40          # Abrufe je Absender in diesem Zeitraum
+    FAIL_WINDOW_S, MAX_FAILS = 60.0, 10    # falsche Token je Absender in diesem Zeitraum
+    CACHE_S = 1.0
+    MAX_IPS = 500
+
+    def __init__(self, state_dir, demo=False):
+        self.path = os.path.join(state_dir, "stats-share.json")
+        self.demo = demo
+        self.lock = threading.Lock()
+        self.build_lock = threading.Lock()
+        self.hits, self.fails = {}, {}
+        self.cache = None
+        self.data = {"enabled": False, "token": "", "groups": {g: True for g in self.GROUPS}}
+        try:
+            with open(self.path) as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                self.data["enabled"] = d.get("enabled") is True
+                tok = d.get("token")
+                self.data["token"] = tok if isinstance(tok, str) and re.match(r"^[A-Za-z0-9_-]{20,64}$", tok) else ""
+                g = d.get("groups") if isinstance(d.get("groups"), dict) else {}
+                self.data["groups"] = {k: g.get(k) is not False for k in self.GROUPS}
+        except (OSError, ValueError):
+            pass
+
+    def _save(self):
+        tmp = self.path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(self.data, f)
+        os.replace(tmp, self.path)
+
+    def status(self):
+        with self.lock:
+            return {"enabled": self.data["enabled"], "token": self.data["token"], "groups": dict(self.data["groups"])}
+
+    def groups(self):
+        with self.lock:
+            return dict(self.data["groups"])
+
+    def update(self, enabled=None, groups=None, new_token=False):
+        """Einschalten/Ausschalten, Gruppen wählen, Token erneuern. Beim ersten Einschalten entsteht der Token."""
+        with self.lock:
+            if enabled is not None:
+                if not isinstance(enabled, bool):
+                    raise ValueError("enabled muss wahr oder falsch sein")
+                self.data["enabled"] = enabled
+            if groups is not None:
+                if not isinstance(groups, dict) or any(k not in self.GROUPS or not isinstance(v, bool) for k, v in groups.items()):
+                    raise ValueError("Unbekannte Gruppe")
+                self.data["groups"].update(groups)
+            if new_token or (self.data["enabled"] and not self.data["token"]):
+                self.data["token"] = secrets.token_urlsafe(24)
+            self.cache = None
+            self._save()
+        return self.status()
+
+    def check(self, token, ip):
+        """"ok", "bad" (aus oder falscher Token) oder "limit" (zu viele Abrufe oder falsche Token von diesem Absender)."""
+        now = time.monotonic()
+        with self.lock:
+            if len(self.hits) > self.MAX_IPS:
+                self.hits = {k: v for k, v in self.hits.items() if v and now - v[-1] < self.WINDOW_S}
+                self.fails = {k: v for k, v in self.fails.items() if v and now - v[-1] < self.FAIL_WINDOW_S}
+            h = self.hits.setdefault(ip, collections.deque())
+            while h and now - h[0] > self.WINDOW_S:
+                h.popleft()
+            f = self.fails.setdefault(ip, collections.deque())
+            while f and now - f[0] > self.FAIL_WINDOW_S:
+                f.popleft()
+            if len(h) >= self.MAX_HITS or len(f) >= self.MAX_FAILS:
+                return "limit"
+            h.append(now)
+            tok = self.data["token"]
+            if self.data["enabled"] and tok and isinstance(token, str) and hmac.compare_digest(token.encode(), tok.encode()):
+                return "ok"
+            f.append(now)
+            return "bad"
+
+    def snapshot(self, build):
+        """Zwischengespeicherter Schnappschuss (build() rechnet ihn, höchstens einmal je CACHE_S)."""
+        with self.build_lock:
+            now = time.monotonic()
+            c = self.cache
+            if c and now - c[0] < self.CACHE_S:
+                return c[1]
+            snap = build()
+            self.cache = (now, snap)
+            return snap
+
+
+def build_stats_snapshot(m, send, labels, groups, now=None):
+    """Schnappschuss der Statistik für statistik.html aus den Messwerten der Statusseite (m, wie /api/metrics) und dem Sendestatus. Es kommen nur Zahlen, Zustände und die Namen,
+    die der Nutzer selbst vergeben hat (Verbindungen, Kameras); nie Adressen (IP, MAC), Stream-ID, Serveradresse, Schlüssel, WLAN-Namen oder Tailscale-Namen. groups wählt,
+    welche Teile dabei sind."""
+    def num(v, nd=1):
+        return round(v, nd) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    def text(v, n=60):
+        return str(v)[:n] if isinstance(v, (str, int, float)) and not isinstance(v, bool) else ""
+
+    m = m if isinstance(m, dict) else {}
+    send = send if isinstance(send, dict) else {}
+    det = m.get("details") if isinstance(m.get("details"), dict) else {}
+    out = {"v": 1, "time": int(time.time() if now is None else now), "live": bool(send.get("active"))}
+    if groups.get("send"):
+        ss = det.get("send") if isinstance(det.get("send"), dict) else {}
+        out["send"] = {"fps": num(ss.get("fps")), "bitrate_kbps": num(ss.get("bitrate_kbps"), 0), "rtt_ms": num(ss.get("rtt_ms"), 0), "send_mbps": num(ss.get("send_mbps"), 2),
+                       "buffer_ms": num(ss.get("snd_buf_ms"), 0), "loss_pct": num(ss.get("loss_pct"), 2), "retrans_pct": num(ss.get("retrans_pct"), 2),
+                       "payload_mbit": num(m.get("payload_mbit"), 2)}
+    if groups.get("net"):
+        ups = m.get("uplinks") if isinstance(m.get("uplinks"), dict) else {}
+        rates = m.get("net") if isinstance(m.get("net"), dict) else {}
+        names = labels if isinstance(labels, dict) else {}
+        rows = []
+        for n, r in rates.items():
+            if not isinstance(r, dict) or n == "lo" or n.startswith(("tailscale", "docker", "veth")):
+                continue
+            u = ups.get(n) if isinstance(ups.get(n), dict) else None
+            rows.append({"id": text(n, 20), "name": text(names.get(n) or net_label(n), 40), "rx_mbit": num(r.get("rx_mbit"), 2), "tx_mbit": num(r.get("tx_mbit"), 2),
+                         "uplink": u is not None, "state": text(u.get("state"), 10) if u else "", "srtt_ms": num(u.get("srtt"), 0) if u else None})
+        rows.sort(key=lambda r: (not r["uplink"], r["id"]))
+        out["net"] = rows
+        out["uplink_tx_mbit"] = num(sum(r["tx_mbit"] or 0 for r in rows if r["uplink"]), 2)
+    if groups.get("cpu"):
+        cpu = m.get("cpu") if isinstance(m.get("cpu"), dict) else {}
+        mem = m.get("mem") if isinstance(m.get("mem"), dict) else {}
+        out["cpu"] = {"avg": num(cpu.get("avg")), "max": num(cpu.get("max")), "cores": [num(c) for c in (cpu.get("cores") or [])[:16]],
+                      "freq_mhz": [num(f, 0) for f in (cpu.get("freq_mhz") or [])[:16]], "mem_used_pct": num(mem.get("used_pct")), "mem_avail_mb": num(mem.get("avail_mb"), 0)}
+    if groups.get("temp"):
+        zones = det.get("temps") if isinstance(det.get("temps"), list) else []
+        out["temp"] = {"max_c": num(m.get("temp_c")), "fan_pct": num(m.get("fan_pct"), 0),
+                       "zones": [{"name": text(z.get("name"), 30), "c": num(z.get("c"))} for z in zones[:12] if isinstance(z, dict)]}
+    if groups.get("cameras"):
+        cams = []
+        for c in (m.get("cameras") if isinstance(m.get("cameras"), list) else [])[:12]:
+            if not isinstance(c, dict):
+                continue
+            cams.append({"name": text(c.get("name"), 40), "state": text(c.get("state"), 10), "fps": num(c.get("fps")), "mbit": num(c.get("mbit"), 2),
+                         "battery": num(c.get("battery"), 0), "charging": c.get("charging") is True, "main": c.get("is_main") is True, "parked": c.get("parked") is True})
+        out["cameras"] = cams
+    if groups.get("alerts"):
+        out["alerts"] = [{"level": text(a.get("level"), 8), "text": text(a.get("text"), 160)} for a in (m.get("alerts") or [])[:10] if isinstance(a, dict)]
+    return out
 
 
 class LayoutStore:
@@ -9261,6 +9638,8 @@ class Handler(BaseHTTPRequestHandler):
     twitch = None
     hdmi = None
     uiaccess = None
+    statsshare = None
+    statsserver = None
 
     def log_message(self, *a):
         pass
@@ -9457,6 +9836,78 @@ class Handler(BaseHTTPRequestHandler):
         base.update(self.names.conn_names() if self.names else {})
         return base
 
+    def metrics_data(self, light=False):
+        """Messwerte der Statusseite (Prozessor, Netz, Kameras, Sendewege, Meldungen): Quelle von /api/metrics und der Statistik-Freigabe. light: ohne das, was nur die Seite braucht
+        (welche Kamera gerade im Bild ist), spart Rechenzeit bei der Statistik."""
+        m = self.sampler.sample()
+        try:
+            m["alerts"] = list(m.get("alerts") or []) + self.usbwatch.alerts()
+        except Exception:
+            pass
+        m["cameras"] = self.cams.listing(self.host(), self.djisvc.host_for_key)
+        parked = set()
+        try:                                                           # bewusst ausgeschaltete Kameras: im Bildaufbau deaktiviert oder DJI getrennt
+            pc = self.pipeline.cfg
+            inactive = set(pc.get("inactive") or []) if pc.get("type") == "pip" else set()
+            parked = inactive | self.djisvc.parked_keys()
+            pips = {pc.get(k) for k in ("pip", "pip2", "pip3") if pc.get(k)} if pc.get("type") == "pip" else set()
+            for c in m["cameras"]:
+                c["parked"] = c.get("key") in parked
+                c["is_main"] = pc.get("type") == "pip" and c.get("key") == pc.get("main")
+                c["in_pips"] = c.get("key") in pips
+        except Exception:
+            pass
+        try:
+            hs = self.hdmi.status() if self.hdmi else None
+            m["alerts"] = list(m.get("alerts") or []) + self.outages.alerts(m["cameras"], hs, parked)
+        except Exception:
+            pass
+        extras = self.djisvc.camera_extras()
+        for c in m["cameras"]:
+            c.update(extras.get(c["key"], {}))             # Akkustand der DJI-Kameras (Status, Kameras)
+        m["uplinks"] = uplink_states(((self.srtla.data or {}).get("settings") or {}).get("uplinks") or [])
+        m["conn_names"] = self.conn_labels()
+        pic = None if light else self.send.picture()
+        for c in m["cameras"]:
+            p = pic.get(c["key"]) if pic else None
+            c["pic"], c["pic_wait"] = (p[0], p[1]) if p else (None, 0)
+        for c in m["cameras"]:
+            if c.get("state") == "live" and not c.get("fps"):
+                f = self.djisvc.fps_for_key(c["key"])
+                if f:
+                    c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
+        return m
+
+    @classmethod
+    def stats_snapshot_now(cls):
+        """Schnappschuss der Statistik ohne Anfrage (für den Statistik-Server): dieselben Werte wie die Statusseite, eine Sekunde zwischengespeichert."""
+        h = object.__new__(cls)
+        h.headers = {}                                    # host() nimmt dann "box"
+        return cls.statsshare.snapshot(lambda: build_stats_snapshot(h.metrics_data(light=True), {"active": h.send.live_fast()}, h.conn_labels(), h.statsshare.groups()))
+
+    def stats_status(self):
+        """Einstellungen und Zustand der öffentlichen Statistik für die Oberfläche (mit den fertigen Adressen, wenn die Freigabe steht)."""
+        st = self.statsshare.status()
+        rs = self.remote.status()
+        st.update(installed=rs["installed"], connected=rs["connected"], busy=rs["state"] == "working", state=rs["state"], message=rs["message"], hint_url=rs["hint_url"],
+                  public=bool(rs.get("stats")), clients=self.statsserver.clients() if self.statsserver else 0, page_url="", ws_url="")
+        base = rs.get("stats_base") or ""
+        if st["enabled"] and st["token"] and base.startswith("https://"):
+            st["page_url"] = base + "/?t=" + st["token"]
+            st["ws_url"] = "wss://" + base[len("https://"):] + "/ws?t=" + st["token"]
+        return st
+
+    def stats_widget(self):
+        """statistik.html zum Herunterladen, mit der öffentlichen WebSocket-Adresse schon eingetragen (nur angemeldet)."""
+        st = self.stats_status()
+        if not st["ws_url"]:
+            return self.reply(409, {"error": "Die öffentliche Statistik ist nicht freigegeben"})
+        page = read(os.path.join(WEB_DIR, "statistik.html"), None)
+        if page is None:
+            return self.reply(404, {"error": "statistik.html fehlt"})
+        body = page.replace("__STATS_URL__", st["ws_url"]).encode("utf-8")
+        return self.send_bytes(200, body, "text/html; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="statistik.html"'})
+
     def do_GET(self):
         self.request_read()
         path = self.path.split("?")[0]
@@ -9473,45 +9924,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.swupdate.progress_public())
         if not self.authed():
             return self.reply(401, {"error": "nicht angemeldet"})
+        if path == "/api/statsshare":
+            return self.reply(200, self.stats_status())
+        if path == "/api/statsshare/widget":
+            return self.stats_widget()
         if path == "/api/metrics":
-            m = self.sampler.sample()
-            try:
-                m["alerts"] = list(m.get("alerts") or []) + self.usbwatch.alerts()
-            except Exception:
-                pass
-            m["cameras"] = self.cams.listing(self.host(), self.djisvc.host_for_key)
-            parked = set()
-            try:                                                           # bewusst ausgeschaltete Kameras: im Bildaufbau deaktiviert oder DJI getrennt
-                pc = self.pipeline.cfg
-                inactive = set(pc.get("inactive") or []) if pc.get("type") == "pip" else set()
-                parked = inactive | self.djisvc.parked_keys()
-                pips = {pc.get(k) for k in ("pip", "pip2", "pip3") if pc.get(k)} if pc.get("type") == "pip" else set()
-                for c in m["cameras"]:
-                    c["parked"] = c.get("key") in parked
-                    c["is_main"] = pc.get("type") == "pip" and c.get("key") == pc.get("main")
-                    c["in_pips"] = c.get("key") in pips
-            except Exception:
-                pass
-            try:
-                hs = self.hdmi.status() if self.hdmi else None
-                m["alerts"] = list(m.get("alerts") or []) + self.outages.alerts(m["cameras"], hs, parked)
-            except Exception:
-                pass
-            extras = self.djisvc.camera_extras()
-            for c in m["cameras"]:
-                c.update(extras.get(c["key"], {}))             # Akkustand der DJI-Kameras (Status, Kameras)
-            m["uplinks"] = uplink_states(((self.srtla.data or {}).get("settings") or {}).get("uplinks") or [])
-            m["conn_names"] = self.conn_labels()
-            pic = self.send.picture()
-            for c in m["cameras"]:
-                p = pic.get(c["key"]) if pic else None
-                c["pic"], c["pic_wait"] = (p[0], p[1]) if p else (None, 0)
-            for c in m["cameras"]:
-                if c.get("state") == "live" and not c.get("fps"):
-                    f = self.djisvc.fps_for_key(c["key"])
-                    if f:
-                        c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
-            return self.reply(200, m)
+            return self.reply(200, self.metrics_data())
         if path == "/api/previewaccess":
             return self.reply(200, dict(self.previewaccess.status(), origin=self.origin()))
         if path == "/api/preview":
@@ -9660,6 +10078,21 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/logmode":
                 self.logmode.request(d.get("mode"))
                 return self.reply(200, {"ok": True})
+            if path == "/api/statsshare":
+                en = d.get("enabled")
+                if en is not None and not isinstance(en, bool):
+                    raise ValueError("enabled muss wahr oder falsch sein")
+                self.statsshare.update(None, d.get("groups"), d.get("new_token") is True)
+                if en is True:
+                    self.remote.request("stats_on", True, True)               # scheitert mit Meldung, wenn Tailscale nicht verbunden ist: dann bleibt die Freigabe aus
+                    self.statsshare.update(True)
+                elif en is False:
+                    self.statsshare.update(False)
+                    try:
+                        self.remote.request("stats_off", True)
+                    except ValueError:
+                        pass
+                return self.reply(200, self.stats_status())
             if path == "/api/layout":
                 if isinstance(d.get("init"), dict):
                     return self.reply(200, self.layout.init(d["init"]))
@@ -9971,6 +10404,10 @@ def main():
     Handler.netchoice = NetChoice(os.path.join(args.state, "camera-net.json"))
     Handler.names = DeviceNames(args.state)
     Handler.layout = LayoutStore(args.state)
+    Handler.statsshare = StatsShare(args.state, demo=args.demo)
+    Handler.statsserver = StatsServer(Handler.statsshare, Handler.stats_snapshot_now)
+    if not args.demo:
+        Handler.statsserver.start()
     Handler.wifi = Wifi(args.state, args.demo, Handler.netchoice, Handler.names, Handler.srtla)
     Handler.power = Power(args.state, args.demo, Handler.send)
     Handler.logmode = LogMode(args.state, args.demo)
