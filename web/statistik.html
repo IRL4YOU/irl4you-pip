@@ -1,300 +1,40 @@
-<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Statistik</title>
-<!--
-  IRL4YOU BOX · Statistik-Widget (eine einzige Datei, kein Webserver nötig)
-
-  Die Seite verbindet sich per WebSocket mit der Box und zeigt jede Sekunde den aktuellen Stand: Sendewege, Bitrate, Temperatur, Kameras …
-
-  Benutzen:
-    OBS:       Quellen → + → Browser → "Lokale Datei" ankreuzen → diese Datei wählen (die Adresse der Box steht unten in CONFIG.url),
-               oder (ohne Datei) bei "URL" die Seitenadresse eintragen, die die Box unter Fernzugriff → Statistik anzeigt.
-    Homepage:  <iframe src="https://…/statistik.html?url=wss://…/ws?t=…" width="400" height="500"></iframe>  oder diese Datei auf die Homepage legen.
-  Alles lässt sich in der Adresse ändern (nach ? mit & verbunden), ohne die Datei zu bearbeiten:
-    url=wss://…        Adresse der Box (WebSocket) | every=2  Takt in Sekunden (1 bis 10) | bg=transparent  Hintergrund (oder 1e3c72) | size=1.3  Schriftgröße
-    show=net,send,cams,sys,temp,zones,cores,disk,alerts,total  nur diese Teile | names=eth1:Vodafone,wlan0:WLAN  eigene Namen | title=Mein Name  Überschrift
-    speed=450,1100  Schwellen für Rot/Gelb in kbit/s | tempc=55,65  Schwellen Temperatur
-  Unter CONFIG unten stehen dieselben Einstellungen (Farben, Texte, Schwellen).
-
-  Die Adresse enthält den geheimen Zugangsschlüssel (Token) deiner Box. Er erlaubt nur das LESEN der Statistik (höchstens 3 gleichzeitige Betrachter).
-  Auf einer Homepage sehen Besucher Adresse und Schlüssel. Neuer Schlüssel: auf der Box unter Fernzugriff → Statistik → "Neuen Schlüssel erzeugen".
--->
-<style>
-  :root { --text:#ffd700; --label:#e6e6e6; --good:#4caf50; --middle:#ff9800; --bad:#f44336; --muted:#9aa4b2; --card:rgba(255,255,255,.10); --line:rgba(255,255,255,.20); --bg:transparent; }
-  * { box-sizing:border-box; }
-  html, body { margin:0; min-height:100%; }
-  body { background:var(--bg); color:var(--label); font:15px/1.35 system-ui, "Segoe UI", Roboto, Arial, sans-serif; overflow-x:hidden; overflow-y:auto; scrollbar-width:none; }
-  body::-webkit-scrollbar { display:none; }
-  #wrap { min-height:100vh; padding:10px; display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:8px; align-content:start; }
-  #head, #offline, #msg { grid-column:1 / -1; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 12px; backdrop-filter:blur(8px); }
-  .head { display:flex; align-items:center; justify-content:space-between; gap:10px; font-weight:600; }
-  .dot { display:inline-block; width:.7em; height:.7em; border-radius:50%; background:var(--muted); margin-right:.45em; vertical-align:baseline; }
-  .dot.live { background:var(--good); } .dot.off { background:var(--bad); }
-  .row { display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:2px 0; }
-  .row .n { color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-  .row .v { white-space:nowrap; font-variant-numeric:tabular-nums; }
-  .sub { color:var(--muted); font-size:.85em; margin-left:.4em; }
-  .sec { color:var(--muted); font-size:.8em; letter-spacing:.06em; text-transform:uppercase; margin-bottom:2px; }
-  .good { color:var(--good); } .middle { color:var(--middle); } .bad { color:var(--bad); } .muted { color:var(--muted); }
-  .alert { color:var(--middle); font-size:.9em; }
-  .alert.err { color:var(--bad); }
-  #msg { color:var(--bad); font-size:.85em; text-align:center; display:none; }
-  .stale { opacity:.55; }
-  .bar { height:4px; background:rgba(255,255,255,.15); border-radius:3px; margin:1px 0 5px; overflow:hidden; }
-  .bar i { display:block; height:100%; background:var(--good); }
-  .bar i.middle { background:var(--middle); } .bar i.bad { background:var(--bad); }
-  #offline { display:none; text-align:center; border-color:var(--bad); }
-  #offline b { color:var(--bad); font-size:1.15em; letter-spacing:.04em; text-transform:uppercase; }
-  #offline div { color:var(--muted); font-size:.85em; margin-top:2px; }
-</style>
-</head>
-<body>
-<div id="wrap">
-  <div class="card head" id="head"><span><span class="dot" id="dot"></span><span id="title"></span></span><span id="headr" class="v"></span></div>
-  <div class="card" id="offline"><b id="offlineTitle"></b><div id="offlineSub"></div></div>
-  <div class="card" id="c_net"><div class="sec" id="s_net"></div><div id="net"></div></div>
-  <div class="card" id="c_send"><div id="send"></div></div>
-  <div class="card" id="c_cam"><div class="sec" id="s_cam"></div><div id="cams"></div></div>
-  <div class="card" id="c_sys"><div class="sec" id="s_sys"></div><div id="sys"></div></div>
-  <div class="card" id="c_temps"><div class="sec" id="s_temps"></div><div id="temps"></div></div>
-  <div class="card" id="c_cores"><div class="sec" id="s_cores"></div><div id="cores"></div></div>
-  <div class="card" id="c_disk"><div class="sec" id="s_disk"></div><div id="disk"></div></div>
-  <div class="card" id="c_alerts"><div id="alerts"></div></div>
-  <div id="msg"></div>
-</div>
-<script>
-// ------------------------------------------------------------------ EINSTELLUNGEN
-const CONFIG = {
-  url: "__STATS_URL__",            // WebSocket-Adresse der Box mit Schlüssel (wird beim Herunterladen von der Box eingetragen); leer = von der Adresse der Seite ableiten
-  every: 1,                        // Takt in Sekunden (1 bis 10)
-  title: "BELABOX",                // Überschrift; leer = keine
-  background: "transparent",       // "transparent" für OBS oder eine Farbe, zum Beispiel "rgba(0,0,0,.6)" oder "linear-gradient(135deg,#1e3c72,#2a5298)"
-  fontScale: 1,                    // 1 = normal, 1.3 = größer
-  colors: { text: "#ffd700", label: "#e6e6e6", good: "#4caf50", middle: "#ff9800", bad: "#f44336" },
-  speedKbps: { red: 450, yellow: 1100 },        // Sendegeschwindigkeit je Weg: unter red rot, unter yellow orange, sonst grün
-  tempC: { green: 55, yellow: 65 },             // Temperatur: unter green grün, unter yellow orange, sonst rot
-  loadPct: { yellow: 70, red: 90 },             // Prozessor
-  // Was angezeigt wird (nur, was auf der Box freigegeben ist, kommt überhaupt an)
-  show: { net: true, onlyUplinks: false, total: true, send: true, cams: true, sys: true, temp: true, zones: true, cores: true, disk: true, alerts: true },
-  names: {},                                    // Eigene Namen für Netzkarten, zum Beispiel { eth1: "Vodafone", wlan0: "WLAN" }
-  labels: { net: "Sendewege", total: "Gesamt", cameras: "Kameras", system: "System", cpu: "Prozessor", memory: "Speicher", temperature: "Temperatur",
-            live: "LIVE", offline: "nicht auf Sendung", lost: "Verbindung zur Box verloren", boxOffline: "Box offline", lastData: "letzte Daten vor {t}", neverData: "noch keine Daten empfangen (Box aus, ohne Netz oder Schlüssel ungültig)", retrying: "neuer Versuch läuft …", connecting: "verbinde …", busy: "Die Box hat schon 3 Betrachter",
-            denied: "Schlüssel ungültig oder Freigabe aus", rtt: "Laufzeit", loss: "Verlust", retrans: "Neuübertragung", buffer: "Sendepuffer", bitrate: "Bitrate",
-            fps: "Bilder/s", set: "eingestellt", packets: "Pakete", temps: "Temperaturen", cores: "Prozessor", core: "Kern", disk: "Speicherplatz", used: "Belegt", free: "Frei",
-            gpu: "GPU", npu: "NPU", fan: "Lüfter", encoder: "Encoder-Bilder/s", sent: "gesendet", state_an: "aktiv", state_reserve: "Reserve", state_aus: "aus", noCameras: "keine Kamera", waiting: "warte auf Daten …", off: "aus" }
-};
-// ------------------------------------------------------------------ Einstellungen aus der Adresse (überschreiben CONFIG)
-const Q = new URLSearchParams(location.search);
-(function applyQuery() {
-  const c = CONFIG;
-  if (Q.has("every")) c.every = Math.max(1, Math.min(10, parseInt(Q.get("every"), 10) || 1));
-  if (Q.has("title")) c.title = Q.get("title");
-  if (Q.has("size")) c.fontScale = parseFloat(Q.get("size")) || 1;
-  if (Q.has("bg")) { const b = Q.get("bg"); c.background = /^[0-9a-f]{3,8}$/i.test(b) ? "#" + b : b; }
-  if (Q.has("show")) {
-    const on = new Set(Q.get("show").split(","));
-    for (const k of Object.keys(c.show)) c.show[k] = on.has(k) || (k === "onlyUplinks" ? c.show[k] : false);
-    if (on.has("net")) c.show.total = on.has("total");
-  }
-  if (Q.has("names")) for (const p of Q.get("names").split(",")) { const [k, v] = p.split(":"); if (k && v) c.names[k.trim()] = v.trim(); }
-  if (Q.has("speed")) { const [r, y] = Q.get("speed").split(",").map(Number); if (r > 0 && y > 0) c.speedKbps = { red: r, yellow: y }; }
-  if (Q.has("tempc")) { const [g, y] = Q.get("tempc").split(",").map(Number); if (g > 0 && y > 0) c.tempC = { green: g, yellow: y }; }
-})();
-function resolveUrl() {
-  let u = Q.get("url") || (/^wss?:\/\//.test(CONFIG.url) ? CONFIG.url : "");
-  if (!u && /^https?:$/.test(location.protocol) && Q.get("t")) u = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws?t=" + encodeURIComponent(Q.get("t"));
-  if (!u) return "";
-  if (!/[?&]every=/.test(u)) u += (u.includes("?") ? "&" : "?") + "every=" + CONFIG.every;
-  return u;
-}
-// ------------------------------------------------------------------ ab hier nichts ändern
-const $ = id => document.getElementById(id);
-const L = CONFIG.labels;
-const root = document.documentElement.style;
-root.setProperty("--bg", CONFIG.background);
-root.setProperty("--text", CONFIG.colors.text); root.setProperty("--label", CONFIG.colors.label);
-root.setProperty("--good", CONFIG.colors.good); root.setProperty("--middle", CONFIG.colors.middle); root.setProperty("--bad", CONFIG.colors.bad);
-document.body.style.fontSize = (15 * (CONFIG.fontScale || 1)) + "px";
-$("title").textContent = CONFIG.title || "";
-
-function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-function row(name, value, vcls, sub) {
-  const r = el("div", "row"); r.appendChild(el("span", "n", name));
-  const v = el("span", "v" + (vcls ? " " + vcls : ""), value);
-  if (sub) v.appendChild(el("span", "sub", sub));
-  r.appendChild(v); return r;
-}
-function fill(id, rows) { $(id).replaceChildren(...rows); }
-function fmt(n, d) { return (n === null || n === undefined || isNaN(n)) ? "–" : Number(n).toFixed(d === undefined ? 1 : d); }
-function speedClass(kbps) { return kbps < CONFIG.speedKbps.red ? "bad" : kbps < CONFIG.speedKbps.yellow ? "middle" : "good"; }
-function tempClass(c) { return c < CONFIG.tempC.green ? "good" : c < CONFIG.tempC.yellow ? "middle" : "bad"; }
-function loadClass(p) { return p < CONFIG.loadPct.yellow ? "good" : p < CONFIG.loadPct.red ? "middle" : "bad"; }
-function show(id, on) { $(id).style.display = on ? "" : "none"; }
-
-function bar(pct, cls) { const b = el("div", "bar"), i = el("i", cls || ""); i.style.width = Math.max(0, Math.min(100, pct || 0)) + "%"; b.appendChild(i); return b; }
-function rowsWithBars(items) { const out = []; for (const [r, pct, cls] of items) { out.push(r); if (pct != null) out.push(bar(pct, cls)); } return out; }
-function render(d) {
-  const sh = CONFIG.show;
-  $("dot").className = "dot " + (d.live ? "live" : "off");
-  $("headr").textContent = d.live ? L.live : L.offline;
-  $("headr").className = "v " + (d.live ? "good" : "muted");
-  // Up- und Download
-  const hasNet = sh.net && Array.isArray(d.net);
-  show("c_net", hasNet);
-  if (hasNet) {
-    $("s_net").textContent = L.net;
-    const rows = [];
-    const list = d.net.filter(n => !sh.onlyUplinks || n.uplink);
-    for (const n of list) {
-      const kbps = (n.tx_mbit || 0) * 1000;
-      const name = CONFIG.names[n.id] || n.name || n.id;
-      const off = n.uplink && n.state === "aus";
-      const sub = [n.rx_mbit != null ? "↓ " + fmt(n.rx_mbit, 2) : "", n.uplink && n.state !== "an" ? (L["state_" + n.state] || n.state) : "", n.srtt_ms != null && n.state !== "aus" ? n.srtt_ms + " ms" : ""].filter(Boolean).join(" · ");
-      rows.push(row(name, off ? L.state_aus : "↑ " + fmt(n.tx_mbit, 2) + " Mbit/s", off ? "muted" : (n.uplink ? speedClass(kbps) : ""), sub));
-    }
-    if (sh.total && d.uplink_tx_mbit !== undefined && list.filter(n => n.uplink).length > 1) rows.push(row("Σ " + L.total, fmt(d.uplink_tx_mbit, 2) + " Mbit/s", speedClass((d.uplink_tx_mbit || 0) * 1000)));
-    fill("net", rows);
-  }
-  // Senden (Details)
-  const hasSend = sh.send && d.send;
-  show("c_send", hasSend);
-  if (hasSend) {
-    const s = d.send, rows = [];
-    const shown = s.shown_mbit != null ? s.shown_mbit : (s.bitrate_kbps != null ? s.bitrate_kbps / 1000 : null);
-    if (shown != null) rows.push(row(L.bitrate, fmt(shown, 2) + " Mbit/s", speedClass(shown * 1000), s.bitrate_kbps != null ? L.set + " " + fmt(s.bitrate_kbps / 1000, 2) : ""));
-    if (s.rtt_ms != null) rows.push(row(L.rtt, fmt(s.rtt_ms, 0) + " ms", s.rtt_ms < 150 ? "good" : s.rtt_ms < 400 ? "middle" : "bad"));
-    if (s.buffer_ms != null) rows.push(row(L.buffer, fmt(s.buffer_ms, 0) + " ms", s.buffer_ms < 1500 ? "" : s.buffer_ms < 3000 ? "middle" : "bad", s.buf_pkts != null ? fmt(s.buf_pkts, 0) + " " + L.packets : ""));
-    if (s.retrans_pct != null || s.retrans_total != null) rows.push(row(L.retrans, s.retrans_total != null ? fmt(s.retrans_total, 0) : fmt(s.retrans_pct, 2) + " %", "", s.retrans_total != null && s.retrans_pct != null ? fmt(s.retrans_pct, 2) + " %" : ""));
-    if (s.loss_pct != null || s.loss_total != null) rows.push(row(L.loss, s.loss_total != null ? fmt(s.loss_total, 0) : fmt(s.loss_pct, 2) + " %", s.loss_pct == null ? "" : s.loss_pct < 0.5 ? "good" : s.loss_pct < 2 ? "middle" : "bad", s.loss_total != null && s.loss_pct != null ? fmt(s.loss_pct, 2) + " %" : ""));
-    if (s.fps != null) rows.push(row(L.encoder, fmt(s.fps), ""));
-    fill("send", rows);
-    show("c_send", rows.length > 0);
-  }
-  // Kameras
-  const hasCam = sh.cams && Array.isArray(d.cameras);
-  show("c_cam", hasCam);
-  if (hasCam) {
-    $("s_cam").textContent = L.cameras;
-    const rows = d.cameras.map(c => {
-      const cls = c.parked ? "muted" : c.state === "live" ? "good" : c.state === "offline" ? "bad" : "muted";
-      const parts = [];
-      if (c.state === "live") { if (c.fps != null) parts.push(fmt(c.fps) + " " + L.fps); if (c.mbit != null) parts.push(fmt(c.mbit, 1) + " Mbit/s"); }
-      if (c.battery != null) parts.push((c.charging ? "⚡" : "") + c.battery + " %");
-      return row((c.main ? "★ " : "") + (c.name || "?"), c.parked ? L.off : c.state === "live" ? "●" : "○", cls, parts.join(" · "));
-    });
-    fill("cams", rows.length ? rows : [row(L.noCameras, "", "muted")]);
-  }
-  // System: Prozessor, Speicher, Temperatur, Lüfter
-  const hasSys = (sh.sys && d.cpu) || (sh.temp && d.temp);
-  show("c_sys", !!hasSys);
-  if (hasSys) {
-    $("s_sys").textContent = L.system;
-    const items = [];
-    if (sh.sys && d.cpu) {
-      items.push([row(L.cpu, fmt(d.cpu.avg, 0) + " %", loadClass(d.cpu.avg || 0), d.cpu.max != null ? "max " + fmt(d.cpu.max, 0) + " %" : ""), d.cpu.avg, loadClass(d.cpu.avg || 0)]);
-      if (d.cpu.mem_used_pct != null) items.push([row(L.memory, fmt(d.cpu.mem_used_pct, 0) + " %", loadClass(d.cpu.mem_used_pct), d.cpu.mem_avail_mb != null ? L.free + " " + fmt(d.cpu.mem_avail_mb, 0) + " MB" : ""), d.cpu.mem_used_pct, loadClass(d.cpu.mem_used_pct)]);
-    }
-    if (sh.temp && d.temp && d.temp.max_c != null) items.push([row(L.temperature, fmt(d.temp.max_c, 0) + " °C", tempClass(d.temp.max_c), d.temp.fan_pct != null ? L.fan + " " + fmt(d.temp.fan_pct, 0) + " %" : ""), null]);
-    fill("sys", rowsWithBars(items));
-  }
-  // Temperaturen (Details)
-  const zones = sh.temp && sh.zones && d.temp && Array.isArray(d.temp.zones) ? d.temp.zones : [];
-  show("c_temps", zones.length > 0);
-  if (zones.length) { $("s_temps").textContent = L.temps; fill("temps", zones.map(z => row(z.name, fmt(z.c, 1) + " °C", z.c == null ? "" : tempClass(z.c)))); }
-  // Prozessor-Details: jeder Kern mit Takt, GPU, NPU
-  const hasCores = sh.cores && d.cores;
-  show("c_cores", !!hasCores);
-  if (hasCores) {
-    $("s_cores").textContent = L.cores;
-    const items = [], c = d.cores, fr = c.freq_mhz || [];
-    (c.load || []).forEach((v, i) => items.push([row(L.core + " " + i, fmt(v, 0) + " %", loadClass(v || 0), fr[i] ? (fr[i] >= 1000 ? fmt(fr[i] / 1000, 1) + " GHz" : fr[i] + " MHz") : ""), v, loadClass(v || 0)]));
-    if (c.gpu) items.push([row(L.gpu, c.gpu.load_pct != null ? fmt(c.gpu.load_pct, 0) + " %" : "–", c.gpu.load_pct != null ? loadClass(c.gpu.load_pct) : "", c.gpu.mhz != null ? c.gpu.mhz + " MHz" : ""), c.gpu.load_pct, c.gpu.load_pct != null ? loadClass(c.gpu.load_pct) : ""]);
-    if (c.npu) items.push([row(L.npu, c.npu.load_pct != null ? fmt(c.npu.load_pct, 0) + " %" : "–", "", c.npu.mhz != null ? c.npu.mhz + " MHz" : ""), c.npu.load_pct, c.npu.load_pct != null ? loadClass(c.npu.load_pct) : ""]);
-    fill("cores", rowsWithBars(items));
-  }
-  // Speicherplatz
-  const hasDisk = sh.disk && d.disk;
-  show("c_disk", !!hasDisk);
-  if (hasDisk) {
-    $("s_disk").textContent = L.disk;
-    const k = d.disk;
-    fill("disk", rowsWithBars([[row(L.used, fmt(k.used_gb, 1) + " GB", loadClass(k.used_pct || 0), k.used_pct != null ? fmt(k.used_pct, 1) + " %" : ""), k.used_pct, loadClass(k.used_pct || 0)],
-                               [row(L.free, fmt(k.free_gb, 1) + " GB", ""), null], [row(L.total, fmt(k.total_gb, 1) + " GB", ""), null]]));
-  }
-  // Meldungen
-  const al = sh.alerts && Array.isArray(d.alerts) ? d.alerts : [];
-  show("c_alerts", al.length > 0);
-  fill("alerts", al.map(a => el("div", "alert" + (a.level === "err" || a.level === "error" ? " err" : ""), a.text)));
-}
-
-// ------------------------------------------------------------------ Verbindung (WebSocket): schläft, solange die Seite nicht sichtbar ist; nach Abbruch neuer Versuch mit wachsender Pause
-let ws = null, retryTimer = null, watchdog = null, fails = 0, lastMsg = 0, lastData = 0, resumedAt = Date.now(), offlineShown = false;
-function setMsg(t, stale) { const m = $("msg"); m.textContent = t || ""; m.style.display = t ? "block" : "none"; if (!offlineShown) $("wrap").classList.toggle("stale", !!stale); }
-// "Box offline": Kommt länger als die Frist keine Meldung an (Box aus, ohne Netz, Verbindung weg, Schlüssel ungültig), zeigt die Seite es deutlich an und lässt die letzten Werte blass stehen.
-// Die Frist richtet sich nach dem Takt; nach dem Wiederaufnehmen (Seite war unsichtbar) zählt sie ab dann.
-function offlineAfterMs(every) { return 5000 + 1500 * Math.max(1, every || 1); }
-function isOffline(now, lastData, resumedAt, every) { return now - Math.max(lastData, resumedAt) > offlineAfterMs(every); }
-function fmtAge(sec) { return sec < 90 ? Math.round(sec) + " s" : sec < 5400 ? Math.round(sec / 60) + " min" : Math.round(sec / 3600) + " h"; }
-function offlineWatch() {
-  const off = !document.hidden && isOffline(Date.now(), lastData, resumedAt, CONFIG.every);
-  if (off !== offlineShown) {
-    offlineShown = off;
-    $("offline").style.display = off ? "block" : "none";
-    $("wrap").classList.toggle("stale", off);
-    if (off) { $("dot").className = "dot off"; $("headr").textContent = L.boxOffline; $("headr").className = "v bad"; $("offlineTitle").textContent = L.boxOffline; }
-    else if (lastData) $("msg").style.display = "none";
-  }
-  if (off) $("offlineSub").textContent = lastData ? L.lastData.replace("{t}", fmtAge((Date.now() - lastData) / 1000)) : L.neverData;
-}
-setInterval(offlineWatch, 1000);
-function schedule() {
-  clearTimeout(retryTimer);
-  const wait = Math.min(10000, 1000 * Math.pow(2, Math.min(fails, 5)));
-  retryTimer = setTimeout(connect, wait);
-}
-function disconnect() {
-  clearInterval(watchdog); clearTimeout(retryTimer);
-  if (ws) { ws.onclose = ws.onerror = ws.onmessage = null; try { ws.close(); } catch (e) {} ws = null; }
-}
-function connect() {
-  clearTimeout(retryTimer);
-  if (document.hidden) return;                      // wird bei visibilitychange wieder angestoßen
-  const url = resolveUrl();
-  if (!url) { setMsg("Adresse der Box fehlt (CONFIG.url oder ?url=wss://…)", true); return; }
-  disconnect();
-  if (!offlineShown) setMsg(L.connecting, true);
-  let opened = false;
-  try { ws = new WebSocket(url); } catch (e) { fails++; schedule(); return; }
-  const mine = ws;
-  ws.onopen = () => { opened = true; };
-  ws.onmessage = ev => {
-    let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
-    fails = 0; lastMsg = lastData = Date.now(); setMsg("", false);
-    offlineWatch();
-    render(d);
-  };
-  ws.onclose = () => {
-    if (ws !== mine) return;
-    ws = null; clearInterval(watchdog);
-    fails++;
-    if (!offlineShown) setMsg(L.retrying, true);
-    schedule();
-  };
-  ws.onerror = () => {};
-  clearInterval(watchdog);
-  watchdog = setInterval(() => {                    // kommt länger nichts an, ist die Verbindung tot: neu aufbauen
-    if (ws && opened && Date.now() - lastMsg > 3000 * CONFIG.every + 4000) { try { ws.close(); } catch (e) {} }
-  }, 2000);
-  lastMsg = Date.now();
-}
-document.addEventListener("visibilitychange", () => { if (document.hidden) disconnect(); else { fails = 0; resumedAt = Date.now(); connect(); } });
-for (const id of ["c_send", "c_cam", "c_sys", "c_temps", "c_cores", "c_disk", "c_alerts"]) show(id, false);          // bis die ersten Werte da sind
-fill("net", [row(L.waiting, "", "muted")]);
-connect();
-</script>
-</body>
-</html>
+<!doctype html> <html lang="de"> <head> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>Statistik</title> <style>:root{--text:#ffd700;--label:#e6e6e6;--good:#4caf50;--middle:#ff9800;--bad:#f44336;--muted:#9aa4b2;--card:rgba(255,255,255,.10);--line:rgba(255,255,255,.20);--bg:transparent}*{box-sizing:border-box}html,body{margin:0;min-height:100%}body{background:var(--bg);color:var(--label);font:15px/1.35 system-ui,"Segoe UI",Roboto,Arial,sans-serif;overflow-x:hidden;overflow-y:auto;scrollbar-width:none}body::-webkit-scrollbar{display:none}#wrap{min-height:100vh;padding:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:8px;align-content:start}#head,#offline,#msg{grid-column:1 / -1}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;backdrop-filter:blur(8px)}.head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:600}.dot{display:inline-block;width:.7em;height:.7em;border-radius:50%;background:var(--muted);margin-right:.45em;vertical-align:baseline}.dot.live{background:var(--good)}.dot.off{background:var(--bad)}.row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:2px 0}.row .n{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.row .v{white-space:nowrap;font-variant-numeric:tabular-nums}.sub{color:var(--muted);font-size:.85em;margin-left:.4em}.sec{color:var(--muted);font-size:.8em;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px}.good{color:var(--good)}.middle{color:var(--middle)}.bad{color:var(--bad)}.muted{color:var(--muted)}.alert{color:var(--middle);font-size:.9em}.alert.err{color:var(--bad)}#msg{color:var(--bad);font-size:.85em;text-align:center;display:none}.stale{opacity:.55}.bar{height:4px;background:rgba(255,255,255,.15);border-radius:3px;margin:1px 0 5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--good)}.bar i.middle{background:var(--middle)}.bar i.bad{background:var(--bad)}#offline{display:none;text-align:center;border-color:var(--bad)}#offline b{color:var(--bad);font-size:1.15em;letter-spacing:.04em;text-transform:uppercase}#offline div{color:var(--muted);font-size:.85em;margin-top:2px}</style> </head> <body> <div id="wrap"> <div class="card head" id="head"><span><span class="dot" id="dot"></span><span id="title"></span></span><span id="headr" class="v"></span></div> <div class="card" id="offline"><b id="offlineTitle"></b><div id="offlineSub"></div></div> <div class="card" id="c_net"><div class="sec" id="s_net"></div><div id="net"></div></div> <div class="card" id="c_send"><div id="send"></div></div> <div class="card" id="c_cam"><div class="sec" id="s_cam"></div><div id="cams"></div></div> <div class="card" id="c_sys"><div class="sec" id="s_sys"></div><div id="sys"></div></div> <div class="card" id="c_temps"><div class="sec" id="s_temps"></div><div id="temps"></div></div> <div class="card" id="c_cores"><div class="sec" id="s_cores"></div><div id="cores"></div></div> <div class="card" id="c_disk"><div class="sec" id="s_disk"></div><div id="disk"></div></div> <div class="card" id="c_alerts"><div id="alerts"></div></div> <div id="msg"></div> </div> <script>const CONFIG={url:"__STATS_URL__",every:1,title:"BELABOX",background:"transparent",fontScale:1,colors:{text:"#ffd700",label:"#e6e6e6",good:"#4caf50",middle:"#ff9800",bad:"#f44336"},speedKbps:{red:450,yellow:1100},tempC:{green:55,yellow:65},loadPct:{yellow:70,red:90},show:{net:true,onlyUplinks:false,total:true,send:true,cams:true,sys:true,temp:true,zones:true,cores:true,disk:true,alerts:true},names:{},labels:{net:"Sendewege",total:"Gesamt",cameras:"Kameras",system:"System",cpu:"Prozessor",memory:"Speicher",temperature:"Temperatur",live:"LIVE",offline:"nicht auf Sendung",lost:"Verbindung zur Box verloren",boxOffline:"Box offline",lastData:"letzte Daten vor {t}",neverData:"noch keine Daten empfangen (Box aus, ohne Netz oder Schlüssel ungültig)",retrying:"neuer Versuch läuft …",connecting:"verbinde …",busy:"Die Box hat schon 3 Betrachter",denied:"Schlüssel ungültig oder Freigabe aus",rtt:"Laufzeit",loss:"Verlust",buffer:"Sendepuffer",bitrate:"Bitrate",fps:"Bilder/s",set:"eingestellt",packets:"Pakete",temps:"Temperaturen",cores:"Prozessor",core:"Kern",disk:"Speicherplatz",used:"Belegt",free:"Frei",gpu:"GPU",fan:"Lüfter",encoder:"Encoder-Bilder/s",sent:"gesendet",state_an:"aktiv",state_reserve:"Reserve",state_aus:"aus",noCameras:"keine Kamera",waiting:"warte auf Daten …",off:"aus"}};const Q=new URLSearchParams(location.search);(function applyQuery(){const c=CONFIG;if(Q.has("every"))c.every=Math.max(1,Math.min(10,parseInt(Q.get("every"),10)||1));if(Q.has("title"))c.title=Q.get("title");if(Q.has("size"))c.fontScale=parseFloat(Q.get("size"))||1;if(Q.has("bg")){const b=Q.get("bg");c.background=/^[0-9a-f]{3,8}$/i.test(b)?"#"+b:b;}
+if(Q.has("show")){const on=new Set(Q.get("show").split(","));for(const k of Object.keys(c.show))c.show[k]=on.has(k)||(k==="onlyUplinks"?c.show[k]:false);if(on.has("net"))c.show.total=on.has("total");}
+if(Q.has("names"))for(const p of Q.get("names").split(",")){const[k,v]=p.split(":");if(k&&v)c.names[k.trim()]=v.trim();}
+if(Q.has("speed")){const[r,y]=Q.get("speed").split(",").map(Number);if(r>0&&y>0)c.speedKbps={red:r,yellow:y};}
+if(Q.has("tempc")){const[g,y]=Q.get("tempc").split(",").map(Number);if(g>0&&y>0)c.tempC={green:g,yellow:y};}})();function resolveUrl(){let u=Q.get("url")||(/^wss?:\/\//.test(CONFIG.url)?CONFIG.url:"");if(!u&&/^https?:$/.test(location.protocol)&&Q.get("t"))u=(location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws?t="+encodeURIComponent(Q.get("t"));if(!u)return"";if(!/[?&]every=/.test(u))u+=(u.includes("?")?"&":"?")+"every="+CONFIG.every;return u;}
+const $=id=>document.getElementById(id);const L=CONFIG.labels;const root=document.documentElement.style;root.setProperty("--bg",CONFIG.background);root.setProperty("--text",CONFIG.colors.text);root.setProperty("--label",CONFIG.colors.label);root.setProperty("--good",CONFIG.colors.good);root.setProperty("--middle",CONFIG.colors.middle);root.setProperty("--bad",CONFIG.colors.bad);document.body.style.fontSize=(15*(CONFIG.fontScale||1))+"px";$("title").textContent=CONFIG.title||"";function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
+function row(name,value,vcls,sub){const r=el("div","row");r.appendChild(el("span","n",name));const v=el("span","v"+(vcls?" "+vcls:""),value);if(sub)v.appendChild(el("span","sub",sub));r.appendChild(v);return r;}
+function fill(id,rows){$(id).replaceChildren(...rows);}
+function fmt(n,d){return(n===null||n===undefined||isNaN(n))?"–":Number(n).toFixed(d===undefined?1:d);}
+function speedClass(kbps){return kbps<CONFIG.speedKbps.red?"bad":kbps<CONFIG.speedKbps.yellow?"middle":"good";}
+function tempClass(c){return c<CONFIG.tempC.green?"good":c<CONFIG.tempC.yellow?"middle":"bad";}
+function loadClass(p){return p<CONFIG.loadPct.yellow?"good":p<CONFIG.loadPct.red?"middle":"bad";}
+function show(id,on){$(id).style.display=on?"":"none";}
+function bar(pct,cls){const b=el("div","bar"),i=el("i",cls||"");i.style.width=Math.max(0,Math.min(100,pct||0))+"%";b.appendChild(i);return b;}
+function rowsWithBars(items){const out=[];for(const[r,pct,cls]of items){out.push(r);if(pct!=null)out.push(bar(pct,cls));}return out;}
+function render(d){const sh=CONFIG.show;$("dot").className="dot "+(d.live?"live":"off");$("headr").textContent=d.live?L.live:L.offline;$("headr").className="v "+(d.live?"good":"muted");const hasNet=sh.net&&Array.isArray(d.net);show("c_net",hasNet);if(hasNet){$("s_net").textContent=L.net;const rows=[];const list=d.net.filter(n=>!sh.onlyUplinks||n.uplink);for(const n of list){const kbps=(n.tx_mbit||0)*1000;const name=CONFIG.names[n.id]||n.name||n.id;const off=n.uplink&&n.state==="aus";const sub=[n.rx_mbit!=null?"↓ "+fmt(n.rx_mbit,2):"",n.uplink&&n.state!=="an"?(L["state_"+n.state]||n.state):"",n.srtt_ms!=null&&n.state!=="aus"?n.srtt_ms+" ms":""].filter(Boolean).join(" · ");rows.push(row(name,off?L.state_aus:"↑ "+fmt(n.tx_mbit,2)+" Mbit/s",off?"muted":(n.uplink?speedClass(kbps):""),sub));}
+if(sh.total&&d.uplink_tx_mbit!==undefined&&list.filter(n=>n.uplink).length>1)rows.push(row("Σ "+L.total,fmt(d.uplink_tx_mbit,2)+" Mbit/s",speedClass((d.uplink_tx_mbit||0)*1000)));fill("net",rows);}
+const hasSend=sh.send&&d.send;show("c_send",hasSend);if(hasSend){const s=d.send,rows=[];const shown=s.shown_mbit!=null?s.shown_mbit:(s.bitrate_kbps!=null?s.bitrate_kbps/1000:null);if(shown!=null)rows.push(row(L.bitrate,fmt(shown,2)+" Mbit/s",speedClass(shown*1000),s.bitrate_kbps!=null?L.set+" "+fmt(s.bitrate_kbps/1000,2):""));if(s.rtt_ms!=null)rows.push(row(L.rtt,fmt(s.rtt_ms,0)+" ms",s.rtt_ms<150?"good":s.rtt_ms<400?"middle":"bad"));if(s.buffer_ms!=null)rows.push(row(L.buffer,fmt(s.buffer_ms,0)+" ms",s.buffer_ms<1500?"":s.buffer_ms<3000?"middle":"bad",s.buf_pkts!=null?fmt(s.buf_pkts,0)+" "+L.packets:""));if(s.loss_pct!=null||s.loss_total!=null)rows.push(row(L.loss,s.loss_total!=null?fmt(s.loss_total,0):fmt(s.loss_pct,2)+" %",s.loss_pct==null?"":s.loss_pct<0.5?"good":s.loss_pct<2?"middle":"bad",s.loss_total!=null&&s.loss_pct!=null?fmt(s.loss_pct,2)+" %":""));if(s.fps!=null)rows.push(row(L.encoder,fmt(s.fps),""));fill("send",rows);show("c_send",rows.length>0);}
+const hasCam=sh.cams&&Array.isArray(d.cameras);show("c_cam",hasCam);if(hasCam){$("s_cam").textContent=L.cameras;const rows=d.cameras.map(c=>{const cls=c.parked?"muted":c.state==="live"?"good":c.state==="offline"?"bad":"muted";const parts=[];if(c.state==="live"){if(c.fps!=null)parts.push(fmt(c.fps)+" "+L.fps);if(c.mbit!=null)parts.push(fmt(c.mbit,1)+" Mbit/s");}
+if(c.battery!=null)parts.push((c.charging?"⚡":"")+c.battery+" %");return row((c.main?"★ ":"")+(c.name||"?"),c.parked?L.off:c.state==="live"?"●":"○",cls,parts.join(" · "));});fill("cams",rows.length?rows:[row(L.noCameras,"","muted")]);}
+const hasSys=(sh.sys&&d.cpu)||(sh.temp&&d.temp);show("c_sys",!!hasSys);if(hasSys){$("s_sys").textContent=L.system;const items=[];if(sh.sys&&d.cpu){items.push([row(L.cpu,fmt(d.cpu.avg,0)+" %",loadClass(d.cpu.avg||0),d.cpu.max!=null?"max "+fmt(d.cpu.max,0)+" %":""),d.cpu.avg,loadClass(d.cpu.avg||0)]);if(d.cpu.mem_used_pct!=null)items.push([row(L.memory,fmt(d.cpu.mem_used_pct,0)+" %",loadClass(d.cpu.mem_used_pct),d.cpu.mem_avail_mb!=null?L.free+" "+fmt(d.cpu.mem_avail_mb,0)+" MB":""),d.cpu.mem_used_pct,loadClass(d.cpu.mem_used_pct)]);}
+if(sh.temp&&d.temp&&d.temp.max_c!=null)items.push([row(L.temperature,fmt(d.temp.max_c,0)+" °C",tempClass(d.temp.max_c),d.temp.fan_pct!=null?L.fan+" "+fmt(d.temp.fan_pct,0)+" %":""),null]);fill("sys",rowsWithBars(items));}
+const zones=sh.temp&&sh.zones&&d.temp&&Array.isArray(d.temp.zones)?d.temp.zones:[];show("c_temps",zones.length>0);if(zones.length){$("s_temps").textContent=L.temps;fill("temps",zones.map(z=>row(z.name,fmt(z.c,1)+" °C",z.c==null?"":tempClass(z.c))));}
+const hasCores=sh.cores&&d.cores;show("c_cores",!!hasCores);if(hasCores){$("s_cores").textContent=L.cores;const items=[],c=d.cores,fr=c.freq_mhz||[];(c.load||[]).forEach((v,i)=>items.push([row(L.core+" "+i,fmt(v,0)+" %",loadClass(v||0),fr[i]?(fr[i]>=1000?fmt(fr[i]/1000,1)+" GHz":fr[i]+" MHz"):""),v,loadClass(v||0)]));if(c.gpu)items.push([row(L.gpu,c.gpu.load_pct!=null?fmt(c.gpu.load_pct,0)+" %":"–",c.gpu.load_pct!=null?loadClass(c.gpu.load_pct):"",c.gpu.mhz!=null?c.gpu.mhz+" MHz":""),c.gpu.load_pct,c.gpu.load_pct!=null?loadClass(c.gpu.load_pct):""]);fill("cores",rowsWithBars(items));}
+const hasDisk=sh.disk&&d.disk;show("c_disk",!!hasDisk);if(hasDisk){$("s_disk").textContent=L.disk;const k=d.disk;fill("disk",rowsWithBars([[row(L.used,fmt(k.used_gb,1)+" GB",loadClass(k.used_pct||0),k.used_pct!=null?fmt(k.used_pct,1)+" %":""),k.used_pct,loadClass(k.used_pct||0)],[row(L.free,fmt(k.free_gb,1)+" GB",""),null],[row(L.total,fmt(k.total_gb,1)+" GB",""),null]]));}
+const al=sh.alerts&&Array.isArray(d.alerts)?d.alerts:[];show("c_alerts",al.length>0);fill("alerts",al.map(a=>el("div","alert"+(a.level==="err"||a.level==="error"?" err":""),a.text)));}
+let ws=null,retryTimer=null,watchdog=null,fails=0,lastMsg=0,lastData=0,resumedAt=Date.now(),offlineShown=false;function setMsg(t,stale){const m=$("msg");m.textContent=t||"";m.style.display=t?"block":"none";if(!offlineShown)$("wrap").classList.toggle("stale",!!stale);}
+function offlineAfterMs(every){return 5000+1500*Math.max(1,every||1);}
+function isOffline(now,lastData,resumedAt,every){return now-Math.max(lastData,resumedAt)>offlineAfterMs(every);}
+function fmtAge(sec){return sec<90?Math.round(sec)+" s":sec<5400?Math.round(sec/60)+" min":Math.round(sec/3600)+" h";}
+function offlineWatch(){const off=!document.hidden&&isOffline(Date.now(),lastData,resumedAt,CONFIG.every);if(off!==offlineShown){offlineShown=off;$("offline").style.display=off?"block":"none";$("wrap").classList.toggle("stale",off);if(off){$("dot").className="dot off";$("headr").textContent=L.boxOffline;$("headr").className="v bad";$("offlineTitle").textContent=L.boxOffline;}
+else if(lastData)$("msg").style.display="none";}
+if(off)$("offlineSub").textContent=lastData?L.lastData.replace("{t}",fmtAge((Date.now()-lastData)/1000)):L.neverData;}
+setInterval(offlineWatch,1000);function schedule(){clearTimeout(retryTimer);const wait=Math.min(10000,1000*Math.pow(2,Math.min(fails,5)));retryTimer=setTimeout(connect,wait);}
+function disconnect(){clearInterval(watchdog);clearTimeout(retryTimer);if(ws){ws.onclose=ws.onerror=ws.onmessage=null;try{ws.close();}catch(e){}ws=null;}}
+function connect(){clearTimeout(retryTimer);if(document.hidden)return;const url=resolveUrl();if(!url){setMsg("Adresse der Box fehlt (CONFIG.url oder ?url=wss://…)",true);return;}
+disconnect();if(!offlineShown)setMsg(L.connecting,true);let opened=false;try{ws=new WebSocket(url);}catch(e){fails++;schedule();return;}
+const mine=ws;ws.onopen=()=>{opened=true;};ws.onmessage=ev=>{let d;try{d=JSON.parse(ev.data);}catch(e){return;}
+fails=0;lastMsg=lastData=Date.now();setMsg("",false);offlineWatch();render(d);};ws.onclose=()=>{if(ws!==mine)return;ws=null;clearInterval(watchdog);fails++;if(!offlineShown)setMsg(L.retrying,true);schedule();};ws.onerror=()=>{};clearInterval(watchdog);watchdog=setInterval(()=>{if(ws&&opened&&Date.now()-lastMsg>3000*CONFIG.every+4000){try{ws.close();}catch(e){}}},2000);lastMsg=Date.now();}
+document.addEventListener("visibilitychange",()=>{if(document.hidden)disconnect();else{fails=0;resumedAt=Date.now();connect();}});for(const id of["c_send","c_cam","c_sys","c_temps","c_cores","c_disk","c_alerts"])show(id,false);fill("net",[row(L.waiting,"","muted")]);connect();</script> </body> </html>
