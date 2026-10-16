@@ -101,6 +101,7 @@ PY
     cmp -s "$HERE/hdmi_daemon.py" /opt/pipbox/hdmi_daemon.py || hdmi_changed=1
     cmp -s "$HERE/install/pipbox-hdmi.service" /etc/systemd/system/pipbox-hdmi.service || hdmi_changed=1
     install -m 644 "$HERE/server.py" /opt/pipbox/server.py
+    [ -f "$HERE/twitch.py" ] && install -m 644 "$HERE/twitch.py" /opt/pipbox/twitch.py       # Twitch-Chat der Box (server.py importiert ihn); fehlt in älteren Ständen, dann entfällt er
     install -m 644 "$HERE/dji.py" /opt/pipbox/dji.py
     install -m 644 "$HERE/dji_daemon.py" /opt/pipbox/dji_daemon.py
     install -m 644 "$HERE/phone_battery.py" /opt/pipbox/phone_battery.py
@@ -185,6 +186,7 @@ PY
     install -m 644 "$HERE/web/login.html" /opt/pipbox/web/login.html
     install -m 644 "$HERE/web/statistik.html" /opt/pipbox/web/statistik.html      # Seite der öffentlichen Statistik (der Statistik-Server liefert sie aus)
     install -m 644 "$HERE/web/i18n.js" /opt/pipbox/web/i18n.js
+    for f in chat.js chat.css; do [ -f "$HERE/web/$f" ] && install -m 644 "$HERE/web/$f" "/opt/pipbox/web/$f"; done       # Chat der Oberfläche (index.html lädt sie)
     install -d /opt/pipbox/web/i18n
     rm -f /opt/pipbox/web/i18n/*.json
     for f in "$HERE"/web/i18n/*.json; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/i18n/$(basename "$f")"; done
