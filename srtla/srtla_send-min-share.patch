@@ -1,0 +1,73 @@
+--- a/srtla_send.c
++++ b/srtla_send.c
+@@ -76,6 +76,7 @@
+   uint64_t ka_sent_ms;
+   unsigned long sent_total;
+   unsigned long sent_prev;
++  unsigned long share_cnt;  /* Pakete im gleitenden Fenster fuer den Mindestanteil */
+ } conn_t;
+ 
+ /* Ein Weg, dessen Laufzeit mehr als LAT_MARGIN_MS (mindestens) ueber der des besten liegt, bekommt keine Pakete,
+@@ -85,6 +86,15 @@
+ static int lat_margin_ms = 20;
+ #define LAT_FRESH_MS 5000
+ 
++/* Mindestanteil (IRL4YOU): Jeder geeignete Weg (innerhalb des Laufzeitabstands, mit freiem Fenster) bekommt mindestens
++   MIN_SHARE_PCT Prozent der Pakete, damit auch der schwaechere Weg "warm" bleibt und bei Ausfall des besten nicht erst
++   anlaufen muss. Gemessen wird in einem gleitenden Fenster von etwa SHARE_EPOCH Paketen. Ein Weg ausserhalb des
++   Laufzeitabstands oder ohne freies Fenster bekommt keinen Mindestanteil. 0 = aus (Standard). */
++static int min_share_pct = 0;     /* nur bei Verteilung "alle" (Umgebungsvariable SRTLA_MIN_SHARE_PCT, vom Sendedienst gesetzt) */
++#define SHARE_EPOCH 1000
++#define SHARE_MIN_TOTAL 100
++static unsigned long share_total = 0;
++
+ char *source_ip_file = NULL;
+ 
+ int do_update_conns = 0;
+@@ -270,6 +280,7 @@
+   time_t t;
+   assert(get_seconds(&t) == 0);
+ 
++  conn_t *low_c = NULL;     /* geeigneter Weg mit dem kleinsten Anteil */
+   for (conn_t *c = conns; c != NULL; c = c->next) {
+     /* If we have some very slow links, we may be better off ignoring them
+        However, we'd probably need to periodically re-probe them, otherwise
+@@ -293,8 +304,15 @@
+       min_c = c;
+       max_score = score;
+     }
++    if (c->in_flight_pkts < c->window && (!low_c || c->share_cnt < low_c->share_cnt)) low_c = c;
+   }
+ 
++  /* Mindestanteil: hat ein geeigneter Weg weniger als MIN_SHARE_PCT der letzten Pakete bekommen, geht dieses Paket dorthin */
++  if (min_c && min_share_pct > 0 && low_c && low_c != min_c && share_total >= SHARE_MIN_TOTAL &&
++      low_c->share_cnt * 100 < share_total * (unsigned long)min_share_pct) {
++    min_c = low_c;
++  }
++
+   if (!min_c && lat_pref) {
+     /* nichts geeignet (z. B. alle noch ohne Messung): wie das Original ueber alle aktiven Wege waehlen */
+     for (conn_t *c = conns; c != NULL; c = c->next) {
+@@ -310,6 +328,14 @@
+   if (min_c) {
+     min_c->last_sent = t;
+     min_c->sent_total++;
++    min_c->share_cnt++;
++    if (++share_total >= SHARE_EPOCH) {          /* gleitendes Fenster: alle Zaehler halbieren */
++      share_total = 0;
++      for (conn_t *c = conns; c != NULL; c = c->next) {
++        c->share_cnt /= 2;
++        share_total += c->share_cnt;
++      }
++    }
+   }
+ 
+   return min_c;
+@@ -837,6 +863,7 @@
+   if (argc != 5) exit_help();
+   { const char *e = getenv("SRTLA_LAT_PREF"); if (e && e[0] == '0') lat_pref = 0; }
+   { const char *e = getenv("SRTLA_LAT_MARGIN_MS"); if (e && atoi(e) > 0) lat_margin_ms = atoi(e); }
++  { const char *e = getenv("SRTLA_MIN_SHARE_PCT"); if (e && e[0] >= '0' && e[0] <= '9' && atoi(e) <= 40) min_share_pct = atoi(e); }
+ 
+   source_ip_file = ARG_IPS_FILE;
+   int conn_count = setup_conns(source_ip_file);
