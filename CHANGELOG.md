@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.57
+- Die Verzögerung der Kameras verschiebt jetzt wirklich Bild und Ton (bis 3000 ms, vorher ohne Wirkung, höchstens 750). Nötig: belacoder wird beim Update neu gebaut.
+
 ## 1.0.56
 - Behoben: Bei starkem Bitratenabfall konnten Bild und Ton aussetzen. Der Regler reagiert jetzt früher (Meldung von Bittersweet, Issue #1).
 - Behoben: Die DJI Osmo Action 6 riss etwa jede Minute ab und war nie als sendend erkannt. Die Kamera hängt dem Streamnamen ein Leerzeichen an, das wird jetzt abgefangen.
