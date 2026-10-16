@@ -360,6 +360,18 @@ def rtmp_publishing(key, stat_url=None):
     return bool(m and "<publishing/>" in m.group(0))
 
 
+def rtmp_video_kbps(key, stat_url=None):
+    """Videobitrate in kbit/s, mit der gerade zu rtmp://<Box>/publish/<key> gesendet wird (nginx-rtmp-Statistik). None, wenn sie nicht lesbar ist oder der Stream fehlt."""
+    try:
+        with urllib.request.urlopen(stat_url or STAT_URL, timeout=2) as r:
+            body = r.read().decode("utf-8", "replace")
+    except Exception:
+        return None
+    m = re.search(r"<stream>\s*<name>\s*%s\s*</name>[\s\S]*?</stream>" % re.escape(key), body)
+    v = re.search(r"<bw_video>(\d+)</bw_video>", m.group(0)) if m else None
+    return int(v.group(1)) // 1000 if v else None
+
+
 def preferred_adapter():
     """hciN des Adapters für Suche und Verbindung: ein Stick zuerst, das eingebaute Modul zuletzt. None = BlueZ-Standard."""
     try:
@@ -454,6 +466,7 @@ class Camera:
     SEARCH_SECONDS = 15
     STREAM_CHECK_SECONDS = 5    # so oft wird geprüft, ob der Stream noch ankommt
     STREAM_LOST_SECONDS = 30    # so lange darf er fehlen, bevor die Sitzung neu beginnt
+    NO_VIDEO_SECONDS = 25       # so lange darf der Stream ohne Bild (nur Ton, Videobitrate unter einem Zehntel der eingestellten) ankommen, bevor die Sitzung neu beginnt
     CONNECT_SETTLE = 1.0     # so lange bleibt das Verbinden nach dem Aufbau noch gesperrt (dem Funkchip einen Moment geben)
 
     @property
@@ -871,6 +884,7 @@ class Camera:
             last_ok = time.time()
             last_check = 0
             bt_lost = False
+            low_since = None
             while not self.stop_requested:
                 if bt_lost:
                     await asyncio.sleep(1)          # das Signal "getrennt" ist schon gesetzt: darauf zu warten würde sofort zurückkehren (Dauerschleife)
@@ -896,6 +910,15 @@ class Camera:
                             raise CameraError("Die Bluetooth-Verbindung ging verloren")
                     elif publishing is None or publishing:
                         last_ok = now
+                        if publishing:
+                            # Die Action 5 Pro lieferte nur noch Ton und ein Rinnsal Video (0,2 statt 10 Mbit/s), der Stream "kam an" und blieb so stehen, bis jemand neu verband
+                            kb = await loop.run_in_executor(None, rtmp_video_kbps, key, self.daemon.stat_url)
+                            if kb is not None and kb < max(300, int(cfg.get("bitrate", 6000)) // 10):
+                                low_since = low_since or now
+                                if now - low_since > self.NO_VIDEO_SECONDS:
+                                    raise CameraError("Der Stream liefert kein Bild (nur Ton)")
+                            else:
+                                low_since = None
                         if bt_lost:
                             if time.time() - self.last_rx < 20:
                                 self.set_state("streaming", "Der Stream läuft; die Steuerung per Bluetooth ist beendet, Statusmeldungen (Akku) kommen weiter")

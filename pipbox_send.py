@@ -725,7 +725,7 @@ class Sender:
 
     def run(self):
         env = dict(os.environ, GST_PLUGIN_PATH=PLUGIN_DIR)
-        env.setdefault("SB_CTL", "B")                    # Regler: Schwellen höchstens 1000 ms der SRT-Latenz (bei 4000 ms wartete er bis 1333 ms Laufzeit, der Sendepuffer lief über, SRT verwarf Bild und Ton)
+        env.setdefault("SB_CTL", "D")                    # Regler: bei starkem Stau (Sendepuffer über 600 ms) die Bitrate halbieren statt um 10 % senken (Issue #1: Aussetzer bei plötzlichem Einbruch der Verbindung)
         env["BELACODER_STATS_FILE"] = BC_STATS            # Kennzahlen für "Details" im Status (belacoder-stats.patch), sonst nichts
         if self.live:
             env["GST_MPP_NO_RGA"] = "1"                   # der Encoder bekommt nur Bilder aus dem Compositor (Systemspeicher): Software-Kopie statt RGA über virtuelle Adresse

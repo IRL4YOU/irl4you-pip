@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.61
+- Behoben: Bei plötzlichem Einbruch der Verbindung sank die Bitrate zu langsam, SRT verwarf Pakete (Bild-Artefakte, Tonaussetzer, Issue #1). Der Regler halbiert jetzt bei starkem Stau; im Test 60 % weniger verworfene Pakete. Der belacoder wird beim Update neu gebaut.
+- Behoben: Eine DJI-Kamera, die nur noch Ton und kaum Video liefert (Action 5 Pro), wird nach 25 s neu verbunden.
+
 ## 1.0.60
 - Die Adresse der öffentlichen Statistik ändert sich nie mehr von selbst: Der Schlüssel wird zusätzlich in `stats-token` gesichert. Ausschalten und erneutes Einschalten behält ihn; sind die Einstellungen verloren oder kaputt, wird er aus der Kopie geholt. Einen neuen Schlüssel gibt es nur über „Neuen Schlüssel erzeugen“.
 
