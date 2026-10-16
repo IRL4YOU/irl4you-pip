@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.60
+- Die Adresse der öffentlichen Statistik ändert sich nie mehr von selbst: Der Schlüssel wird zusätzlich in `stats-token` gesichert. Ausschalten und erneutes Einschalten behält ihn; sind die Einstellungen verloren oder kaputt, wird er aus der Kopie geholt. Einen neuen Schlüssel gibt es nur über „Neuen Schlüssel erzeugen“.
+
 ## 1.0.59
 - Bildrate von Handys schon vor dem Livegang: Verbundene Kameras ohne Bildrate in den Stream-Daten zeigen sie jetzt auch, wenn die Sendung noch nicht läuft. Die Box liest den Stream etwa 6 Sekunden vom eigenen nginx und zählt nur Bilder (kein Dekodieren, höchstens eine Messung gleichzeitig). Werte nahe 24, 25, 30, 50 oder 60 werden gerundet. Gilt für die Statusseite und die Statistik.
 

@@ -3343,6 +3343,7 @@ class StatsShare:
 
     def __init__(self, state_dir, demo=False):
         self.path = os.path.join(state_dir, "stats-share.json")
+        self.token_path = os.path.join(state_dir, "stats-token")      # Zweitkopie des Schlüssels: Geht stats-share.json verloren oder ist kaputt, bleibt die Adresse trotzdem dieselbe
         self.demo = demo
         self.lock = threading.Lock()
         self.build_lock = threading.Lock()
@@ -3360,8 +3361,31 @@ class StatsShare:
                 self.data["groups"] = {k: g.get(k) is not False for k in self.GROUPS}
         except (OSError, ValueError):
             pass
+        if not self.data["token"]:
+            try:
+                with open(self.token_path) as f:
+                    tok = f.read().strip()
+                if re.match(r"^[A-Za-z0-9_-]{20,64}$", tok):
+                    self.data["token"] = tok
+            except OSError:
+                pass
+        elif not os.path.exists(self.token_path):
+            try:
+                self._save_token()                                          # Zweitkopie nachholen (Einstellung stammt aus einer älteren Version)
+            except OSError:
+                pass
+
+    def _save_token(self):
+        if not self.data["token"]:
+            return
+        tmp = self.token_path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(self.data["token"])
+        os.replace(tmp, self.token_path)
 
     def _save(self):
+        self._save_token()
         tmp = self.path + ".tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
