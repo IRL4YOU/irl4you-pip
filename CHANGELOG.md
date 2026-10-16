@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.63
+- Der Chat ist wieder wie vor 1.0.62 (Lesen, Schreiben, Moderation, Anmeldung, Ereignisse, Akku- und Systemwarnungen im Chat), aber sein Code steht in eigenen Dateien: `twitch.py`, `web/chat.js`, `web/chat.css`.
+- Bleibt aus 1.0.62: NPU-Auslastung und Neuübertragungen entfernt, „x GiB frei“, minimierte Oberfläche.
+
 ## 1.0.62
 - Der Twitch-Chat ist ausgebaut: Die Karte Chat bettet jetzt das Chat-Widget von Twitch ein (Kanalname über ⚙, nur im Browser gespeichert). Anmeldung, Moderation, Ereignisse, Akku-Warnung und Systemwarnungen im Chat entfallen; alte Zugangsdaten werden gelöscht.
 - Entfernt: NPU-Auslastung und Neuübertragungen aus den Details. Arbeitsspeicher steht als „x GiB frei“.

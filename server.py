@@ -40,6 +40,8 @@ import controller_keys            # Tasten gekoppelter Bluetooth-Controller und 
 import dji                         # Namen von USB-Sticks (WLAN, Bluetooth) aus /sys, liegt neben dieser Datei
 import hdmi_daemon                 # Prüfung der HDMI-Einstellungen (dieselbe wie im HDMI-Dienst), liegt neben dieser Datei
 import pipbox_live                 # Engine "alle Kameras immer bereit" mit Compositor und dynamischen Zweigen (Technik von streamingbox), liegt neben dieser Datei
+from twitch import (ChatPaths, HelixChat, ModSessions, SysAlerts, ThirdPartyEmotes, TwitchAccounts, TwitchBotLogin, TwitchChat, TwitchEvents,   # noqa: E402,F401
+                    TwitchLogin, TwitchMod, TwitchModLogin, TwitchNotifier, TwitchReader, TwitchSender, TwitchStore, WebSocketLite, _IrcLines, _ascii_digits)
 try:
     import pipbox_preview          # Vorschau des Sendebilds (Issue #52), liegt neben dieser Datei; fehlt sie (halb eingespieltes Update), gibt es nur keine Vorschau
 except ImportError:
@@ -5510,26 +5512,6 @@ class HdmiService:
             pass
 
 
-OLD_TWITCH_FILES = ("twitch.json", "twitch-login.json", "twitch-bot-login.json", "sysalerts.json")
-
-
-def drop_old_twitch_files(state_dir):
-    """Löscht, was frühere Versionen für den eingebauten Twitch-Chat im Zustandsordner anlegten (Anmeldungen mit Tokens, Akku-Warnung, Systemwarnungen, Moderatoren)."""
-    try:
-        names = os.listdir(state_dir)
-    except OSError:
-        return 0
-    gone = 0
-    for n in names:
-        if n in OLD_TWITCH_FILES or (n.startswith("twitch-mod-") and n.endswith(".json")):
-            try:
-                os.remove(os.path.join(state_dir, n))
-                gone += 1
-            except OSError:
-                pass
-    return gone
-
-
 class Vault:
     """Einstellungen mit einem Passwort verschlüsseln und prüfen (Issue #20). Nur die Standardbibliothek:
       * Schlüssel aus dem Passwort: PBKDF2-HMAC-SHA256, 600000 Runden, 16 Byte Salz, 64 Byte Ergebnis (32 für AES, 32 für die Prüfsumme).
@@ -5670,7 +5652,7 @@ SETTINGS_FORMAT = "irl4you-box-einstellungen"
 SETTINGS_VERSION = 1
 SETTINGS_SECTIONS = (("cameras", "Kameras"), ("pipeline", "Bildaufbau"), ("srtla", "SRTLA-Server und Sendeeinstellungen"),
                      ("autostart", "Automatischer Start"), ("names", "Namen (Verbindungen, WLAN- und Bluetooth-Sticks)"),
-                     ("dji", "DJI-Kameras (Einstellungen)"), ("hdmi", "HDMI-Eingang (Einstellungen)"),
+                     ("dji", "DJI-Kameras (Einstellungen)"), ("hdmi", "HDMI-Eingang (Einstellungen)"), ("twitch", "Akku-Warnung im Twitch-Chat (Einstellungen)"),
                      ("camnet", "Netzwerk für Kameras (Standard)"),
                      ("hotspots", "Hotspots"), ("wifi", "Gespeicherte WLAN-Netze"))
 IFACE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,15}$")
@@ -5680,8 +5662,9 @@ class SettingsTransfer:
     """Einstellungen in eine Datei sichern und wieder einspielen (Issue #20), zum Beispiel nach dem Neu-Aufspielen der SD-Karte.
 
     Gesichert werden Kameras, Bildaufbau, SRTLA-Server und Sendeeinstellungen, automatischer Start, Namen der Sticks, DJI-Kameras (ihre Einstellungen, nicht die
-    Bluetooth-Kopplung), der HDMI-Eingang, das Netzwerk der Kameras, die Optionen der Oberfläche (Reihenfolge
-    und Ausblenden der Menüs), Hotspots und die gespeicherten WLAN-Netze. Nie dabei: das Passwort dieser Oberfläche, SSH, Schlüssel, die Anmeldung der Fernfreigabe.
+    Bluetooth-Kopplung), der HDMI-Eingang, die Akku-Warnung im Twitch-Chat (ohne Token und Anmeldung), das Netzwerk der Kameras, die Optionen der Oberfläche (Reihenfolge
+    und Ausblenden der Menüs), Hotspots und die gespeicherten WLAN-Netze. Nie dabei: das Passwort dieser Oberfläche, SSH, Schlüssel, die Anmeldung der Fernfreigabe,
+    Token und Anmeldung bei Twitch.
     Eine Datei mit Passwörtern und Zugangsdaten wird immer mit einem Passwort verschlüsselt (Vault). Beim Einspielen wird jeder Teil streng geprüft; die
     Prüfung der einzelnen Speicher (Kameras, Bildaufbau, SRTLA, Hotspots, WLAN-Helfer) gilt dabei wie bei der Eingabe von Hand. Eingespielt wird nur, wenn
     nicht gesendet wird, und der Stand davor wird gesichert (Rückgängig)."""
@@ -5692,7 +5675,7 @@ class SettingsTransfer:
         self.names, self.djisvc, self.wifi, self.send, self.demo = names, djisvc, wifi, send, demo
         self.progress = {"state": "idle"}                  # für die Fortschrittsanzeige beim Einspielen (GET /api/settings/progress)
         self.iface_map = {}                                # {Name in der Sicherung: Name auf dieser Box} der letzten Prüfung (gleiche MAC, anderer Name)
-        self.hdmi = self.netchoice = None          # werden nach dem Start gesetzt (entstehen später oder fehlen in Tests)
+        self.hdmi = self.twitch = self.netchoice = None          # werden nach dem Start gesetzt (entstehen später oder fehlen in Tests)
         self.backup_dir = os.path.join(state_dir, "backup")
         self.backup_path = os.path.join(self.backup_dir, "vor-einspielen.json")
         self.version = (read(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"), "") or "").strip()
@@ -5739,6 +5722,11 @@ class SettingsTransfer:
                 st = {}
             if st.get("service"):
                 doc["hdmi"] = {k: st["settings"][k] for k in HdmiService.ALLOWED}
+        if self.twitch is not None:
+            with self.twitch.lock:                                           # ohne Token und Anmeldung: beides bleibt auf der Box
+                t = self.twitch.data
+                doc["twitch"] = {"enabled": bool(t["enabled"]), "channel": t["channel"], "login": t["login"], "threshold": t["threshold"],
+                                 "message": t["message"], "only_live": bool(t["only_live"])}
         if self.netchoice is not None and self.netchoice.iface:
             doc["camnet"] = {"iface": self.netchoice.iface}
         if wifi_data is not None:
@@ -5946,6 +5934,17 @@ class SettingsTransfer:
         out = hdmi_daemon.clean_settings(want, None)                         # dieselbe Prüfung wie im Dienst (wirft ValueError mit kurzem Text)
         return {k: out[k] for k in HdmiService.ALLOWED}, []
 
+    def _clean_twitch(self, raw):
+        if not isinstance(raw, dict):
+            raise ValueError("Die Einstellungen der Akku-Warnung sind ungültig")
+        for k in ("enabled", "only_live"):
+            if not isinstance(raw.get(k), bool):
+                raise ValueError("Die Einstellungen der Akku-Warnung sind ungültig")
+        out = {"enabled": raw["enabled"], "only_live": raw["only_live"],
+               "channel": TwitchStore._name(raw.get("channel", ""), TwitchStore.ERR_CHANNEL), "login": TwitchStore._name(raw.get("login", ""), TwitchStore.ERR_LOGIN),
+               "threshold": TwitchStore._threshold(raw.get("threshold")), "message": TwitchStore._message(raw.get("message"))}
+        return out, ["Token und Twitch-Anmeldung werden nie mitgenommen: bitte hier neu anmelden"]
+
     def _clean_camnet(self, raw):
         if not isinstance(raw, dict) or not isinstance(raw.get("iface"), str) or not IFACE_NAME_RE.match(raw["iface"]):
             raise ValueError("Das Netzwerk für Kameras ist ungültig")
@@ -6082,6 +6081,9 @@ class SettingsTransfer:
                     count = len(data)
                 elif sid == "hdmi":
                     data, notes = self._clean_hdmi(raw)
+                    count = 1
+                elif sid == "twitch":
+                    data, notes = self._clean_twitch(raw)
                     count = 1
                 elif sid == "camnet":
                     data, notes = self._clean_camnet(raw)
@@ -6251,6 +6253,18 @@ class SettingsTransfer:
             raise RuntimeError("Der HDMI-Dienst ist hier nicht verfügbar")
         self.hdmi.set(dict(d))
         return "HDMI-Einstellungen eingespielt"
+
+    def _apply_twitch(self, d):
+        if self.twitch is None:
+            raise RuntimeError("Die Akku-Warnung ist hier nicht verfügbar")
+        self.twitch.set(dict({k: d[k] for k in ("channel", "login", "threshold", "message", "only_live")}, enabled=False))      # erst die Werte, dann ggf. einschalten
+        if not d["enabled"]:
+            return "Akku-Warnung: Einstellungen eingespielt (aus)"
+        try:
+            self.twitch.set({"enabled": True})
+        except ValueError:
+            return "Akku-Warnung: eingespielt, bleibt aber ausgeschaltet (Token oder Twitch-Anmeldung fehlt auf dieser Box)"
+        return "Akku-Warnung: eingespielt (an)"
 
     def _apply_camnet(self, d):
         if self.netchoice is None:
@@ -6777,6 +6791,8 @@ def controller_action(fn, pipeline, cams, send):
 
 
 class Handler(BaseHTTPRequestHandler):
+    ERR_NO_ACCOUNT = "Zum Schreiben und Moderieren bitte in diesem Browser bei Twitch anmelden (Zuschauer oder Moderator)"
+    ERR_NOT_MOD = "Moderieren dürfen nur der Streamer und Moderatoren dieses Kanals"
     timeout = 15              # eine Verbindung, die so lange nichts sendet, wird beendet (Issue #25: halb offene Anfragen blieben ewig offen)
     BODY_SECONDS = 15.0       # so lange darf der Inhalt einer Anfrage insgesamt brauchen (nicht nur je Teilstück)
     REQUEST_SECONDS = 15.0    # Gesamtfrist für Kopfzeilen und Inhalt zusammen; danach wird die Verbindung getrennt (ein Byte alle paar Sekunden hielt sie offen)
@@ -6833,6 +6849,7 @@ class Handler(BaseHTTPRequestHandler):
     pipeline = None
     send = None
     preview = None
+    twitch = None
     hdmi = None
     uiaccess = None
     statsshare = None
@@ -7132,6 +7149,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.swupdate.progress_public())
         if not self.authed():
             return self.reply(401, {"error": "nicht angemeldet"})
+        if path in ("/chat.js", "/chat.css"):                                  # Code und Aussehen des Chats stehen in eigenen Dateien (web/chat.js, web/chat.css)
+            body = read(os.path.join(WEB_DIR, path[1:]), "")
+            return self.send_bytes(200, body.encode(), "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css; charset=utf-8")
         if path == "/api/statsshare":
             return self.reply(200, self.stats_status())
         if path == "/api/statsshare/widget":
@@ -7217,6 +7237,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.uiaccess.status(self.local_ip()))
         if path == "/api/netaddr":
             return self.reply(200, self.netaddr.status())
+        if path == "/api/twitch":
+            return self.reply(200, self.twitch.status())
+        if path == "/api/sysalerts":
+            return self.reply(200, self.sysalerts.status())
+        if path == "/api/twitch/login":
+            return self.reply(200, self.twitchaccounts.status(self.headers.get("x-pb-owner", "")))
+        if path == "/api/twitch/bot":
+            return self.reply(200, self.twitchbot.status())
+        if path == "/api/chat":
+            qs = urllib.parse.parse_qs((self.path.split("?", 1) + [""])[1])
+            try:
+                since = max(0, int((qs.get("since") or ["0"])[0]))
+            except ValueError:
+                since = 0
+            out = self.chatreader.poll(since)
+            out["account"] = self.twitchaccounts.status(self.headers.get("x-pb-owner", ""))              # die Lage dieses Browsers (Streamer, Moderator oder nur Lesen)
+            out["events"] = self.chatevents.status() if getattr(self, "chatevents", None) else {"state": "aus", "types": [], "error": ""}
+            return self.reply(200, out)
         if path == "/api/hdmi":
             return self.reply(200, self.hdmi.status())
         if path == "/api/network":
@@ -7427,6 +7465,79 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, self.uiaccess.set(d.get("block_client_wifi"), self.local_ip()))
             if path == "/api/previewaccess":                                   # auch über Tailscale änderbar (Wunsch des Nutzers, Anmeldung ist ohnehin nötig): ein Streamer unterwegs schaltet es selbst ein
                 return self.reply(200, dict(self.previewaccess.set(d.get("external")), origin=self.origin()))
+            if path == "/api/twitch/login":
+                act = d.get("action")
+                key = d.get("owner") or self.headers.get("x-pb-owner", "")
+                if act == "start":
+                    if d.get("as") in ("mod", "user"):                            # eigenes Konto (Moderator oder Zuschauer): getrennt vom Konto des Streamers
+                        self.twitchsessions.start(key, mod=d.get("as") == "mod")
+                    else:                                                         # Konto des Streamers: nur das eingetragene Konto (Kanal) oder das schon angemeldete der Box
+                        name = self.twitchaccounts.streamer_name()
+                        if not name:
+                            return self.reply(400, {"error": TwitchLogin.ERR_NO_CHANNEL})
+                        claim = not (self.twitchlogin.ready() and self.twitchlogin.is_owner(key))
+                        self.twitchlogin.start(mod=d.get("mod") is True, events=d.get("events") is True, everything=d.get("all") is True, owner_key=key, claim=claim, expect=name)
+                    return self.reply(200, self.twitchaccounts.status(key))
+                if act == "cancel":
+                    s = self.twitchsessions.get(key)
+                    if s is not None and s.state == "wartet":
+                        s.cancel()
+                    h = TwitchLogin.owner_hash(key)
+                    if self.twitchlogin.is_owner(key) or (h and (self.twitchlogin.pending or {}).get("owner") == h):
+                        self.twitchlogin.cancel()
+                    return self.reply(200, self.twitchaccounts.status(key))
+                if act == "mod" and isinstance(d.get("on"), bool):
+                    role, acct = self.twitchaccounts.pick(key)
+                    if role == "none":
+                        return self.reply(400, {"error": "Zuerst in diesem Browser bei Twitch anmelden"})
+                    acct.set_mod(d["on"])
+                    return self.reply(200, self.twitchaccounts.status(key))
+                return self.reply(400, {"error": "Ungültige Anfrage"})
+            if path == "/api/twitch/logout":
+                key = d.get("owner") or self.headers.get("x-pb-owner", "")
+                role, acct = self.twitchaccounts.pick(key)
+                if role in ("mod", "user"):
+                    self.twitchsessions.logout(key)                               # nur die eigene Anmeldung; das Konto des Streamers bleibt
+                elif role == "owner":
+                    self.twitchlogin.logout()
+                else:
+                    return self.reply(400, {"error": "In diesem Browser ist niemand angemeldet"})
+                return self.reply(200, self.twitchaccounts.status(key))
+            if path == "/api/twitch/bot":
+                act = d.get("action")
+                if act == "start":
+                    return self.reply(200, self.twitchbot.start())
+                if act == "cancel":
+                    return self.reply(200, self.twitchbot.cancel())
+                if act == "logout":
+                    r = self.twitchbot.logout()
+                    with self.twitch.lock:
+                        self.twitch.tries.clear()                              # Versuche neu starten; ohne Bot gilt wieder das Hauptkonto oder der Token von Hand
+                    return self.reply(200, r)
+                return self.reply(400, {"error": "Ungültige Anfrage"})
+            if path == "/api/chat/mod":
+                key = self.headers.get("x-pb-owner", "")
+                role, acct = self.twitchaccounts.pick(key)
+                if role == "none":
+                    return self.reply(400, {"error": self.ERR_NO_ACCOUNT})
+                if role == "user":
+                    return self.reply(400, {"error": self.ERR_NOT_MOD})
+                return self.reply(200, (self.chatmod if role == "owner" else self.chatmod.view(acct)).do(d, key))
+            if path == "/api/chat/send":
+                key = self.headers.get("x-pb-owner", "")
+                role, acct = self.twitchaccounts.pick(key)
+                if role == "none":
+                    return self.reply(400, {"error": self.ERR_NO_ACCOUNT})
+                if role == "owner":
+                    return self.reply(200, self.chatsender.say(d.get("text"), key))
+                mv = self.chatmod.view(acct)
+                return self.reply(200, self.chatsender.say_as(mv, HelixChat(acct, mv), d.get("text"), key, commands=role == "mod"))
+            if path == "/api/twitch":
+                return self.reply(200, self.twitch.save(d))
+            if path == "/api/sysalerts":
+                return self.reply(200, self.sysalerts.save(d))
+            if path == "/api/twitch/test":
+                return self.reply(200, self.twitch.test())
             if path == "/api/hdmi":
                 return self.reply(200, self.hdmi.set(d))
             if path == "/api/update":
@@ -7542,8 +7653,12 @@ def main():
     Handler.ckeys.start()                                   # liest die Tasten gekoppelter Controller (Menü "Controller-Tasten")
     Handler.transfer = SettingsTransfer(args.state, Handler.cams, Handler.pipeline, Handler.srtla, Handler.autostart, Handler.names, Handler.djisvc,
                                         Handler.wifi, Handler.send, args.demo)
+    def chat_sources():                                           # Quelladressen der gewählten Sendewege, in der Reihenfolge der Einstellung
+        ups = list(((Handler.srtla.data or {}).get("settings") or {}).get("uplinks") or [])
+        ips = {x["iface"]: x["ip"] for x in iface_ips() if x.get("ip")}
+        return [ips[u] for u in ups if u in ips]
+    Handler.chatpaths = ChatPaths(chat_sources)
     Handler.transfer.netchoice = Handler.netchoice
-    drop_old_twitch_files(args.state)                                 # Twitch ist ausgebaut: die alten Zugangsdaten (Tokens) nicht auf der Karte liegen lassen
     if not args.demo:
         mem = IfaceMemory(os.path.join(args.state, "iface-macs.json"))
         try:
@@ -7551,8 +7666,30 @@ def main():
         except Exception as e:
             print("iface_macs:", type(e).__name__, flush=True)
         threading.Thread(target=mem.run, args=(Handler.srtla, Handler.netchoice, Handler.cams, Handler.wifi, Handler.names), daemon=True).start()
+    Handler.twitch = TwitchNotifier(TwitchStore(os.path.join(args.state, "twitch.json")), Handler.djisvc, Handler.cams, Handler.send, chat=TwitchChat(paths=Handler.chatpaths), demo=args.demo)
+    Handler.sysalerts = SysAlerts(os.path.join(args.state, "sysalerts.json"), Handler.twitch, Handler.sampler, demo=args.demo)       # Systemwarnungen im Twitch-Chat (gleicher Bot wie die Akku-Warnung)
+    Handler.twitchlogin = TwitchLogin(os.path.join(args.state, "twitch-login.json"), demo=args.demo, paths=Handler.chatpaths)
+    Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
+    Handler.twitchbot = TwitchBotLogin(os.path.join(args.state, "twitch-bot-login.json"), demo=args.demo, paths=Handler.chatpaths)
+    Handler.twitchsessions = ModSessions(args.state, demo=args.demo, paths=Handler.chatpaths)         # eigene Anmeldungen der Moderatoren, je Browser
+    Handler.twitchaccounts = TwitchAccounts(Handler.twitchlogin, Handler.twitchsessions, store=Handler.twitch.store)             # (check folgt, sobald chatmod da ist)
+    Handler.twitch.store.bot = Handler.twitchbot                                      # angemeldetes Bot-Konto schreibt die Akku-Meldung (nur sie)
+    if not args.demo:
+        threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
+        threading.Thread(target=Handler.twitchbot.keep, daemon=True).start()
+    Handler.chatreader = TwitchReader(Handler.twitch.store, demo=args.demo, paths=Handler.chatpaths)
+    Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
+    Handler.chathelix = HelixChat(Handler.twitchlogin, Handler.chatmod)
+    Handler.chatsender = TwitchSender(Handler.twitch.store, chat=TwitchChat(paths=Handler.chatpaths), demo_reader=Handler.chatreader if args.demo else None, mod=Handler.chatmod, helix=Handler.chathelix)
+    Handler.twitchaccounts.check = Handler.chatmod.is_moderator                                          # ob ein angemeldeter Moderator im Kanal wirklich einer ist
+    Handler.chatevents = TwitchEvents(Handler.twitch.store, Handler.twitchlogin, Handler.chatmod, Handler.chatreader, paths=Handler.chatpaths)
+    if not args.demo:
+        Handler.chatreader.events = Handler.chatevents       # liest den Kanal der Twitch-Karte (dieselben Einstellungen)
     Handler.hdmi = HdmiService(args.state, Handler.cams, args.demo)
-    Handler.transfer.hdmi = Handler.hdmi
+    Handler.transfer.hdmi, Handler.transfer.twitch = Handler.hdmi, Handler.twitch.store
+    if not args.demo:
+        threading.Thread(target=Handler.twitch.run, daemon=True).start()
+        threading.Thread(target=Handler.sysalerts.run, daemon=True).start()
 
     def watcher():
         while True:
