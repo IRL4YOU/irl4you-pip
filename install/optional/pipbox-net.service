@@ -1,0 +1,15 @@
+[Unit]
+Description=IRL4YOU BOX feste Zweitadresse fuer Kameras auf eth1
+After=network.target
+
+[Service]
+# Haelt die Adresse 192.168.80.50 auf eth1, auch wenn sich der USB-Router neu anmeldet und die
+# Box per DHCP eine andere Adresse bekommt. Eigenes Label (eth1:pbox): ein DHCP-Client, der
+# seine Adresse tauscht, laesst sie unberuehrt.
+ExecStart=/bin/sh -c 'while true; do if ip link show eth1 >/dev/null 2>&1; then ip -4 -o addr show dev eth1 | grep -q " 192.168.80.50/" || ip addr add 192.168.80.50/24 dev eth1 label eth1:pbox 2>/dev/null; fi; sleep 3; done'
+ExecStopPost=-/bin/sh -c 'ip addr del 192.168.80.50/24 dev eth1 2>/dev/null; true'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
