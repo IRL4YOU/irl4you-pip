@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.66
+- DJI Osmo Pocket 4 Pro wird erkannt und wie die Pocket 4 angesteuert (nach Moblin, ungetestet an der Kamera).
+
 ## 1.0.65
 - Neues Hauptmenü „Streamerbot Deck“ (Wunsch von Bittersweet): Die Karte zeigt ein Streamer.bot-Deck in einem Rahmen. Adresse (nur `https://`) und Größe in Pixeln (Breite × Höhe, getrennt für Desktop und Mobil) werden über ⚙ eingetragen und auf der Box gespeichert (`deck.json`), sie gelten für alle Geräte und gleichen sich von selbst ab. Ist die Karte schmaler als die eingestellte Breite, wird das Deck verkleinert. Wie jedes Menü lässt sich die Karte ein- und ausblenden und verschieben. Die Höhe beträgt mindestens 320 Pixel, damit das Auswahlfeld der Seiten Platz hat.
 

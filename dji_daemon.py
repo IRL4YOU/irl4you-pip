@@ -174,6 +174,9 @@ MODELS = {
     0x0020: ("Osmo Pocket 3", "pocket3"),
     0x0021: ("Osmo Pocket 4", "pocket4"),
 }
+# Osmo Pocket 4 Pro (nach Moblin): Modell-ID 0x0000, erkennbar an der Produktkennung 0xDA 0x00 an Stelle 10 und 11 der Herstellerdaten (nach der Hersteller-ID); Ablauf wie Pocket 4
+POCKET4_PRO = ("Osmo Pocket 4 Pro", "pocket4")
+POCKET4_PRO_TYPE = b"\xda\x00"
 NEW_PROTOCOL = ("action5", "action6", "pocket4")  # brauchen nach dem Start die Bestätigungsnachricht
 CONFIGURE_KINDS = {"action4": 0x08, "action6": 0x08, "action5": 0x1A}
 ACTION2_NAME = "Osmo Action 2"                     # Fernsteuerung klappt laut Moblin nicht
@@ -212,6 +215,8 @@ def model_from_manufacturer_data(manufacturer_data):
     for cid, payload in manufacturer_data.items():
         if cid in DJI_COMPANY_IDS:
             mid = int.from_bytes(payload[0:2], "little") if len(payload) >= 2 else -1
+            if mid == 0 and len(payload) >= 12 and bytes(payload[10:12]) == POCKET4_PRO_TYPE:
+                return (mid,) + POCKET4_PRO
             name, kind = MODELS.get(mid, ("DJI-Gerät (unbekanntes Modell)", "unknown"))
             return mid, name, kind
     return None
