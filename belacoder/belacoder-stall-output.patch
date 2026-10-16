@@ -1,0 +1,61 @@
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -69,6 +69,15 @@
+ #endif
+ 
+ static GstPipeline *gst_pipeline = NULL;
++
++// IRL4YOU: stall watchdog, see README in this folder.
++// The position of a GstPipeline is the MAXIMUM over the positions of ALL its sinks. With picture-in-picture that includes the
++// sinks of the small cameras, which report the raw FLV timestamps of their camera sessions. The sink of the camera with the
++// OLDEST session therefore decides, and 2-4 s without data from that small camera ended the whole stream although the main
++// picture and the output were fine. Now the position of the OUTPUT (the appsink) is the only one that counts as soon as it has
++// one; the whole pipeline is only the fallback for the first seconds, before the output has delivered anything.
++#define STALL_SAME_MAX 3          // exit after this many checks (2 s apart) in a row without progress (upstream: 1, i.e. 2-4 s)
++static GstElement *stall_sink = NULL;
+ GMainLoop *loop;
+ GstElement *encoder, *overlay;
+ SRTSOCKET sock = -1;
+@@ -118,16 +127,29 @@
+   }
+ 
+   static gint64 prev_pos = -1;
+-  gint64 pos;
+-  if (!gst_element_query_position((GstElement *)gst_pipeline, GST_FORMAT_TIME, &pos))
++  static int prev_out = 0;   // was the previous reading taken at the output?
++  static int same = 0;       // checks in a row without progress
++  gint64 pos = -1;
++  int out = 0;
++
++  if (stall_sink && gst_element_query_position(stall_sink, GST_FORMAT_TIME, &pos) && pos != -1) {
++    out = 1;
++  } else if (!gst_element_query_position((GstElement *)gst_pipeline, GST_FORMAT_TIME, &pos)) {
+     return TRUE;
++  }
+ 
+-  if (pos != -1 && pos == prev_pos) {
+-    fprintf(stderr, "Pipeline stall detected. Will exit now\n");
+-    stop();
++  if (pos != -1 && pos == prev_pos && out == prev_out) {
++    if (++same >= STALL_SAME_MAX) {
++      // keep "Pipeline stall detected" as is, pipbox_send.py matches it
++      fprintf(stderr, "Pipeline stall detected (%s). Will exit now\n", out ? "output" : "pipeline");
++      stop();
++    }
++  } else {
++    same = 0;
+   }
+ 
+   prev_pos = pos;
++  prev_out = out;
+   return TRUE;
+ }
+ 
+@@ -709,6 +731,7 @@
+   GstElement *srt_app_sink = gst_bin_get_by_name(GST_BIN(gst_pipeline), "appsink");
+   if (GST_IS_ELEMENT(srt_app_sink)) {
+     gst_app_sink_set_callbacks (GST_APP_SINK(srt_app_sink), &callbacks, NULL, NULL);
++    stall_sink = srt_app_sink;   // IRL4YOU: the output, see stall_check()
+     srt_host = argv[optind+1];
+     srt_port = argv[optind+2];
+ 

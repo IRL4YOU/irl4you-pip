@@ -1,0 +1,42 @@
+diff --git a/belacoder.c b/belacoder.c
+index f55593d..cc5b5e8 100644
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -1402,6 +1402,29 @@ static GstPadProbeReturn feed_reconfigure_probe(GstPad *pad, GstPadProbeInfo *in
+   return GST_PAD_PROBE_OK;
+ }
+ 
++// audio-eos: When a camera stream ends (the phone stops, the network breaks), the demuxer sends EOS down the audio branch. The input-selector forwards the EOS of its
++// ACTIVE pad to its source pad, and downstream (decoder, Opus encoder, muxer) an EOS is final: the audio of the whole output was gone from then on, also after the
++// controller had switched to another camera or to the silence (test box, 15 Oct 2026: picture and sound stood still in OBS after the main camera dropped).
++// The end of a branch is handled by feed_stop (back to the silence, branch stopped), so the EOS must never reach the selector: it is dropped at the last queue of the branch.
++static GstPadProbeReturn feed_eos_probe(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  GstEvent *ev = GST_PAD_PROBE_INFO_EVENT(info);
++  if (ev && GST_EVENT_TYPE(ev) == GST_EVENT_EOS) return GST_PAD_PROBE_DROP;
++  return GST_PAD_PROBE_OK;
++}
++
++static void feed_block_audio_eos(Feed *fd) {
++  char qn[64];
++  snprintf(qn, sizeof(qn), "%s_aq2", fd->name);
++  GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), qn);
++  if (!q) return;
++  GstPad *src = gst_element_get_static_pad(q, "src");
++  if (src) {
++    gst_pad_add_probe(src, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, feed_eos_probe, NULL, NULL);
++    gst_object_unref(src);
++  }
++  gst_object_unref(q);
++}
++
+ static void feed_block_reconfigure(Feed *fd) {
+   char qn[64];
+   snprintf(qn, sizeof(qn), "%s_lq", fd->name);
+@@ -1450,6 +1473,7 @@ static void setup_feeds(const char *absent) {
+     fd->dynamic = TRUE;
+     if (g_getenv("SB_FEED_LATENCY") == NULL || g_strcmp0(g_getenv("SB_FEED_LATENCY"), "0") != 0) feed_answer_latency(fd);
+     if (g_getenv("SB_FEED_RECONFIGURE") == NULL || g_strcmp0(g_getenv("SB_FEED_RECONFIGURE"), "0") != 0) feed_block_reconfigure(fd);
++    if (g_getenv("SB_FEED_AUDIO_EOS") == NULL || g_strcmp0(g_getenv("SB_FEED_AUDIO_EOS"), "0") != 0) feed_block_audio_eos(fd);
+     feed_frame_copy(fd);
+     fd->active = TRUE;
+     GstElement *demux = gst_bin_get_by_name(GST_BIN(gst_pipeline), fd->name);

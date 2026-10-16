@@ -1,0 +1,86 @@
+diff --git a/belacoder.c b/belacoder.c
+index 252f445..7c1ee88 100644
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -1313,6 +1313,73 @@ static GstPadProbeReturn feed_latency_probe(GstPad *pad, GstPadProbeInfo *info,
+   return GST_PAD_PROBE_OK;
+ }
+ 
++// Frame copy (IRL4YOU): the decoder (mppvideodec) hands out frames in uncached memory. Reading them with the CPU is slow, and a software scaler
++// (videoscale) reads source pixels once per OUTPUT pixel: on the RK3588 a 720p frame enlarged to 1080p took 43 ms straight from the decoder memory
++// (more than the 33 ms of a frame at 30 fps), and 3.5 ms after one sequential copy into normal memory. So a frame that is going to be scaled to a
++// target larger than itself is copied once before it enters the queue of its branch (<name>_lq). Frames that stay the same size or get smaller
++// are passed on untouched (measured: copying them costs more than it saves). The target is read from the capsfilter <name>_scc.
++// SB_FRAME_COPY=0 switches this off.
++static GstPadProbeReturn probe_frame_copy(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  GstElement *scc = (GstElement *)data;
++  GstBuffer *b = GST_PAD_PROBE_INFO_BUFFER(info);
++  if (!b) return GST_PAD_PROBE_OK;
++  gint sw = 0, sh = 0, tw = 0, th = 0;
++  GstCaps *cur = gst_pad_get_current_caps(pad);
++  if (cur) {
++    GstStructure *st = gst_caps_get_structure(cur, 0);
++    gst_structure_get_int(st, "width", &sw);
++    gst_structure_get_int(st, "height", &sh);
++    gst_caps_unref(cur);
++  }
++  GstCaps *tc = NULL;
++  if (scc) g_object_get(scc, "caps", &tc, NULL);
++  if (tc) {
++    if (!gst_caps_is_any(tc) && gst_caps_get_size(tc) > 0) {
++      GstStructure *st = gst_caps_get_structure(tc, 0);
++      gst_structure_get_int(st, "width", &tw);
++      gst_structure_get_int(st, "height", &th);
++    }
++    gst_caps_unref(tc);
++  }
++  if (sw <= 0 || sh <= 0 || tw <= 0 || th <= 0) return GST_PAD_PROBE_OK;          // unknown: leave the frame alone
++  if ((gint64)tw * th <= (gint64)sw * sh) return GST_PAD_PROBE_OK;                // not enlarged (same size or smaller): a downscale reads each source pixel at most once
++  GstMapInfo mi;
++  if (!gst_buffer_map(b, &mi, GST_MAP_READ)) return GST_PAD_PROBE_OK;
++  GstBuffer *c = gst_buffer_new_allocate(NULL, mi.size, NULL);
++  if (c) {
++    gsize n = gst_buffer_fill(c, 0, mi.data, mi.size);
++    if (n == mi.size) {
++      gst_buffer_copy_into(c, b, (GstBufferCopyFlags)(GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS | GST_BUFFER_COPY_META), 0, -1);
++      gst_buffer_unmap(b, &mi);
++      GST_PAD_PROBE_INFO_DATA(info) = c;
++      gst_buffer_unref(b);
++      return GST_PAD_PROBE_OK;
++    }
++    gst_buffer_unref(c);
++  }
++  gst_buffer_unmap(b, &mi);
++  return GST_PAD_PROBE_OK;
++}
++
++static void feed_frame_copy(Feed *fd) {
++  if (g_strcmp0(g_getenv("SB_FRAME_COPY"), "0") == 0) return;
++  char qn[48], sn[48];
++  snprintf(qn, sizeof(qn), "%s_lq", fd->name);
++  snprintf(sn, sizeof(sn), "%s_scc", fd->name);
++  GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), qn);
++  GstElement *scc = gst_bin_get_by_name(GST_BIN(gst_pipeline), sn);        // stays referenced: the probe lives as long as the pipeline
++  if (q && scc) {
++    GstPad *sink = gst_element_get_static_pad(q, "sink");
++    if (sink) {
++      gst_pad_add_probe(sink, GST_PAD_PROBE_TYPE_BUFFER, probe_frame_copy, scc, NULL);
++      gst_object_unref(sink);
++      scc = NULL;
++    }
++  }
++  if (scc) gst_object_unref(scc);
++  if (q) gst_object_unref(q);
++}
++
+ static void feed_answer_latency(Feed *fd) {
+   if (!fd->extra[0]) return;
+   GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), fd->extra[0]);
+@@ -1359,6 +1426,7 @@ static void setup_feeds(const char *absent) {
+     gst_iterator_free(it);
+     fd->dynamic = TRUE;
+     if (g_getenv("SB_FEED_LATENCY") == NULL || g_strcmp0(g_getenv("SB_FEED_LATENCY"), "0") != 0) feed_answer_latency(fd);
++    feed_frame_copy(fd);
+     fd->active = TRUE;
+     GstElement *demux = gst_bin_get_by_name(GST_BIN(gst_pipeline), fd->name);
+     if (demux) {

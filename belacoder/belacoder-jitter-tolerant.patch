@@ -1,0 +1,41 @@
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -48,6 +48,12 @@
+ #define BITRATE_DECR_SCALE     10         // under heavy congestion, the bitrate is decreased by
+                                           // BITRATE_DECR_MIN + cur_bitrate/BITRATE_DECR_SCALE
+ 
++// IRL4YOU: tolerance for the RTT noise of bonded cellular links (see README in this folder)
++#define RTT_DECR_TOL_MS        30         // never treat an RTT rise of less than this many ms over the average as congestion
++#define RTT_INCR_TOL_MS        8          // allow increasing while the RTT is within this many ms of its minimum
++#define RTT_AVG_DELTA_INCR     0.5        // allowed average RTT delta (ms per sample) for increasing (was 0.01)
++#define BITRATE_DECR_LIGHT_MIN (30*1000)  // light-congestion step never below this (bps)
++
+ // settings ranges
+ #define TS_PKT_SIZE 188
+ #define REDUCED_SRT_PKT_SIZE ((TS_PKT_SIZE)*6)
+@@ -257,8 +263,8 @@
+   int bs_th2 = max(50, bs_avg + max(bs_jitter*3.0, bs_avg));
+   bs_th2 = min(bs_th2, RTT_TO_BS(srt_latency/2));
+   int bs_th1 = max(50, bs_avg + bs_jitter*2.5);
+-  int rtt_th_max = rtt_avg + max(rtt_jitter*4, rtt_avg*15/100);
+-  int rtt_th_min = rtt_min + max(1, rtt_jitter*2);
++  int rtt_th_max = rtt_avg + max((max(rtt_jitter*4, rtt_avg*15/100)), (double)RTT_DECR_TOL_MS);
++  int rtt_th_min = rtt_min + max((max(1, rtt_jitter*2)), (double)RTT_INCR_TOL_MS);
+ 
+ 
+   if (bitrate > min_bitrate && (rtt >= (srt_latency / 3) || bs > bs_th3)) {
+@@ -272,11 +278,12 @@
+ 
+   } else if (ctime > next_bitrate_decr &&
+              (rtt > rtt_th_max || bs > bs_th1)) {
+-    bitrate -= BITRATE_DECR_MIN;
++    // light congestion: at low bitrates a fixed 100 kbps step is a large fraction, scale it down
++    bitrate -= min(BITRATE_DECR_MIN, max(bitrate / 10, BITRATE_DECR_LIGHT_MIN));
+     next_bitrate_decr = ctime + BITRATE_DECR_INT;
+ 
+   } else if (ctime > next_bitrate_incr &&
+-             rtt < rtt_th_min && rtt_avg_delta < 0.01) {
++             rtt < rtt_th_min && rtt_avg_delta < RTT_AVG_DELTA_INCR) {
+     bitrate += BITRATE_INCR_MIN + bitrate / BITRATE_INCR_SCALE;
+     next_bitrate_incr = ctime + BITRATE_INCR_INT;
+   }

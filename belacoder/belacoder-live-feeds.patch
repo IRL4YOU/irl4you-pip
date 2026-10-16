@@ -1,0 +1,1226 @@
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -17,9 +17,14 @@
+ */
+ 
+ #include <stdio.h>
++#include <string.h>
++#include <time.h>
+ #include <assert.h>
+ #include <signal.h>
++#include <execinfo.h>
++#include <unistd.h>
+ #include <sys/mman.h>
++#include <sys/stat.h>
+ 
+ #include <gst/gst.h>
+ #include <gst/gstinfo.h>
+@@ -39,8 +44,12 @@
+ #define BITRATE_UPDATE_INT 20
+ #define BITRATE_INCR_MIN       (30*1000)  // the minimum bitrate increment step (bps)
+ #define BITRATE_INCR_INT       500        // the minimum interval for increasing the bitrate (ms)
+-#define BITRATE_INCR_SCALE     30         // the bitrate is increased by
++#define BITRATE_INCR_SCALE     12         // the bitrate is increased by
+                                           // BITRATE_INCR_MIN + cur_bitrate/BITRATE_INCR_SCALE
++                                          // (sb9: 12, the original has 30: after a drop it needed ~50 s to climb from 0.3 to 7 Mbit/s, now ~20 s;
++                                          // environment SB_INCR_SCALE overrides it, a decrease still reacts within 200-250 ms)
++#define START_WARMUP_MS        3000       // sb9: after the first packet the send buffer thresholds are still learning, the first (big) keyframe
++                                          // tripped the "heavy congestion" rule and threw the bitrate from the maximum to the minimum
+ 
+ #define BITRATE_DECR_MIN       (100*1000) // the minimum value to decrease the bitrate by (bps)
+ #define BITRATE_DECR_INT       200        // (light congestion) min interval for decreasing the bitrate (ms)
+@@ -100,6 +109,27 @@
+ char *bitrate_filename = NULL;
+ 
+ int srt_latency = DEF_SRT_LATENCY;
++
++/*
++  streamingbox: improvements of the bitrate controller (environment SB_CTL, letters, default "" = original behaviour since sb8, "A" soft start)
++  A  (OFF by default since sb8: the bitrate starts at the maximum like in the original BELABOX) soft start: the encoder starts at 1 Mbit/s (or the maximum, if lower) and climbs, instead of starting at the maximum: at the maximum a
++     slow link is flooded for seconds before the controller reacts (SRT queues up, the picture stands)
++  B  the thresholds that depend on the SRT latency use at most 1000 ms of it: with a latency of 2000 ms the controller waited for 667 ms RTT
++     before it dropped to the minimum, the send buffer then held seconds of video
++  C  the bitrate is limited by what was really sent (like Moblin: sent + 1 Mbit/s or 1.7 x sent, whichever is more): the encoder must not run
++     away from the link when the picture is easy or the link just got worse. What was sent is the average of the last ~3 seconds (sb6): measured
++     over 100 ms, a pause of the picture (the pipeline holds for a moment, the cameras are late) counted as "nothing was sent", the cap fell to
++     1 Mbit/s and the bitrate dropped with it, again and again: it could not climb above 2-3 Mbit/s although the link was free.
++     OFF BY DEFAULT since sb7: even with the 3 s average the bitrate follows the picture, not the link. A still picture (a phone put down) makes
++     the encoder send almost nothing, the cap then pulls the bitrate down to the minimum, and when the picture moves again it takes about a minute
++     to climb back (a blurry picture although the network is fine). Like the original BELABOX the bitrate now stays high as long as RTT and send
++     buffer show that the link keeps up, and only goes down when they do not.
++*/
++static int ctl_start = 1, ctl_lat = 0, ctl_cap = 1;
++static int incr_scale = BITRATE_INCR_SCALE;
++#define CTL_START_BITRATE (1000 * 1000)
++#define CAP_WINDOW_MS 3000.0
++#define CTL_LAT_MAX 1000
+ int srt_pkt_size = DEFAULT_SRT_PKT_SIZE;
+ 
+ uint64_t getms() {
+@@ -108,6 +138,531 @@
+   return time.tv_sec * 1000 + time.tv_nsec / 1000 / 1000;
+ }
+ 
++/*
++  streamingbox extension: statistics file (-S <file>)
++
++  Once per second a snapshot is written (atomically) to the file: the state of the bitrate controller, the SRT
++  statistics, how many frames per second pass the main points of the pipeline (decoders, the inputs of the
++  compositor, its output, the encoder) and the GStreamer warnings / errors counted per category.
++  It is for diagnosis only: the support log of streamingbox reads it, nothing in here changes how belacoder works.
++*/
++static char *stats_path = NULL;
++static guint64 cnt_enc_in = 0, cnt_enc_out = 0, cnt_enc_bytes = 0, cnt_comp_out = 0, cnt_comp_new = 0;
++#define STAT_PROBES 32   // 16 were not enough: the demux of the main video got none when the drone's came first (no dmx_m in the report)
++typedef struct {
++  char name[16];
++  guint64 count;       // buffers seen
++  guint64 last;        // count at the previous statistics line
++  gint64 last_us;      // time of the previous buffer
++  guint64 bursts;      // buffers that came less than 8 ms after the previous one (in this interval)
++  gint64 maxgap_us;    // longest pause between two buffers (in this interval)
++  GstClock *clock;     // for the lag of the buffers behind the pipeline clock
++  GstClockTime base;
++  GstSegment segment;
++  gboolean have_segment;
++  guint32 seg_seqnum;  // the segment changes when a feed comes back
++  gint64 lag_min_us, lag_max_us, lag_sum_us, lag_n;
++} Probe;
++static Probe probes[STAT_PROBES];
++static int n_probes = 0;
++static struct {
++  int bs, bs_th1, bs_th2, bs_th3, rtt, set_bitrate;
++  double bs_avg, bs_jitter, rtt_avg, rtt_min, rtt_jitter, throughput;
++  // what the controller did (counted since the last statistics line) and the sent rate behind the cap, bit/s
++  unsigned n_cap, n_th3, n_d2, n_d1, n_up;
++  double sent_fast, sent_slow, sent_fast_min;
++  int cap;
++} ctl;
++static SRT_TRACEBSTATS srt_last;
++static int srt_have = 0;
++
++#define LOG_ENTRIES 16
++static struct {
++  char cat[40];
++  guint64 count;
++  guint64 last_count;
++  char msg[112];
++} logtab[LOG_ENTRIES];
++static int n_log = 0;
++static GMutex log_lock;
++
++static void sb_log_fn(GstDebugCategory *cat, GstDebugLevel level, const gchar *file, const gchar *function,
++                      gint line, GObject *object, GstDebugMessage *message, gpointer user_data) {
++  if (level > GST_LEVEL_WARNING) return;
++  const char *cname = cat ? gst_debug_category_get_name(cat) : "?";
++  const gchar *text = gst_debug_message_get(message);
++  // counted per category and element: "mppdec/mppvideodec1"
++  char key[sizeof(logtab[0].cat)];
++  const char *oname = (object && GST_IS_OBJECT(object)) ? GST_OBJECT_NAME(object) : NULL;
++  snprintf(key, sizeof(key), "%s%s%s", cname, oname ? "/" : "", oname ? oname : "");
++
++  g_mutex_lock(&log_lock);
++  int i;
++  for (i = 0; i < n_log; i++) {
++    if (strcmp(logtab[i].cat, key) == 0) break;
++  }
++  if (i == n_log) {
++    if (n_log < LOG_ENTRIES) {
++      n_log++;
++      snprintf(logtab[i].cat, sizeof(logtab[i].cat), "%s", key);
++      logtab[i].count = 0;
++      logtab[i].last_count = 0;
++    } else {
++      i = LOG_ENTRIES - 1;
++    }
++  }
++  logtab[i].count++;
++  snprintf(logtab[i].msg, sizeof(logtab[i].msg), "%s%s: %s", level == GST_LEVEL_ERROR ? "ERROR " : "",
++           function ? function : "", text ? text : "");
++  for (char *c = logtab[i].msg; *c; c++) {
++    if (*c == '\n' || *c == '\r') *c = ' ';
++  }
++  g_mutex_unlock(&log_lock);
++}
++
++static GstPadProbeReturn probe_count(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  guint64 n = 1;
++  if (info->type & GST_PAD_PROBE_TYPE_BUFFER_LIST) {
++    n = gst_buffer_list_length(GST_PAD_PROBE_INFO_BUFFER_LIST(info));
++  }
++  __atomic_fetch_add((guint64 *)data, n, __ATOMIC_RELAXED);
++  return GST_PAD_PROBE_OK;
++}
++
++static GstPadProbeReturn probe_timed(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  Probe *pr = (Probe *)data;
++  gint64 now = g_get_monotonic_time();
++  // how far behind the pipeline clock is the running time of this buffer? (positive: late)
++  if (info->type & GST_PAD_PROBE_TYPE_BUFFER) {
++    GstBuffer *b = GST_PAD_PROBE_INFO_BUFFER(info);
++    GstEvent *ev = gst_pad_get_sticky_event(pad, GST_EVENT_SEGMENT, 0);
++    if (ev) {
++      const GstSegment *seg;
++      gst_event_parse_segment(ev, &seg);
++      if (!pr->have_segment || gst_event_get_seqnum(ev) != pr->seg_seqnum || seg->base != pr->segment.base) {
++        if (seg->format == GST_FORMAT_TIME) {
++          gst_segment_copy_into(seg, &pr->segment);
++          pr->seg_seqnum = gst_event_get_seqnum(ev);
++          pr->have_segment = TRUE;
++        }
++      }
++      gst_event_unref(ev);
++    }
++    if (!pr->clock) {
++      GstElement *par = gst_pad_get_parent_element(pad);
++      if (par) {
++        pr->clock = gst_element_get_clock(par);
++        pr->base = gst_element_get_base_time(par);
++        gst_object_unref(par);
++      }
++    }
++    if (pr->have_segment && pr->clock && GST_BUFFER_PTS_IS_VALID(b)) {
++      GstClockTime rt = gst_segment_to_running_time(&pr->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(b));
++      GstClockTime nowrt = gst_clock_get_time(pr->clock) - pr->base;
++      if (GST_CLOCK_TIME_IS_VALID(rt)) {
++        gint64 lag = ((gint64)nowrt - (gint64)rt) / 1000;
++        if (pr->lag_n == 0 || lag < pr->lag_min_us) pr->lag_min_us = lag;
++        if (pr->lag_n == 0 || lag > pr->lag_max_us) pr->lag_max_us = lag;
++        pr->lag_sum_us += lag;
++        pr->lag_n++;
++      }
++    }
++  }
++  gint64 prev = __atomic_exchange_n(&pr->last_us, now, __ATOMIC_RELAXED);
++  if (prev) {
++    gint64 gap = now - prev;
++    if (gap < 8000) __atomic_fetch_add(&pr->bursts, 1, __ATOMIC_RELAXED);
++    if (gap > __atomic_load_n(&pr->maxgap_us, __ATOMIC_RELAXED)) __atomic_store_n(&pr->maxgap_us, gap, __ATOMIC_RELAXED);
++  }
++  __atomic_fetch_add(&pr->count, 1, __ATOMIC_RELAXED);
++  return GST_PAD_PROBE_OK;
++}
++
++/*
++  sb10: how many DIFFERENT pictures leave the compositor per second (comp_new). comp_out only counts buffers: a compositor that repeats the last
++  picture still delivers 30 buffers per second, the encoder then gets (and codes for almost nothing) the same picture again and again
++  (bitrate far below the target although the network is free, the picture stutters). A sample of the luma plane (48 rows x 128 columns) is
++  hashed; a picture counts as new when the hash differs from the previous one. Needs the compositor output in normal memory (it is).
++*/
++static GstPadProbeReturn probe_comp_new(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  static guint64 prev_hash = 0;
++  static int w = 0, h = 0;
++  if (!(info->type & GST_PAD_PROBE_TYPE_BUFFER)) return GST_PAD_PROBE_OK;
++  if (!w) {
++    GstCaps *caps = gst_pad_get_current_caps(pad);
++    if (caps) {
++      GstStructure *st = gst_caps_get_structure(caps, 0);
++      int cw = 0, ch = 0;
++      if (st && gst_structure_get_int(st, "width", &cw) && gst_structure_get_int(st, "height", &ch) && cw >= 128 && ch >= 48) { w = cw; h = ch; }
++      gst_caps_unref(caps);
++    }
++    if (!w) return GST_PAD_PROBE_OK;
++  }
++  GstMapInfo m;
++  if (!gst_buffer_map(GST_PAD_PROBE_INFO_BUFFER(info), &m, GST_MAP_READ)) return GST_PAD_PROBE_OK;
++  if (m.size >= (gsize)w * h) {
++    guint64 hash = 1469598103934665603ULL;
++    for (int r = 0; r < 48; r++) {
++      const guint8 *row = m.data + (gsize)((r * h) / 48 + 5) * w;
++      for (int c = 0; c < 128; c++) hash = (hash ^ row[(c * w) / 128 + 3]) * 1099511628211ULL;
++    }
++    if (hash != prev_hash) __atomic_fetch_add(&cnt_comp_new, 1, __ATOMIC_RELAXED);
++    prev_hash = hash;
++  }
++  gst_buffer_unmap(GST_PAD_PROBE_INFO_BUFFER(info), &m);
++  return GST_PAD_PROBE_OK;
++}
++
++static GstPadProbeReturn probe_enc_out(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  if (info->type & GST_PAD_PROBE_TYPE_BUFFER) {
++    GstBuffer *b = GST_PAD_PROBE_INFO_BUFFER(info);
++    __atomic_fetch_add(&cnt_enc_out, 1, __ATOMIC_RELAXED);
++    __atomic_fetch_add(&cnt_enc_bytes, (guint64)gst_buffer_get_size(b), __ATOMIC_RELAXED);
++  }
++  return GST_PAD_PROBE_OK;
++}
++
++static void add_probe(GstElement *elem, const char *padname, GstPadProbeCallback cb, gpointer data) {
++  if (!elem) return;
++  GstPad *pad = gst_element_get_static_pad(elem, padname);
++  if (!pad) return;
++  gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_BUFFER_LIST, cb, data, NULL);
++  gst_object_unref(pad);
++}
++
++static void add_counter(const char *label, GstElement *elem, const char *padname) {
++  if (!elem || n_probes >= STAT_PROBES) return;
++  snprintf(probes[n_probes].name, sizeof(probes[n_probes].name), "%s", label);
++  add_probe(elem, padname, probe_timed, &probes[n_probes]);
++  n_probes++;
++}
++
++/*
++  streamingbox extension: align the RTMP inputs to the pipeline clock (-A <ms>)
++
++  The pictures that are mixed by the compositor come from RTMP feeds (rtmpsrc ! flvdemux): their timestamps start at
++  zero when the feed is joined, but the pipeline clock has been running for a while (connect, waiting for the next
++  keyframe, decoder start: 0.5 .. 2 s, different at every start). The compositor works on the pipeline clock, so
++  every frame arrives "late", it drops the old frames and repeats the last one: the picture stutters, only a few
++  frames per second are new, and the encoder (fed with repeated frames) produces a fraction of the bitrate.
++
++  On the first video buffer of a feed the offset between its timestamps and the pipeline clock is measured, and the
++  src pads of its flvdemux (video and audio, so they stay in sync) are shifted by it plus <ms>, which is the time
++  the frames get to arrive (a jitter buffer). From then on a frame is due when it arrives, <ms> later.
++*/
++static int align_ms = 0;
++typedef struct {
++  const char *name;      // name of the flvdemux
++  GstPad *vpad, *apad;
++  gboolean aligned;
++  gint64 offset;         // ns, applied to the src pads of the flvdemux
++  GMutex lock;
++  GstClock *clock;
++  GstClockTime base;
++  // dynamic feeds (sb4): the branch of a feed can be stopped and started again while the rest keeps running
++  const char *extra[3];  // more elements that belong to the branch (their names are fixed, the control commands use them)
++  gboolean dynamic;      // the branch has a source element called <name>_src
++  gboolean active;       // branch running
++  GList *elems;          // all elements of the branch
++  GstElement *src;
++} Feed;
++// sb10: any number of feeds named sbf0 .. sbf7 (IRL4YOU BOX): every element of such a branch is called sbf<N>_..., the last video queue
++// sbf<N>_q (its src pad feeds the compositor), the end of the audio chain sbf<N>_aq2. sbpd / sbdd stay for streamingbox.
++static Feed align_feeds[] = {{.name = "demux"},
++                             {.name = "sbpd", .extra = {"sbqp", "sbscp", "sbcrp"}},
++                             {.name = "sbdd", .extra = {"sbqd", "sbscd", "sbcrd"}},
++                             {.name = "sbf0", .extra = {"sbf0_q"}}, {.name = "sbf1", .extra = {"sbf1_q"}},
++                             {.name = "sbf2", .extra = {"sbf2_q"}}, {.name = "sbf3", .extra = {"sbf3_q"}},
++                             {.name = "sbf4", .extra = {"sbf4_q"}}, {.name = "sbf5", .extra = {"sbf5_q"}},
++                             {.name = "sbf6", .extra = {"sbf6_q"}}, {.name = "sbf7", .extra = {"sbf7_q"}}};
++// 0 = no such feed / not dynamic, 1 = branch stopped, 2 = running, waiting for the first picture, 3 = pictures arrive
++static int feed_state_of(const char *name) {
++  for (unsigned i = 0; i < sizeof(align_feeds) / sizeof(align_feeds[0]); i++) {
++    Feed *fd = &align_feeds[i];
++    if (strcmp(fd->name, name) != 0 || !fd->dynamic) continue;
++    return !fd->active ? 1 : (fd->aligned ? 3 : 2);
++  }
++  return 0;
++}
++
++static void feed_apply_offset(Feed *fd) {
++  if (fd->vpad) gst_pad_set_offset(fd->vpad, fd->offset);
++  if (fd->apad) gst_pad_set_offset(fd->apad, fd->offset);
++}
++
++static gboolean feed_now(Feed *fd, GstPad *pad, GstClockTime *now) {
++  if (!fd->clock) {
++    GstElement *par = gst_pad_get_parent_element(pad);
++    if (!par) return FALSE;
++    fd->clock = gst_element_get_clock(par);
++    fd->base = gst_element_get_base_time(par);
++    gst_object_unref(par);
++    if (!fd->clock) return FALSE;
++  }
++  *now = gst_clock_get_time(fd->clock) - fd->base;
++  return TRUE;
++}
++
++// running time of the buffer on this pad (without the offset that streamingbox adds below the flvdemux)
++static GstClockTime pad_buffer_rt(GstPad *pad, GstBuffer *b) {
++  GstClockTime ts = GST_BUFFER_PTS_IS_VALID(b) ? GST_BUFFER_PTS(b) : GST_BUFFER_DTS(b);
++  if (!GST_CLOCK_TIME_IS_VALID(ts)) return GST_CLOCK_TIME_NONE;
++  GstEvent *ev = gst_pad_get_sticky_event(pad, GST_EVENT_SEGMENT, 0);
++  if (!ev) return GST_CLOCK_TIME_NONE;
++  const GstSegment *seg;
++  gst_event_parse_segment(ev, &seg);
++  GstClockTime rt = (seg->format == GST_FORMAT_TIME) ? gst_segment_to_running_time(seg, GST_FORMAT_TIME, ts) : GST_CLOCK_TIME_NONE;
++  gst_event_unref(ev);
++  return rt;
++}
++
++// first video buffer of the feed: measure how far it is behind the pipeline clock and shift the feed by it
++static GstPadProbeReturn probe_align(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  Feed *fd = (Feed *)data;
++  if (fd->aligned || !(info->type & GST_PAD_PROBE_TYPE_BUFFER)) return GST_PAD_PROBE_OK;
++  GstClockTime rt = pad_buffer_rt(pad, GST_PAD_PROBE_INFO_BUFFER(info));
++  GstClockTime now;
++  g_mutex_lock(&fd->lock);
++  if (!GST_CLOCK_TIME_IS_VALID(rt) || !feed_now(fd, pad, &now)) {
++    g_mutex_unlock(&fd->lock);
++    return GST_PAD_PROBE_OK;
++  }
++  if (!fd->aligned) {
++    fd->offset = (gint64)now - (gint64)rt + (gint64)align_ms * 1000000;
++    if (fd->offset < 0) fd->offset = 0;
++    feed_apply_offset(fd);
++    fd->aligned = TRUE;
++    fprintf(stderr, "Aligned %s to the pipeline clock: offset %lld ms (incl. %d ms buffer)\n", fd->name,
++            (long long)(fd->offset / 1000000), align_ms);
++  }
++  g_mutex_unlock(&fd->lock);
++  return GST_PAD_PROBE_REMOVE;
++}
++
++static void feed_pad_added(GstElement *demux, GstPad *pad, gpointer data) {
++  Feed *fd = (Feed *)data;
++  gchar *name = gst_pad_get_name(pad);
++  g_mutex_lock(&fd->lock);
++  if (strncmp(name, "video", 5) == 0) {
++    fd->vpad = gst_object_ref(pad);
++    gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, probe_align, fd, NULL);
++  } else if (strncmp(name, "audio", 5) == 0) {
++    fd->apad = gst_object_ref(pad);
++    if (fd->aligned) gst_pad_set_offset(pad, fd->offset);   // the audio pad came after the first video buffer
++  }
++  g_mutex_unlock(&fd->lock);
++  g_free(name);
++}
++
++static void setup_align(GstElement *pipeline) {
++  if (align_ms <= 0) return;
++  // only a pipeline with a compositor needs it
++  GstElement *comp = gst_bin_get_by_name(GST_BIN(pipeline), "pipcomp");
++  if (!comp) return;
++  gst_object_unref(comp);
++  for (unsigned i = 0; i < sizeof(align_feeds) / sizeof(align_feeds[0]); i++) {
++    GstElement *demux = gst_bin_get_by_name(GST_BIN(pipeline), align_feeds[i].name);
++    if (!demux) continue;
++    g_signal_connect(demux, "pad-added", G_CALLBACK(feed_pad_added), &align_feeds[i]);
++    gst_object_unref(demux);
++  }
++  fprintf(stderr, "Aligning the RTMP inputs to the pipeline clock, buffer %d ms\n", align_ms);
++}
++
++// the video pad of a flvdemux appears when the stream starts
++static void stats_pad_added(GstElement *demux, GstPad *pad, gpointer label) {
++  gchar *name = gst_pad_get_name(pad);
++  if (strncmp(name, "video", 5) == 0) {
++    // a feed that comes back gets a new pad: keep the slot of its label
++    int slot = -1;
++    for (int i = 0; i < n_probes; i++) {
++      if (strcmp(probes[i].name, (const char *)label) == 0) slot = i;
++    }
++    if (slot < 0 && n_probes < STAT_PROBES) {
++      slot = n_probes++;
++      snprintf(probes[slot].name, sizeof(probes[slot].name), "%s", (const char *)label);
++    }
++    if (slot >= 0) {
++      probes[slot].have_segment = FALSE;
++      add_probe(demux, name, probe_timed, &probes[slot]);
++    }
++  }
++  g_free(name);
++}
++
++static void setup_stats(GstElement *pipeline) {
++  if (!stats_path) return;
++
++  static const char *demuxes[][2] = {{"dmx_m", "demux"}, {"dmx_p", "sbpd"}, {"dmx_d", "sbdd"},
++                                     {"dmx_f0", "sbf0"}, {"dmx_f1", "sbf1"}, {"dmx_f2", "sbf2"}, {"dmx_f3", "sbf3"}};
++  for (unsigned i = 0; i < sizeof(demuxes) / sizeof(demuxes[0]); i++) {
++    GstElement *dm = gst_bin_get_by_name(GST_BIN(pipeline), demuxes[i][1]);
++    if (dm) {
++      g_signal_connect(dm, "pad-added", G_CALLBACK(stats_pad_added), (gpointer)demuxes[i][0]);
++      gst_object_unref(dm);
++    }
++  }
++
++  GstElement *e = gst_bin_get_by_name(GST_BIN(pipeline), "pipcomp");
++  if (e) {
++    add_probe(e, "src", probe_count, &cnt_comp_out);
++    add_probe(e, "src", probe_comp_new, NULL);
++    add_counter("comp", e, "src");
++    gst_object_unref(e);
++  }
++  if (GST_IS_ELEMENT(encoder)) {
++    add_probe(encoder, "sink", probe_count, &cnt_enc_in);
++    add_probe(encoder, "src", probe_enc_out, NULL);
++  }
++  // the last queue of every picture before the compositor (named by streamingbox)
++  static const char *queues[][2] = {{"in_main", "sbqm"}, {"in_pip", "sbqp"}, {"in_drone", "sbqd"},
++                                    {"crop_d", "sbcrd"}, {"crop_p", "sbcrp"}, {"scal_m", "sbscm"}, {"scal_d", "sbscd"}, {"scal_p", "sbscp"},
++                                    {"in_f0", "sbf0_q"}, {"in_f1", "sbf1_q"}, {"in_f2", "sbf2_q"}, {"in_f3", "sbf3_q"}};
++  for (unsigned i = 0; i < sizeof(queues) / sizeof(queues[0]); i++) {
++    e = gst_bin_get_by_name(GST_BIN(pipeline), queues[i][1]);
++    if (e) {
++      add_counter(queues[i][0], e, "src");
++      gst_object_unref(e);
++    }
++  }
++  // the hardware decoders and the frame rate converters (mppvideodec0 / videorate0 = first picture in the pipeline, ...)
++  GstIterator *it = gst_bin_iterate_elements(GST_BIN(pipeline));
++  GValue v = G_VALUE_INIT;
++  gboolean done = FALSE;
++  while (!done) {
++    switch (gst_iterator_next(it, &v)) {
++      case GST_ITERATOR_OK: {
++        GstElement *el = GST_ELEMENT(g_value_get_object(&v));
++        gchar *name = gst_element_get_name(el);
++        if (name && strncmp(name, "mppvideodec", 11) == 0) {
++          char label[16];
++          snprintf(label, sizeof(label), "dec%s", name + 11);
++          add_counter(label, el, "src");
++        } else if (name && strncmp(name, "videorate", 9) == 0) {
++          char label[16];
++          snprintf(label, sizeof(label), "vr%s", name + 9);
++          add_counter(label, el, "src");
++        } else if (name && (strcmp(name, "sbpd_dec") == 0 || strcmp(name, "sbdd_dec") == 0)) {
++          add_counter(name[2] == 'p' ? "dec_p" : "dec_d", el, "src");
++        } else if (name && (strcmp(name, "sbpd_vr") == 0 || strcmp(name, "sbdd_vr") == 0)) {
++          add_counter(name[2] == 'p' ? "vr_p" : "vr_d", el, "src");
++        } else if (name && strncmp(name, "sbf", 3) == 0 && name[3] >= '0' && name[3] <= '7' && strcmp(name + 4, "_dec") == 0) {
++          char label[16];
++          snprintf(label, sizeof(label), "dec_f%c", name[3]);
++          add_counter(label, el, "src");
++        } else if (name && strncmp(name, "sbf", 3) == 0 && name[3] >= '0' && name[3] <= '7' && strcmp(name + 4, "_vr") == 0) {
++          char label[16];
++          snprintf(label, sizeof(label), "vr_f%c", name[3]);
++          add_counter(label, el, "src");
++        }
++        g_free(name);
++        g_value_reset(&v);
++        break;
++      }
++      case GST_ITERATOR_RESYNC:
++        gst_iterator_resync(it);
++        break;
++      default:
++        done = TRUE;
++        break;
++    }
++  }
++  g_value_unset(&v);
++  gst_iterator_free(it);
++
++  // count the warnings and errors per category (the default handler would print them, one line each)
++  if (!g_getenv("GST_DEBUG")) {
++    gst_debug_remove_log_function(gst_debug_log_default);
++    gst_debug_set_default_threshold(GST_LEVEL_WARNING);
++  }
++  gst_debug_add_log_function(sb_log_fn, NULL, NULL);
++  fprintf(stderr, "Statistics file: %s\n", stats_path);
++}
++
++static void write_stats(uint64_t ctime) {
++  static uint64_t next = 0, t_prev = 0;
++  static guint64 p_ei = 0, p_eo = 0, p_eb = 0, p_co = 0, p_cn = 0;
++  if (!stats_path || ctime < next) return;
++  double dt = t_prev ? (double)(ctime - t_prev) : 1000.0;
++  if (dt < 1.0) dt = 1000.0;
++  next = ctime + 1000;
++  t_prev = ctime;
++
++  char tmp[512];
++  snprintf(tmp, sizeof(tmp), "%s.tmp", stats_path);
++  FILE *f = fopen(tmp, "w");
++  if (!f) return;
++
++  guint64 ei = __atomic_load_n(&cnt_enc_in, __ATOMIC_RELAXED);
++  guint64 eo = __atomic_load_n(&cnt_enc_out, __ATOMIC_RELAXED);
++  guint64 eb = __atomic_load_n(&cnt_enc_bytes, __ATOMIC_RELAXED);
++  guint64 co = __atomic_load_n(&cnt_comp_out, __ATOMIC_RELAXED);
++  guint64 cn = __atomic_load_n(&cnt_comp_new, __ATOMIC_RELAXED);
++  double k = 1000.0 / dt;
++
++  fprintf(f, "t=%llu br=%d min=%d max=%d cur=%d rtt=%d rtt_avg=%.0f rtt_min=%.0f rtt_jit=%.0f bs=%d bs_avg=%.0f bs_jit=%.0f "
++             "bs_th1=%d bs_th2=%d bs_th3=%d thr=%.0f",
++          (unsigned long long)time(NULL), ctl.set_bitrate, min_bitrate, max_bitrate, cur_bitrate, ctl.rtt, ctl.rtt_avg,
++          ctl.rtt_min, ctl.rtt_jitter, ctl.bs, ctl.bs_avg, ctl.bs_jitter, ctl.bs_th1, ctl.bs_th2, ctl.bs_th3, ctl.throughput);
++  if (srt_have) {
++    fprintf(f, " srt_bw=%.1f srt_rate=%.2f snd_pkts=%d snd_ms=%d flight=%d loss=%d retr=%d drop=%d",
++            srt_last.mbpsBandwidth, srt_last.mbpsSendRate, srt_last.pktSndBuf, srt_last.msSndBuf, srt_last.pktFlightSize,
++            srt_last.pktSndLossTotal, srt_last.pktRetransTotal, srt_last.pktSndDropTotal);
++  }
++  fprintf(f, " comp_out=%.1f comp_new=%.1f enc_in=%.1f enc_out=%.1f enc_kbit=%.0f", (co - p_co) * k, (cn - p_cn) * k, (ei - p_ei) * k, (eo - p_eo) * k,
++          (eb - p_eb) * 8.0 / 1000.0 * k);
++  // the bitrate controller: cap and the sent rates behind it (kbit/s; sf_min = the lowest 100 ms value of the second),
++  // and what it did in this second: cap = bitrate lowered to the cap, th3 = back to the minimum, d2 / d1 = two kinds of decrease, up = increase
++  fprintf(f, " cap=%d sf=%.0f ss=%.0f sf_min=%.0f n_cap=%u n_th3=%u n_d2=%u n_d1=%u n_up=%u", ctl.cap / 1000, ctl.sent_fast / 1000.0,
++          ctl.sent_slow / 1000.0, ctl.sent_fast_min < 0 ? 0.0 : ctl.sent_fast_min / 1000.0, ctl.n_cap, ctl.n_th3, ctl.n_d2, ctl.n_d1, ctl.n_up);
++  ctl.n_cap = ctl.n_th3 = ctl.n_d2 = ctl.n_d1 = ctl.n_up = 0;
++  ctl.sent_fast_min = -1;
++  for (int i = 0; i < n_probes; i++) {
++    guint64 c = __atomic_load_n(&probes[i].count, __ATOMIC_RELAXED);
++    guint64 b = __atomic_exchange_n(&probes[i].bursts, 0, __ATOMIC_RELAXED);
++    gint64 g = __atomic_exchange_n(&probes[i].maxgap_us, 0, __ATOMIC_RELAXED);
++    // fps, buffers that came in a burst (<8 ms after the previous one), longest pause in ms
++    fprintf(f, " %s=%.1f/%llu/%lld", probes[i].name, (c - probes[i].last) * k, (unsigned long long)b, (long long)(g / 1000));
++    probes[i].last = c;
++    if (probes[i].lag_n > 0) {
++      // how late (+) or early (-) the buffers are compared with the pipeline clock: min / mean / max in ms
++      fprintf(f, " %s_lag=%lld/%lld/%lld", probes[i].name, (long long)(probes[i].lag_min_us / 1000),
++              (long long)(probes[i].lag_sum_us / probes[i].lag_n / 1000), (long long)(probes[i].lag_max_us / 1000));
++      probes[i].lag_n = 0;
++      probes[i].lag_sum_us = 0;
++    }
++  }
++  {
++    int fp = feed_state_of("sbpd"), fdr = feed_state_of("sbdd");
++    if (fp) fprintf(f, " feed_p=%d", fp);
++    if (fdr) fprintf(f, " feed_d=%d", fdr);
++    // sb10: feed_sbf<N>=<1|2|3> for every dynamic feed named sbf<N> (1 stopped, 2 running without picture, 3 pictures arrive)
++    for (char c = '0'; c <= '7'; c++) {
++      char nm[8];
++      snprintf(nm, sizeof(nm), "sbf%c", c);
++      int st = feed_state_of(nm);
++      if (st) fprintf(f, " feed_%s=%d", nm, st);
++    }
++  }
++  fprintf(f, "\n");
++  p_ei = ei;
++  p_eo = eo;
++  p_eb = eb;
++  p_co = co;
++  p_cn = cn;
++
++  g_mutex_lock(&log_lock);
++  for (int i = 0; i < n_log; i++) {
++    fprintf(f, "warn %s total=%llu new=%llu %s\n", logtab[i].cat, (unsigned long long)logtab[i].count,
++            (unsigned long long)(logtab[i].count - logtab[i].last_count), logtab[i].msg);
++    logtab[i].last_count = logtab[i].count;
++  }
++  g_mutex_unlock(&log_lock);
++
++  fclose(f);
++  rename(tmp, stats_path);
++}
++
+ /* Attempts to stop the gstreamer pipeline cleanly
+    Also sets up an alarm in case it doesn't */
+ void stop() {
+@@ -279,42 +834,82 @@
+ 
+   static uint64_t next_bitrate_incr = 0;
+   static uint64_t next_bitrate_decr = 0;
++  static uint64_t first_data_ms = 0;
++  if (!first_data_ms && stats->pktSentTotal > 0) first_data_ms = ctime;
++  // while the send buffer statistics are still learning, only the round trip time may lower the bitrate
++  const int warm = !first_data_ms || ctime < first_data_ms + START_WARMUP_MS;
+ 
+   int bitrate = cur_bitrate;
++  int ctl_latency = ctl_lat ? min(srt_latency, CTL_LAT_MAX) : srt_latency;
+   int bs_th3 = (bs_avg + bs_jitter)*4;
+   int bs_th2 = max(50, bs_avg + max(bs_jitter*3.0, bs_avg));
+-  bs_th2 = min(bs_th2, RTT_TO_BS(srt_latency/2));
++  bs_th2 = min(bs_th2, RTT_TO_BS(ctl_latency/2));
+   int bs_th1 = max(50, bs_avg + bs_jitter*2.5);
+   int rtt_th_max = rtt_avg + max((max(rtt_jitter*4, rtt_avg*15/100)), (double)RTT_DECR_TOL_MS);
+   int rtt_th_min = rtt_min + max((max(1, rtt_jitter*2)), (double)RTT_INCR_TOL_MS);
+ 
++  ctl.bs = bs; ctl.bs_avg = bs_avg; ctl.bs_jitter = bs_jitter;
++  ctl.bs_th1 = bs_th1; ctl.bs_th2 = bs_th2; ctl.bs_th3 = bs_th3;
++  ctl.rtt = rtt; ctl.rtt_avg = rtt_avg; ctl.rtt_min = rtt_min; ctl.rtt_jitter = rtt_jitter;
++  ctl.throughput = throughput;
++
+ 
+-  if (bitrate > min_bitrate && (rtt >= (srt_latency / 3) || bs > bs_th3)) {
++  if (bitrate > min_bitrate && (rtt >= (ctl_latency / 3) || (!warm && bs > bs_th3))) {
+     bitrate = min_bitrate;
+     next_bitrate_decr = ctime + BITRATE_DECR_INT;
++    ctl.n_th3++;
+ 
+   } else if (ctime > next_bitrate_decr &&
+-      (rtt > (srt_latency / 5) || bs > bs_th2)) {
++      (rtt > (ctl_latency / 5) || (!warm && bs > bs_th2))) {
+     bitrate -= BITRATE_DECR_MIN + bitrate/BITRATE_DECR_SCALE;
+     next_bitrate_decr = ctime + BITRATE_DECR_FAST_INT;
++    ctl.n_d2++;
+ 
+   } else if (ctime > next_bitrate_decr &&
+-             (rtt > rtt_th_max || bs > bs_th1)) {
+-    // light congestion: at low bitrates a fixed 100 kbps step is a large fraction, scale it down
++             (rtt > rtt_th_max || (!warm && bs > bs_th1))) {
++    // IRL4YOU: light congestion: at low bitrates a fixed 100 kbps step is a large fraction, scale it down
+     bitrate -= min(BITRATE_DECR_MIN, max(bitrate / 10, BITRATE_DECR_LIGHT_MIN));
+     next_bitrate_decr = ctime + BITRATE_DECR_INT;
++    ctl.n_d1++;
+ 
+   } else if (ctime > next_bitrate_incr &&
+              rtt < rtt_th_min && rtt_avg_delta < RTT_AVG_DELTA_INCR) {
+-    bitrate += BITRATE_INCR_MIN + bitrate / BITRATE_INCR_SCALE;
++    bitrate += BITRATE_INCR_MIN + bitrate / incr_scale;
+     next_bitrate_incr = ctime + BITRATE_INCR_INT;
++    ctl.n_up++;
+   }
+ 
++  if (ctl_cap) {
++    // the rate of the last statistics interval (20 ms) is very uneven: a frame is sent in a burst, then nothing. Averaged over
++    // ~100 ms (sent_fast) it is only used for the statistics and to let the cap rise quickly; the cap itself follows the
++    // larger one of that and the ~3 s average (sent_slow), so a short pause of the picture does not lower it
++    static double sent_fast = 0, sent_slow = 0;
++    static uint64_t prev_ms = 0;
++    double rate = (double)stats->mbpsSendRate * 1000.0 * 1000.0;
++    double dt = prev_ms ? (double)(ctime - prev_ms) : (double)BITRATE_UPDATE_INT;
++    prev_ms = ctime;
++    if (dt < 1.0) dt = 1.0;
++    if (dt > 1000.0) dt = 1000.0;
++    double a_fast = dt / (dt + 100.0), a_slow = dt / (dt + CAP_WINDOW_MS);
++    sent_fast += (rate - sent_fast) * a_fast;
++    sent_slow += (rate - sent_slow) * a_slow;
++    double sent_bps = max(sent_fast, sent_slow);
++    int cap = (int)max(sent_bps + 1000000.0, sent_bps * 1.7);
++    if (bitrate > cap) {
++      bitrate = cap;
++      ctl.n_cap++;
++    }
++    ctl.cap = cap;
++    ctl.sent_fast = sent_fast;
++    ctl.sent_slow = sent_slow;
++    if (ctl.sent_fast_min < 0 || sent_fast < ctl.sent_fast_min) ctl.sent_fast_min = sent_fast;
++  }
+   bitrate = min_max(bitrate, min_bitrate, max_bitrate);
+ 
+   // round the bitrate we set to 100 kbps
+   int rounded_br = bitrate / (100*1000) * (100*1000);
+ 
++  ctl.set_bitrate = rounded_br;
+   update_overlay(rounded_br, throughput, rtt, rtt_th_min, rtt_th_max, bs, bs_th1, bs_th2, bs_th3);
+ 
+   if (bitrate != cur_bitrate) {
+@@ -335,6 +930,8 @@
+   SRT_TRACEBSTATS stats;
+   int ret = srt_bstats(sock, &stats, 1);
+   if (ret != 0) goto r;
++  srt_last = stats;
++  srt_have = 1;
+ 
+   // Track when the most recent ACK was received
+   if (stats.pktRecvACKTotal != prev_ack_count) {
+@@ -352,6 +949,7 @@
+   if (GST_IS_ELEMENT(encoder)) {
+     update_bitrate(&stats, ctime);
+   }
++  write_stats(ctime);
+ 
+ r:
+   return TRUE;
+@@ -478,6 +1076,387 @@
+   return connected;
+ }
+ 
++/*
++  streamingbox extension: live control of the running pipeline (-C <fifo>)
++
++  Lines written to the FIFO change properties while the stream keeps running, e.g. to move or hide a
++  picture-in-picture without restarting belacoder (which would interrupt the stream):
++
++    set    <element> <property> <value>            element property
++    pad    <element> <pad> <property> <value>      property of a pad, e.g. a compositor sink pad
++    select <element> <pad>                         make <pad> the active pad of an input-selector
++
++  The value is converted like in gst-launch (numbers, booleans, enum names).
++*/
++static char *control_path = NULL;
++static int control_fd = -1;
++
++static GstPad *find_pad_by_name(GstElement *elem, const char *name) {
++  GstPad *found = NULL;
++  GstIterator *it = gst_element_iterate_pads(elem);
++  GValue v = G_VALUE_INIT;
++  gboolean done = FALSE;
++
++  while (!done) {
++    switch (gst_iterator_next(it, &v)) {
++      case GST_ITERATOR_OK: {
++        GstPad *pad = GST_PAD(g_value_get_object(&v));
++        gchar *pad_name = gst_pad_get_name(pad);
++        if (strcmp(pad_name, name) == 0) {
++          found = gst_object_ref(pad);
++          done = TRUE;
++        }
++        g_free(pad_name);
++        g_value_reset(&v);
++        break;
++      }
++      case GST_ITERATOR_RESYNC:
++        gst_iterator_resync(it);
++        break;
++      default:
++        done = TRUE;
++        break;
++    }
++  }
++  g_value_unset(&v);
++  gst_iterator_free(it);
++  return found;
++}
++
++/*
++  streamingbox extension: dynamic feeds
++
++  The branch of a picture-in-picture / drone feed (rtmpsrc ! flvdemux ! decoder ! ... ! compositor) can be stopped and started
++  again while the stream keeps running. Without this a feed that disappears (an error of its rtmpsrc) ends belacoder, and
++  a feed that appears needs a new pipeline: the stream is interrupted for seconds in both cases.
++
++  The elements of a branch are named <feed>_..., <feed> is the name of the flvdemux (sbpd, sbdd), and the rtmpsrc is
++  <feed>_src. The first buffer pads of the flvdemux are linked to <feed>_vq (video) and <feed>_aq (audio).
++  A last line "#sb-absent: sbpd sbdd" of the pipeline file lists the feeds that are not there at the start: their
++  elements are kept in the NULL state.
++
++    feed <name> on|off     start / stop the branch (on: nothing happens when it is running already)
++
++  When a branch stops (an error of one of its elements, or "off") its picture is hidden, and the audio goes back to the
++  first pad of the input-selector "asel" when the audio of the feed was selected. The feed is aligned to the pipeline
++  clock again when it comes back.
++*/
++static gboolean feed_has_element(Feed *fd, const char *name) {
++  size_t n = strlen(fd->name);
++  if (strcmp(name, fd->name) == 0) return TRUE;
++  if (strncmp(name, fd->name, n) == 0 && name[n] == '_') return TRUE;
++  for (int i = 0; i < 3; i++) {
++    if (fd->extra[i] && strcmp(name, fd->extra[i]) == 0) return TRUE;
++  }
++  return FALSE;
++}
++
++static Feed *feed_of_element_name(const char *name) {
++  for (unsigned i = 0; i < sizeof(align_feeds) / sizeof(align_feeds[0]); i++) {
++    Feed *fd = &align_feeds[i];
++    if (fd->dynamic && feed_has_element(fd, name)) return fd;
++  }
++  return NULL;
++}
++
++static Feed *feed_by_name(const char *name) {
++  for (unsigned i = 0; i < sizeof(align_feeds) / sizeof(align_feeds[0]); i++) {
++    if (align_feeds[i].dynamic && strcmp(align_feeds[i].name, name) == 0) return &align_feeds[i];
++  }
++  return NULL;
++}
++
++static void feed_link_pad(GstElement *demux, GstPad *pad, gpointer data) {
++  Feed *fd = (Feed *)data;
++  if (gst_pad_is_linked(pad)) return;        // the parser linked it
++  gchar *pname = gst_pad_get_name(pad);
++  const char *kind = strncmp(pname, "video", 5) == 0 ? "vq" : (strncmp(pname, "audio", 5) == 0 ? "aq" : NULL);
++  if (kind) {
++    char ename[48];
++    snprintf(ename, sizeof(ename), "%s_%s", fd->name, kind);
++    GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), ename);
++    if (q) {
++      GstPad *sink = gst_element_get_static_pad(q, "sink");
++      if (sink) {
++        if (!gst_pad_is_linked(sink) && gst_pad_link(pad, sink) != GST_PAD_LINK_OK) {
++          fprintf(stderr, "Feed %s: failed to link the %s pad\n", fd->name, pname);
++        }
++        gst_object_unref(sink);
++      }
++      gst_object_unref(q);
++    }
++  }
++  g_free(pname);
++}
++
++static gboolean feed_pad_of(GstElement *el, const char *padname, GstPad **out) {
++  *out = gst_element_get_static_pad(el, padname);
++  return *out != NULL;
++}
++
++// the compositor pad that is fed by the last queue of the branch
++static GstPad *feed_comp_pad(Feed *fd) {
++  GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), fd->extra[0]);
++  if (!q) return NULL;
++  GstPad *src, *peer = NULL;
++  if (feed_pad_of(q, "src", &src)) {
++    peer = gst_pad_get_peer(src);
++    gst_object_unref(src);
++  }
++  gst_object_unref(q);
++  return peer;
++}
++
++static void feed_null(GstElement *el) {
++  if (g_getenv("SB_DEBUG_FEED")) fprintf(stderr, "  NULL %s ...\n", GST_OBJECT_NAME(el));
++  gst_element_set_state(el, GST_STATE_NULL);
++  if (g_getenv("SB_DEBUG_FEED")) fprintf(stderr, "  NULL %s done\n", GST_OBJECT_NAME(el));
++}
++
++static void feed_stop(Feed *fd, const char *why) {
++  if (!fd->dynamic || !fd->active) return;
++  fd->active = FALSE;
++  fprintf(stderr, "Feed %s stopped (%s)\n", fd->name, why);
++
++  // a frozen last picture would stay on the screen: hide the picture right away
++  GstPad *cp = feed_comp_pad(fd);
++  if (cp) {
++    g_object_set(cp, "alpha", 0.0, NULL);
++    gst_object_unref(cp);
++  }
++  // the audio of the feed is gone: back to the main audio (the selector would wait for it)
++  GstElement *asel = gst_bin_get_by_name(GST_BIN(gst_pipeline), "asel");
++  if (asel) {
++    GstPad *act = NULL;
++    g_object_get(asel, "active-pad", &act, NULL);
++    if (act) {
++      GstPad *peer = gst_pad_get_peer(act);
++      if (peer) {
++        GstElement *pe = gst_pad_get_parent_element(peer);
++        if (pe) {
++          gchar *pn = gst_element_get_name(pe);
++          if (pn && feed_has_element(fd, pn)) {
++            GstPad *first = gst_element_get_static_pad(asel, "sink_0");
++            if (first) {
++              g_object_set(asel, "active-pad", first, NULL);
++              gst_object_unref(first);
++            }
++          }
++          g_free(pn);
++          gst_object_unref(pe);
++        }
++        gst_object_unref(peer);
++      }
++      gst_object_unref(act);
++    }
++    gst_object_unref(asel);
++  }
++
++  // The last queues of the branch can be blocked in the pads they push into (the input-selector holds the buffers of a pad that is
++  // not active): a flush-start makes those pads wake up, otherwise the queue never stops. The flush-stop below makes them take buffers again.
++  GstPad *tails[2] = {NULL, NULL};
++  for (int i = 0; i < 2; i++) {
++    char qn[48];
++    if (i == 0) snprintf(qn, sizeof(qn), "%s", fd->extra[0]);
++    else snprintf(qn, sizeof(qn), "%s_aq2", fd->name);
++    GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), qn);
++    if (!q) continue;
++    GstPad *qs = gst_element_get_static_pad(q, "src");
++    if (qs) {
++      tails[i] = gst_pad_get_peer(qs);
++      if (tails[i]) gst_pad_push_event(qs, gst_event_new_flush_start());
++      gst_object_unref(qs);
++    }
++    gst_object_unref(q);
++  }
++  if (fd->src) feed_null(fd->src);
++  for (GList *l = fd->elems; l; l = l->next) {
++    if (l->data != fd->src) feed_null(GST_ELEMENT(l->data));
++  }
++  for (int i = 0; i < 2; i++) {
++    if (!tails[i]) continue;
++    gst_pad_send_event(tails[i], gst_event_new_flush_stop(TRUE));
++    gst_object_unref(tails[i]);
++  }
++
++  g_mutex_lock(&fd->lock);
++  if (fd->vpad) { gst_object_unref(fd->vpad); fd->vpad = NULL; }
++  if (fd->apad) { gst_object_unref(fd->apad); fd->apad = NULL; }
++  fd->aligned = FALSE;
++  fd->offset = 0;
++  g_mutex_unlock(&fd->lock);
++}
++
++static void feed_start(Feed *fd) {
++  if (!fd->dynamic || fd->active) return;
++  fd->active = TRUE;
++  fprintf(stderr, "Feed %s started\n", fd->name);
++  for (GList *l = fd->elems; l; l = l->next) {
++    GstElement *el = GST_ELEMENT(l->data);
++    if (el == fd->src) continue;
++    gst_element_set_locked_state(el, FALSE);
++    gst_element_sync_state_with_parent(el);
++  }
++  gst_element_set_locked_state(fd->src, FALSE);
++  gst_element_sync_state_with_parent(fd->src);
++}
++
++// sb11: the compositor asks every pad for its latency. A branch that is stopped (its elements are in the NULL state) cannot answer, the query fails,
++// the compositor gives up its live mode and then waits for every camera pad: one camera that stalls (or has not started) slows the whole output down
++// (3 - 6 frames per second, for seconds). The last queue of every branch answers the latency query itself: live, no minimum, no maximum.
++static GstPadProbeReturn feed_latency_probe(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  GstQuery *q = GST_PAD_PROBE_INFO_QUERY(info);
++  if (q && GST_QUERY_TYPE(q) == GST_QUERY_LATENCY) {
++    gst_query_set_latency(q, TRUE, 0, GST_CLOCK_TIME_NONE);
++    return GST_PAD_PROBE_HANDLED;
++  }
++  return GST_PAD_PROBE_OK;
++}
++
++static void feed_answer_latency(Feed *fd) {
++  if (!fd->extra[0]) return;
++  GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), fd->extra[0]);
++  if (!q) return;
++  GstPad *src = gst_element_get_static_pad(q, "src");
++  if (src) {
++    gst_pad_add_probe(src, GST_PAD_PROBE_TYPE_QUERY_UPSTREAM, feed_latency_probe, NULL, NULL);
++    gst_object_unref(src);
++  }
++  gst_object_unref(q);
++}
++
++static void setup_feeds(const char *absent) {
++  for (unsigned i = 0; i < sizeof(align_feeds) / sizeof(align_feeds[0]); i++) {
++    Feed *fd = &align_feeds[i];
++    char sname[48];
++    snprintf(sname, sizeof(sname), "%s_src", fd->name);
++    fd->src = gst_bin_get_by_name(GST_BIN(gst_pipeline), sname);
++    if (!fd->src) continue;
++    GstIterator *it = gst_bin_iterate_elements(GST_BIN(gst_pipeline));
++    GValue v = G_VALUE_INIT;
++    gboolean done = FALSE;
++    while (!done) {
++      switch (gst_iterator_next(it, &v)) {
++        case GST_ITERATOR_OK: {
++          GstElement *el = GST_ELEMENT(g_value_get_object(&v));
++          gchar *name = gst_element_get_name(el);
++          if (name && feed_has_element(fd, name)) fd->elems = g_list_prepend(fd->elems, gst_object_ref(el));
++          g_free(name);
++          g_value_reset(&v);
++          break;
++        }
++        case GST_ITERATOR_RESYNC:
++          g_list_free_full(fd->elems, gst_object_unref);
++          fd->elems = NULL;
++          gst_iterator_resync(it);
++          break;
++        default:
++          done = TRUE;
++          break;
++      }
++    }
++    g_value_unset(&v);
++    gst_iterator_free(it);
++    fd->dynamic = TRUE;
++    if (g_getenv("SB_FEED_LATENCY") == NULL || g_strcmp0(g_getenv("SB_FEED_LATENCY"), "0") != 0) feed_answer_latency(fd);
++    fd->active = TRUE;
++    GstElement *demux = gst_bin_get_by_name(GST_BIN(gst_pipeline), fd->name);
++    if (demux) {
++      g_signal_connect(demux, "pad-added", G_CALLBACK(feed_link_pad), fd);
++      gst_object_unref(demux);
++    }
++    if (absent && strstr(absent, fd->name)) {
++      fd->active = FALSE;
++      for (GList *l = fd->elems; l; l = l->next) gst_element_set_locked_state(GST_ELEMENT(l->data), TRUE);
++      fprintf(stderr, "Feed %s is not there at the start\n", fd->name);
++    }
++    fprintf(stderr, "Dynamic feed %s: %u elements\n", fd->name, g_list_length(fd->elems));
++  }
++}
++
++static void apply_control_line(char *line) {
++  char cmd[16], elem_name[64], a[64], b[64], value[256];
++  value[0] = 0;
++
++  if (sscanf(line, "%15s", cmd) != 1) return;
++
++  GstElement *elem = NULL;
++  if (strcmp(cmd, "set") == 0) {
++    if (sscanf(line, "%*s %63s %63s %255[^\n]", elem_name, a, value) < 3) return;
++    elem = gst_bin_get_by_name(GST_BIN(gst_pipeline), elem_name);
++    if (!elem) { fprintf(stderr, "control: no element %s\n", elem_name); return; }
++    gst_util_set_object_arg(G_OBJECT(elem), a, value);
++    gst_object_unref(elem);
++  } else if (strcmp(cmd, "pad") == 0) {
++    if (sscanf(line, "%*s %63s %63s %63s %255[^\n]", elem_name, a, b, value) < 4) return;
++    elem = gst_bin_get_by_name(GST_BIN(gst_pipeline), elem_name);
++    if (!elem) { fprintf(stderr, "control: no element %s\n", elem_name); return; }
++    GstPad *pad = find_pad_by_name(elem, a);
++    if (pad) {
++      gst_util_set_object_arg(G_OBJECT(pad), b, value);
++      gst_object_unref(pad);
++    } else {
++      fprintf(stderr, "control: no pad %s on %s\n", a, elem_name);
++    }
++    gst_object_unref(elem);
++  } else if (strcmp(cmd, "feed") == 0) {
++    char onoff[8];
++    if (sscanf(line, "%*s %63s %7s", elem_name, onoff) < 2) return;
++    Feed *fd = feed_by_name(elem_name);
++    if (!fd) { fprintf(stderr, "control: no dynamic feed %s\n", elem_name); return; }
++    if (strcmp(onoff, "on") == 0) feed_start(fd);
++    else if (strcmp(onoff, "off") == 0) feed_stop(fd, "switched off");
++  } else if (strcmp(cmd, "select") == 0) {
++    if (sscanf(line, "%*s %63s %63s", elem_name, a) < 2) return;
++    elem = gst_bin_get_by_name(GST_BIN(gst_pipeline), elem_name);
++    if (!elem) { fprintf(stderr, "control: no element %s\n", elem_name); return; }
++    GstPad *pad = find_pad_by_name(elem, a);
++    if (pad) {
++      g_object_set(G_OBJECT(elem), "active-pad", pad, NULL);
++      gst_object_unref(pad);
++    } else {
++      fprintf(stderr, "control: no pad %s on %s\n", a, elem_name);
++    }
++    gst_object_unref(elem);
++  }
++}
++
++static gboolean control_cb(gint fd, GIOCondition cond, gpointer data) {
++  static char buf[4096];
++  static size_t used = 0;
++
++  ssize_t n = read(fd, buf + used, sizeof(buf) - used - 1);
++  if (n <= 0) return TRUE;
++  used += n;
++  buf[used] = 0;
++
++  char *start = buf;
++  char *nl;
++  while ((nl = strchr(start, '\n')) != NULL) {
++    *nl = 0;
++    apply_control_line(start);
++    start = nl + 1;
++  }
++  used = strlen(start);
++  memmove(buf, start, used + 1);
++  if (used >= sizeof(buf) - 1) used = 0; // overlong line without a newline, drop it
++  return TRUE;
++}
++
++static void setup_control(void) {
++  if (!control_path) return;
++  mkfifo(control_path, 0600);  // fine if it exists already
++  // O_RDWR: never sees EOF when a writer closes, and open() does not block
++  control_fd = open(control_path, O_RDWR | O_NONBLOCK);
++  if (control_fd < 0) {
++    fprintf(stderr, "Failed to open the control fifo %s: ", control_path);
++    perror("");
++    return;
++  }
++  g_unix_fd_add(control_fd, G_IO_IN, control_cb, NULL);
++  fprintf(stderr, "Control fifo: %s\n", control_path);
++}
++
+ void exit_syntax() {
+   fprintf(stderr, "Syntax: belacoder PIPELINE_FILE ADDR PORT [options]\n\n");
+   fprintf(stderr, "Options:\n");
+@@ -486,7 +1465,10 @@
+   fprintf(stderr, "  -s <streamid>       SRT stream ID\n");
+   fprintf(stderr, "  -l <latency>        SRT latency in milliseconds\n");
+   fprintf(stderr, "  -r                  Reduced SRT packet size\n");
+-  fprintf(stderr, "  -b <bitrate file>   Bitrate settings file, see below\n\n");
++  fprintf(stderr, "  -b <bitrate file>   Bitrate settings file, see below\n");
++  fprintf(stderr, "  -C <fifo>           Control fifo for live changes of the pipeline (streamingbox)\n");
++  fprintf(stderr, "  -S <file>           Statistics file, written once per second (streamingbox)\n");
++  fprintf(stderr, "  -A <ms>             Align the RTMP inputs to the pipeline clock, with <ms> buffer (streamingbox)\n");
+   fprintf(stderr, "Bitrate settings file syntax:\n");
+   fprintf(stderr, "MIN BITRATE (bps)\n");
+   fprintf(stderr, "MAX BITRATE (bps)\n---\n");
+@@ -582,10 +1564,23 @@
+ 
+ void cb_pipeline (GstBus *bus, GstMessage *message, gpointer user_data) {
+   switch(GST_MESSAGE_TYPE(message)) {
+-    case GST_MESSAGE_ERROR:
++    case GST_MESSAGE_ERROR: {
++      Feed *fd = feed_of_element_name(GST_OBJECT_NAME(message->src));
++      if (fd) {
++        // an RTMP feed that goes away must not end the stream: stop its branch only
++        GError *err = NULL;
++        gchar *dbg = NULL;
++        gst_message_parse_error(message, &err, &dbg);
++        fprintf(stderr, "gstreamer error from %s: %s\n", GST_OBJECT_NAME(message->src), err ? err->message : "?");
++        if (err) g_error_free(err);
++        g_free(dbg);
++        feed_stop(fd, "error");
++        break;
++      }
+       fprintf(stderr, "gstreamer error from %s\n", message->src->name);
+       stop();
+       break;
++    }
+     case GST_MESSAGE_EOS:
+       fprintf(stderr, "gstreamer eos from %s\n", message->src->name);
+       stop();
+@@ -596,6 +1591,15 @@
+ }
+ 
+ // Only called if the pipeline failed to stop
++// a crash leaves a backtrace in the log (addr2line can resolve it)
++static void cb_crash(int signum) {
++  void *bt[32];
++  int n = backtrace(bt, 32);
++  fprintf(stderr, "CRASH signal %d, backtrace:\n", signum);
++  backtrace_symbols_fd(bt, n, 2);
++  _exit(128 + signum);
++}
++
+ void cb_sigalarm(int signum) {
+   _exit(EXIT_SUCCESS); // exiting deliberately following SIGINT or SIGTERM
+ }
+@@ -612,7 +1616,7 @@
+   return GST_PAD_PROBE_OK;
+ }
+ 
+-static gboolean write_stats(gpointer data) {
++static gboolean write_stats_irl(gpointer data) {
+   static long last_frames = 0;
+   static double last_t = 0;
+   struct timespec ts;
+@@ -653,8 +1657,21 @@
+   char *stream_id = NULL;
+   srt_latency = DEF_SRT_LATENCY;
+ 
+-  while ((opt = getopt(argc, argv, "d:b:s:l:rv")) != -1) {
++  while ((opt = getopt(argc, argv, "d:b:s:l:rvC:S:A:")) != -1) {
+     switch (opt) {
++      case 'S':
++        stats_path = optarg;
++        break;
++      case 'A':
++        align_ms = strtol(optarg, NULL, 10);
++        if (align_ms < 0 || align_ms > 5000) {
++          fprintf(stderr, "The input buffer (-A) must be between 0 and 5000 ms\n\n");
++          exit_syntax();
++        }
++        break;
++      case 'C':
++        control_path = optarg;
++        break;
+       case 'b':
+         bitrate_filename = optarg;
+         break;
+@@ -704,7 +1721,17 @@
+     fprintf(stderr, "The pipeline file is empty, exiting\n");
+     exit(EXIT_FAILURE);
+   }
+-  char *launch_string = mmap(0, len, PROT_READ, MAP_PRIVATE, pipeline_fd, 0);
++  char *launch_map = mmap(0, len, PROT_READ, MAP_PRIVATE, pipeline_fd, 0);
++  char *launch_string = g_strndup(launch_map, len);
++  // streamingbox: the feeds that are not there at the start (see "dynamic feeds")
++  char *absent_feeds = NULL;
++  char *mark = strstr(launch_string, "#sb-absent:");
++  if (mark) {
++    absent_feeds = g_strdup(mark + 11);
++    *mark = 0;
++    char *nl2 = strchr(absent_feeds, 10);
++    if (nl2) *nl2 = 0;
++  }
+   fprintf(stderr, "Gstreamer pipeline: %s\n", launch_string);
+ 
+   gst_init (&argc, &argv);
+@@ -733,6 +1760,18 @@
+     }
+   }
+   cur_bitrate = max_bitrate;
++  {
++    const char *cf = getenv("SB_CTL");
++    if (!cf) cf = "";        // all off = original BELABOX behaviour (A: slow start, B: no clear difference in the lab, C: see above)
++    const char *isc = getenv("SB_INCR_SCALE");
++    if (isc && atoi(isc) >= 4 && atoi(isc) <= 60) incr_scale = atoi(isc);
++    ctl_start = strchr(cf, 'A') != NULL;
++    ctl_lat = strchr(cf, 'B') != NULL;
++    ctl_cap = strchr(cf, 'C') != NULL;
++    if (ctl_start) cur_bitrate = min_max(CTL_START_BITRATE, min_bitrate, max_bitrate);
++    fprintf(stderr, "Bitrate controller: start %s, latency limit %s, cap by sent rate %s\n", ctl_start ? "soft" : "max",
++            ctl_lat ? "on" : "off", ctl_cap ? "on" : "off");
++  }
+   fprintf(stderr, "Max bitrate: %d\n", max_bitrate);
+   signal(SIGHUP, (__sighandler_t)read_bitrate_file);
+ 
+@@ -849,9 +1888,16 @@
+   signal(SIGTERM, stop);
+   signal(SIGINT, stop);
+   signal(SIGALRM, cb_sigalarm);
++  if (g_getenv("SB_BACKTRACE")) signal(SIGSEGV, cb_crash);
++  signal(SIGPIPE, SIG_IGN);   // a feed that closes its connection must not kill belacoder (librtmp writes to the dead socket)
+   g_timeout_add(2000, stall_check, NULL); // check every second
+   if (stats_file)
+-    g_timeout_add(1000, write_stats, NULL);                          // IRL4YOU: Kennzahlen für die Oberfläche
++    g_timeout_add(1000, write_stats_irl, NULL);                      // IRL4YOU: Kennzahlen für die Oberfläche (JSON)
++
++  setup_control();
++  setup_feeds(absent_feeds);
++  setup_align((GstElement*)gst_pipeline);
++  setup_stats((GstElement*)gst_pipeline);
+ 
+   // Everything good so far, start the gstreamer pipeline
+   gst_element_set_state((GstElement*)gst_pipeline, GST_STATE_PLAYING);

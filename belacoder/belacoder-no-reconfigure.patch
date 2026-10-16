@@ -1,0 +1,40 @@
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -1387,6 +1387,29 @@
+   GstPad *src = gst_element_get_static_pad(q, "src");
+   if (src) {
+     gst_pad_add_probe(src, GST_PAD_PROBE_TYPE_QUERY_UPSTREAM, feed_latency_probe, NULL, NULL);
++    gst_object_unref(src);
++  }
++  gst_object_unref(q);
++}
++
++// no-reconfigure: Setting the caps of the scaler (scc) of a branch while it runs sends a reconfigure event upstream, through the crop, the rate converter and the queue (lq)
++// up to the hardware decoder. The decoder then negotiates again and stops delivering pictures for about a second (the compressed input keeps arriving and is decoded
++// in a burst afterwards); the compositor waits for the stalled pads and the whole output falls to 5 pictures per second (test box, 14 Oct 2026, every change of the main picture).
++// The decoder's output format never changes, so the reconfigure event is dropped at the source pad of the queue lq: the scaler and the crop adapt on their own.
++static GstPadProbeReturn feed_reconfigure_probe(GstPad *pad, GstPadProbeInfo *info, gpointer data) {
++  GstEvent *ev = GST_PAD_PROBE_INFO_EVENT(info);
++  if (ev && GST_EVENT_TYPE(ev) == GST_EVENT_RECONFIGURE) return GST_PAD_PROBE_DROP;
++  return GST_PAD_PROBE_OK;
++}
++
++static void feed_block_reconfigure(Feed *fd) {
++  char qn[64];
++  snprintf(qn, sizeof(qn), "%s_lq", fd->name);
++  GstElement *q = gst_bin_get_by_name(GST_BIN(gst_pipeline), qn);
++  if (!q) return;
++  GstPad *src = gst_element_get_static_pad(q, "src");
++  if (src) {
++    gst_pad_add_probe(src, GST_PAD_PROBE_TYPE_EVENT_UPSTREAM, feed_reconfigure_probe, NULL, NULL);
+     gst_object_unref(src);
+   }
+   gst_object_unref(q);
+@@ -1426,6 +1449,7 @@
+     gst_iterator_free(it);
+     fd->dynamic = TRUE;
+     if (g_getenv("SB_FEED_LATENCY") == NULL || g_strcmp0(g_getenv("SB_FEED_LATENCY"), "0") != 0) feed_answer_latency(fd);
++    if (g_getenv("SB_FEED_RECONFIGURE") == NULL || g_strcmp0(g_getenv("SB_FEED_RECONFIGURE"), "0") != 0) feed_block_reconfigure(fd);
+     feed_frame_copy(fd);
+     fd->active = TRUE;
+     GstElement *demux = gst_bin_get_by_name(GST_BIN(gst_pipeline), fd->name);
