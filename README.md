@@ -2,7 +2,7 @@
 
 Zusatzpaket für eine BELABOX: mehrere Kameras zu einem Bild mischen und über mehrere Leitungen senden. Eigene Weboberfläche auf Port 8780, getrennt von der Original-Oberfläche. Beta.
 
-**Version 1.0.64.** MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`).
+**Version 1.0.65.** MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`).
 
 **Installieren** (als Benutzer mit sudo auf der Box):
 

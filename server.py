@@ -3682,6 +3682,88 @@ class LayoutStore:
         return self.get()
 
 
+class DeckStore:
+    """Adresse des Streamer.bot-Decks für die Karte "Streamerbot Deck", gespeichert auf der Box (gilt für alle Geräte, immer gleich), dazu die Größe, für die das
+    Deck gebaut ist (Breite und Höhe in Pixeln), getrennt für Desktop (width, height) und Mobil (mobile_width, mobile_height): Die Oberfläche zeigt es in dieser Größe
+    und verkleinert es, wenn die Karte schmaler ist. Die Höhe darf nicht klein sein, sonst schneidet der Rahmen das Auswahlfeld der Seiten ab. Nur https-Adressen;
+    die Datei enthält keine Geheimnisse. Ältere Dateien mit "desktop" und "mobile" werden gelesen (erst "desktop")."""
+    MAX_LEN = 500
+    SIZE = {"width": (200, 4000, 600), "height": (320, 4000, 600), "mobile_width": (200, 4000, 390), "mobile_height": (320, 4000, 600)}      # kleinster, größter, Standardwert
+
+    @classmethod
+    def clean_url(cls, v):
+        """Leer oder eine https-Adresse ohne Zugangsdaten; sonst ValueError."""
+        if v is None:
+            return ""
+        if not isinstance(v, str):
+            raise ValueError("Adresse ungültig")
+        v = v.strip()
+        if not v:
+            return ""
+        if len(v) > cls.MAX_LEN or any(ord(c) < 33 or ord(c) == 127 for c in v):
+            raise ValueError("Adresse ungültig")
+        u = urllib.parse.urlsplit(v)
+        if u.scheme != "https" or not u.hostname or u.username or u.password:
+            raise ValueError("Die Adresse muss mit https:// beginnen.")
+        return v
+
+    @classmethod
+    def clean_size(cls, k, v):
+        lo, hi, std = cls.SIZE[k]
+        if v is None or v == "":
+            return std
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
+            raise ValueError("Größe ungültig")
+        return int(max(lo, min(hi, round(v))))
+
+    def __init__(self, state_dir):
+        self.path = os.path.join(state_dir, "deck.json")
+        self.lock = threading.Lock()
+
+    def get(self):
+        try:
+            with open(self.path) as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            d = {}
+        d = d if isinstance(d, dict) else {}
+        url = ""
+        for k in ("url", "desktop", "mobile"):
+            try:
+                url = self.clean_url(d.get(k))
+            except ValueError:
+                url = ""
+            if url:
+                break
+        out = {"url": url}
+        for k in self.SIZE:
+            try:
+                out[k] = self.clean_size(k, d.get(k))
+            except ValueError:
+                out[k] = self.SIZE[k][2]
+        return out
+
+    def put(self, data):
+        """Nur die angegebenen Angaben ändern sich (eine leere Adresse entfernt das Deck)."""
+        if not isinstance(data, dict):
+            raise ValueError("Angaben ungültig")
+        new = {}
+        if "url" in data:
+            new["url"] = self.clean_url(data["url"])
+        for k in self.SIZE:
+            if k in data:
+                new[k] = self.clean_size(k, data[k])
+        with self.lock:
+            cur = self.get()
+            cur.update(new)
+            tmp = self.path + ".tmp"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
+            with os.fdopen(fd, "w") as f:
+                json.dump(cur, f, indent=1, ensure_ascii=False)
+            os.replace(tmp, self.path)
+        return cur
+
+
 def label_bluetooth(st, names):
     """Anzeigenamen der Bluetooth-Adapter und der Sticks ohne Adapter in der Antwort des Bluetooth-Dienstes: eigener Name (names), sonst der
     Standardname aus der Meldung des Sticks (Hersteller davor, wenn der Name nur eine Standardbezeichnung ist)."""
@@ -7183,6 +7265,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.logmode.status())
         if path == "/api/layout":
             return self.reply(200, self.layout.get())
+        if path == "/api/deck":
+            return self.reply(200, self.deck.get())
         if path == "/api/btdriver":
             return self.reply(200, self.btdriver.status())
         if path == "/api/logs":
@@ -7321,6 +7405,8 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         pass
                 return self.reply(200, self.stats_status())
+            if path == "/api/deck":
+                return self.reply(200, self.deck.put(d))
             if path == "/api/layout":
                 if isinstance(d.get("init"), dict):
                     return self.reply(200, self.layout.init(d["init"]))
@@ -7632,6 +7718,7 @@ def main():
     Handler.netchoice = NetChoice(os.path.join(args.state, "camera-net.json"))
     Handler.names = DeviceNames(args.state)
     Handler.layout = LayoutStore(args.state)
+    Handler.deck = DeckStore(args.state)
     Handler.statsshare = StatsShare(args.state, demo=args.demo)
     Handler.fpsprobe = FpsProbe("rtmp://127.0.0.1:%d/%s" % (args.rtmp_port, args.rtmp_app), os.path.join(args.state, "gst-registry.bin"), demo=args.demo)
     Handler.statsserver = StatsServer(Handler.statsshare, Handler.stats_snapshot_now)
