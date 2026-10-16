@@ -1,0 +1,7 @@
+[Unit]
+Description=IRL4YOU BOX Protokoll-Helfer (nur sparsam oder ausführlich)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-logmode.py
+TimeoutStartSec=1min

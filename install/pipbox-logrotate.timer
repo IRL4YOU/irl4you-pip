@@ -1,0 +1,10 @@
+[Unit]
+Description=IRL4YOU BOX Protokolle begrenzen, täglich
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=1d
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

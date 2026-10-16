@@ -1,0 +1,8 @@
+[Unit]
+Description=IRL4YOU BOX WLAN-Helfer (nmcli, nur feste Aktionen)
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-wifi.py
+TimeoutStartSec=3min

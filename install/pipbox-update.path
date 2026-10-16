@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX Update-Helfer
+
+[Path]
+PathExists=/var/lib/pipbox/update-request
+Unit=pipbox-update.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX Protokoll-Sammler
+
+[Path]
+PathExists=/var/lib/pipbox/logs-request
+Unit=pipbox-logs.service
+
+[Install]
+WantedBy=multi-user.target

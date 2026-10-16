@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX Bluetooth-Treiber (Knopf "Treiber jetzt einrichten")
+
+[Path]
+PathExists=/var/lib/pipbox/btdriver-request
+Unit=pipbox-btdriver.service
+
+[Install]
+WantedBy=multi-user.target

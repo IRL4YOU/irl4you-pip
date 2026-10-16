@@ -1,0 +1,8 @@
+[Unit]
+Description=IRL4YOU BOX Protokoll-Sammler (bereinigte Protokolle zum Herunterladen)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-logs.py
+TimeoutStartSec=2min
+Nice=10

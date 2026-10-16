@@ -1,0 +1,4 @@
+# Löst beim Einstecken eines WLAN-Sticks mit AIC8800D80 (UGREEN AX900) die Einrichtung aus (pipbox-wlandriver.service). Der Stick meldet sich zuerst als
+# USB-Laufwerk (a69c:5723); der Dienst holt den Treiber einmal, schaltet den Stick um und prüft, dass eine WLAN-Schnittstelle entsteht. Rückweg: Datei löschen.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="a69c", ATTR{idProduct}=="5723", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-wlandriver.service"
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="a69c", ATTR{idProduct}=="8d80", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-wlandriver.service"

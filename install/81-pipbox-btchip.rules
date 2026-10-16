@@ -1,0 +1,3 @@
+# Löst beim Erkennen des eingebauten Bluetooth-Chips der ROCK 5B Plus (Realtek RTL8852BE, USB 13d3:3572) den Helfer pipbox-btchip.service aus.
+# Der Helfer prüft selbst, ob das Board "Radxa ROCK 5B Plus" ist und ob etwas zu tun ist; auf jedem anderen Gerät endet er sofort. Rückweg: Datei löschen.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="13d3", ATTR{idProduct}=="3572", TAG+="systemd", ENV{SYSTEMD_WANTS}+="pipbox-btchip.service"

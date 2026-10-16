@@ -1,0 +1,7 @@
+[Unit]
+Description=IRL4YOU BOX SSH-Schalter (Dienst ein- oder ausschalten, sonst nichts)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-ssh.py
+TimeoutStartSec=1min

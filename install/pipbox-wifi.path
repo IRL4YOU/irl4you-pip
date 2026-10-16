@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX WLAN-Helfer
+
+[Path]
+PathExists=/var/lib/pipbox/wifi-request
+Unit=pipbox-wifi.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=IRL4YOU BOX Protokolle begrenzen (große Dateien komprimieren und kürzen)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-logmode.py --rotate
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=5min

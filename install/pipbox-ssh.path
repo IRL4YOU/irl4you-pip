@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den IRL4YOU BOX SSH-Schalter
+
+[Path]
+PathExists=/var/lib/pipbox/ssh-request
+Unit=pipbox-ssh.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+[Unit]
+Description=IRL4YOU BOX Adress-Wächter (nur wenn zwei Netzkarten im selben Netz hängen: jede Karte antwortet nur für ihre eigene Adresse)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-arp.py watch
+Restart=on-failure
+RestartSec=10
+Nice=10
+# Root-Rechte nur für diese eine Aufgabe: Der Dienst nimmt keine Eingaben an. Er liest die Adressen der Netzkarten und schreibt, nur wenn sich zwei Karten im selben Netz
+# überschneiden, arp_ignore und arp_announce dieser Karten unter /proc/sys/net (deshalb ohne ProtectKernelTunables). Sein Merkzettel liegt in /run/pipbox-arp.
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

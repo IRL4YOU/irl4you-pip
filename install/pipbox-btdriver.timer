@@ -1,0 +1,10 @@
+[Unit]
+Description=IRL4YOU BOX Bluetooth-Treiber prüfen (nach dem Start und alle 15 Minuten)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

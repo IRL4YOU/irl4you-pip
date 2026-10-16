@@ -1,0 +1,10 @@
+[Unit]
+Description=IRL4YOU BOX Zustandsprotokoll (Spur bei Totalausfall)
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox_health.py
+Nice=10
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

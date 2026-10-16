@@ -1,0 +1,8 @@
+[Unit]
+Description=IRL4YOU BOX Software-Update-Helfer (nur feste Aktionen)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-swupdate.py
+TimeoutStartSec=20min

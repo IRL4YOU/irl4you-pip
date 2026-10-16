@@ -1,0 +1,9 @@
+[Unit]
+Description=Auslöser für den Bluetooth-Chip der ROCK 5B Plus (Knopf "Treiber jetzt einrichten")
+
+[Path]
+PathExists=/var/lib/pipbox/btchip-request
+Unit=pipbox-btchip.service
+
+[Install]
+WantedBy=multi-user.target

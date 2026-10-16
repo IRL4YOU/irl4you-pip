@@ -1,0 +1,10 @@
+[Unit]
+Description=IRL4YOU BOX WLAN-Treiber prüfen (nach dem Start und alle 15 Minuten)
+
+[Timer]
+OnBootSec=4min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

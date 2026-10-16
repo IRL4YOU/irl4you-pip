@@ -1,0 +1,2 @@
+// IRL4YOU BOX: nach jedem Paketlauf die RTMP-Leerlaufgrenze (15 s) wiederherstellen, falls ein BELABOX-Update sie auf 4 s zurückgesetzt hat.
+DPkg::Post-Invoke { "[ -x /opt/pipbox/pipbox-nginx-guard.sh ] && /opt/pipbox/pipbox-nginx-guard.sh || true"; };
