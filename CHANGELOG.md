@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.64
+- Behoben: Liefert eine DJI-Kamera nur noch Ton und kaum Video (Action 5 Pro), baut der Dienst den Stream jetzt wirklich neu auf (Stopp, Vorbereiten, Start) statt ihn als „läuft noch“ weiterzuverwenden.
+
 ## 1.0.63
 - Der Chat ist wieder wie vor 1.0.62 (Lesen, Schreiben, Moderation, Anmeldung, Ereignisse, Akku- und Systemwarnungen im Chat), aber sein Code steht in eigenen Dateien: `twitch.py`, `web/chat.js`, `web/chat.css`.
 - Bleibt aus 1.0.62: NPU-Auslastung und Neuübertragungen entfernt, „x GiB frei“, minimierte Oberfläche.

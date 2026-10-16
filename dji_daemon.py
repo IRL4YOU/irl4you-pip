@@ -916,6 +916,7 @@ class Camera:
                             if kb is not None and kb < max(300, int(cfg.get("bitrate", 6000)) // 10):
                                 low_since = low_since or now
                                 if now - low_since > self.NO_VIDEO_SECONDS:
+                                    self._resume_sig = None            # kein "Der Stream läuft noch": der kaputte Stream wird gestoppt und neu aufgebaut
                                     raise CameraError("Der Stream liefert kein Bild (nur Ton)")
                             else:
                                 low_since = None
