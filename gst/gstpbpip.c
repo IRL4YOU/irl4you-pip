@@ -901,6 +901,406 @@ static void pb_pip_mix_init(PbPipMix *self) {
   gst_base_transform_set_in_place(GST_BASE_TRANSFORM(self), TRUE);
 }
 
+/* ------------------------------------------------------------------ pbtap und pbround */
+
+/* Gerundete kleine Bilder in der Compositor-Engine (pipbox_live.py). Der Compositor kennt im NV12-Ausgang keine Bildpunkt-Deckkraft;
+ * die Rundung entsteht deshalb hinter ihm:
+ *   - pbtap (am Ende jedes Kamerazweigs, nur beim Hauptbild "active") kopiert aus dem Hauptbild die vier Eckquadrate (Seite = Eckenradius)
+ *     jedes gerundeten kleinen Bildes in einen kleinen Vorrat (Bilder im Speicher des Dekoders sind langsam lesbar, deshalb nur diese Ecken).
+ *   - pbround (hinter dem Compositor, in place) holt die Ecken des Hauptbildes mit dem nächsten Zeitstempel zurück, rundet damit die Ecken und
+ *     zeichnet den Rahmen (Rahmenfarbe über das Bild, Rundung innen wie im Plugin pbpipmix). Das Innere des Bildes bleibt unberührt.
+ * Eigenschaft pip1..pip3 von pbround: "x,y,w,h,bw,bc,bo,br,op" (Lage im Ausgabebild, Rahmenbreite, Farbe rrggbb, Rahmendeckkraft %, Radius,
+ * Deckkraft des Bildes %); "off" oder leer = dieses Bild nicht bearbeiten. Maße in Pixeln des 1920 Pixel breiten Ausgabebildes. */
+#define RD_PIPS 3
+#define RD_HIST 6
+#define RD_MAXR 200
+#define RD_STALE_NS G_GUINT64_CONSTANT(1000000000)
+
+typedef struct {
+  gboolean on;
+  gint x, y, w, h;
+  PbStyle st;
+} RdPip;
+
+typedef struct {
+  gboolean ok;
+  gint x, y, w, h, r;
+  guint8 ys[4][RD_MAXR * RD_MAXR];
+  guint8 uvs[4][(RD_MAXR / 2) * RD_MAXR];
+} RdCopy;
+
+typedef struct {
+  guint64 rt;                   /* Laufzeit (running time) des Bildes: nur sie ist zwischen Zweig und Compositor-Ausgang vergleichbar (der Zweig hat einen Versatz auf dem Pad) */
+  guint64 seq;
+  gboolean valid;
+  RdCopy c[RD_PIPS];
+} RdEntry;
+
+static GMutex rd_lock;
+static RdPip rd_pip[RD_PIPS];
+static RdEntry rd_hist[RD_HIST];
+static gint rd_wr = 0;
+static guint64 rd_seq = 0;
+static gint rd_active = 0;      /* Zahl der Taps, die gerade das Hauptbild liefern */
+
+static gint rd_radius(const RdPip *p) {
+  PbShape s;
+  pb_shape_init(&s, &p->st, 1920, p->w, p->h);
+  return (s.ro + 1) & ~1;
+}
+
+typedef struct { GstBaseTransform parent; GstVideoInfo info; gboolean have_info, active; } PbTap;
+typedef struct { GstBaseTransformClass parent_class; } PbTapClass;
+G_DEFINE_TYPE(PbTap, pb_tap, GST_TYPE_BASE_TRANSFORM)
+
+enum { PROP_TAP0, PROP_TAP_ACTIVE };
+
+static GstStaticPadTemplate tap_sink = GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw, format=(string)NV12"));
+static GstStaticPadTemplate tap_src = GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw, format=(string)NV12"));
+
+static void pb_tap_set_property(GObject *o, guint id, const GValue *v, GParamSpec *ps) {
+  PbTap *self = (PbTap *) o;
+  if (id != PROP_TAP_ACTIVE) {
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(o, id, ps);
+    return;
+  }
+  const gboolean now = g_value_get_boolean(v);
+  g_mutex_lock(&rd_lock);
+  if (now && !self->active)
+    rd_active++;
+  else if (!now && self->active)
+    rd_active--;
+  self->active = now;
+  g_mutex_unlock(&rd_lock);
+}
+
+static void pb_tap_get_property(GObject *o, guint id, GValue *v, GParamSpec *ps) {
+  PbTap *self = (PbTap *) o;
+  if (id == PROP_TAP_ACTIVE)
+    g_value_set_boolean(v, self->active);
+  else
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(o, id, ps);
+}
+
+static void pb_tap_finalize(GObject *o) {
+  PbTap *self = (PbTap *) o;
+  if (self->active) {
+    g_mutex_lock(&rd_lock);
+    rd_active--;
+    self->active = FALSE;
+    g_mutex_unlock(&rd_lock);
+  }
+  G_OBJECT_CLASS(pb_tap_parent_class)->finalize(o);
+}
+
+static gboolean pb_tap_set_caps(GstBaseTransform *t, GstCaps *in, GstCaps *out) {
+  PbTap *self = (PbTap *) t;
+  self->have_info = gst_video_info_from_caps(&self->info, in);
+  return TRUE;
+}
+
+static GstFlowReturn pb_tap_transform_ip(GstBaseTransform *t, GstBuffer *buf) {
+  PbTap *self = (PbTap *) t;
+  if (!self->active || !self->have_info)
+    return GST_FLOW_OK;
+  RdPip pips[RD_PIPS];
+  gint slot = -1;
+  g_mutex_lock(&rd_lock);
+  memcpy(pips, rd_pip, sizeof pips);
+  slot = rd_wr;
+  rd_wr = (rd_wr + 1) % RD_HIST;
+  rd_hist[slot].valid = FALSE;
+  g_mutex_unlock(&rd_lock);
+  GstVideoFrame fr;
+  if (!gst_video_frame_map(&fr, &self->info, buf, GST_MAP_READ))
+    return GST_FLOW_OK;
+  const gint fw = GST_VIDEO_FRAME_WIDTH(&fr), fh = GST_VIDEO_FRAME_HEIGHT(&fr);
+  const guint8 *py = GST_VIDEO_FRAME_PLANE_DATA(&fr, 0), *puv = GST_VIDEO_FRAME_PLANE_DATA(&fr, 1);
+  const gint sy = GST_VIDEO_FRAME_PLANE_STRIDE(&fr, 0), suv = GST_VIDEO_FRAME_PLANE_STRIDE(&fr, 1);
+  RdEntry *e = &rd_hist[slot];       /* nur dieser Zweig schreibt hier, solange valid FALSE ist */
+  for (gint i = 0; i < RD_PIPS; i++) {
+    RdCopy *c = &e->c[i];
+    const RdPip *p = &pips[i];
+    c->ok = FALSE;
+    if (!p->on || p->w < 16 || p->h < 16 || p->x < 0 || p->y < 0 || p->x + p->w > fw || p->y + p->h > fh)
+      continue;
+    const gint r = rd_radius(p);
+    if (r <= 0 || r > RD_MAXR || r > p->w || r > p->h)
+      continue;
+    for (gint q = 0; q < 4; q++) {
+      const gint x0 = p->x + ((q & 1) ? p->w - r : 0), y0 = p->y + ((q & 2) ? p->h - r : 0);
+      for (gint k = 0; k < r; k++)
+        memcpy(c->ys[q] + (gsize) k * r, py + (gsize) (y0 + k) * sy + x0, (gsize) r);
+      for (gint k = 0; k < r / 2; k++)
+        memcpy(c->uvs[q] + (gsize) k * r, puv + (gsize) (y0 / 2 + k) * suv + x0, (gsize) r);
+    }
+    c->x = p->x; c->y = p->y; c->w = p->w; c->h = p->h; c->r = r;
+    c->ok = TRUE;
+  }
+  gst_video_frame_unmap(&fr);
+  g_mutex_lock(&rd_lock);
+  e->rt = GST_BUFFER_PTS_IS_VALID(buf) ? gst_segment_to_running_time(&t->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(buf)) : GST_CLOCK_TIME_NONE;
+  e->seq = ++rd_seq;
+  e->valid = TRUE;
+  g_mutex_unlock(&rd_lock);
+  return GST_FLOW_OK;
+}
+
+static void pb_tap_class_init(PbTapClass *klass) {
+  GObjectClass *oc = G_OBJECT_CLASS(klass);
+  GstElementClass *ec = GST_ELEMENT_CLASS(klass);
+  GstBaseTransformClass *bc = GST_BASE_TRANSFORM_CLASS(klass);
+  oc->set_property = pb_tap_set_property;
+  oc->get_property = pb_tap_get_property;
+  oc->finalize = pb_tap_finalize;
+  g_object_class_install_property(oc, PROP_TAP_ACTIVE,
+      g_param_spec_boolean("active", "Aktiv", "dieser Zweig liefert gerade das Hauptbild: Ecken der gerundeten kleinen Bilder sichern",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_PLAYING));
+  gst_element_class_set_static_metadata(ec, "IRL4YOU Ecken sichern", "Filter/Video", "Sichert die Ecken unter gerundeten kleinen Bildern", "IRL4YOU");
+  gst_element_class_add_static_pad_template(ec, &tap_sink);
+  gst_element_class_add_static_pad_template(ec, &tap_src);
+  bc->set_caps = pb_tap_set_caps;
+  bc->transform_ip = pb_tap_transform_ip;
+  bc->transform_ip_on_passthrough = TRUE;
+}
+
+static void pb_tap_init(PbTap *self) {
+  self->have_info = FALSE;
+  self->active = FALSE;
+  gst_base_transform_set_in_place(GST_BASE_TRANSFORM(self), TRUE);
+  gst_base_transform_set_passthrough(GST_BASE_TRANSFORM(self), TRUE);
+}
+
+/* ---- pbround */
+
+typedef struct { GstVideoFilter parent; } PbRound;
+typedef struct { GstVideoFilterClass parent_class; } PbRoundClass;
+G_DEFINE_TYPE(PbRound, pb_round, GST_TYPE_VIDEO_FILTER)
+
+enum { PROP_R0, PROP_RPIP1, PROP_RPIP2, PROP_RPIP3 };      /* lückenlos */
+
+static GstStaticPadTemplate rnd_sink = GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw, format=(string)NV12"));
+static GstStaticPadTemplate rnd_src = GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw, format=(string)NV12"));
+
+static void pb_round_set_property(GObject *o, guint id, const GValue *v, GParamSpec *ps) {
+  if (id < PROP_RPIP1 || id > PROP_RPIP3) {
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(o, id, ps);
+    return;
+  }
+  RdPip np;
+  memset(&np, 0, sizeof np);
+  pb_style_default(&np.st);
+  const gchar *txt = g_value_get_string(v);
+  gint x, y, w, h, bw, bo, br, op;
+  guint bc;
+  if (txt && sscanf(txt, "%d,%d,%d,%d,%d,%x,%d,%d,%d", &x, &y, &w, &h, &bw, &bc, &bo, &br, &op) == 9 && w >= 16 && h >= 16) {
+    np.on = TRUE;
+    np.x = x & ~1; np.y = y & ~1; np.w = w & ~1; np.h = h & ~1;
+    np.st.bw = PB_CLAMP(bw, 0, 64);
+    np.st.bc = bc & 0xffffffu;
+    np.st.bo = PB_CLAMP(bo, 0, 100);
+    np.st.br = PB_CLAMP(br, 0, 200);
+    np.st.op = PB_CLAMP(op, 0, 100);
+  }
+  g_mutex_lock(&rd_lock);
+  rd_pip[id - PROP_RPIP1] = np;
+  g_mutex_unlock(&rd_lock);
+}
+
+static void pb_round_get_property(GObject *o, guint id, GValue *v, GParamSpec *ps) {
+  if (id < PROP_RPIP1 || id > PROP_RPIP3) {
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(o, id, ps);
+    return;
+  }
+  gchar buf[128] = "off";
+  g_mutex_lock(&rd_lock);
+  const RdPip *p = &rd_pip[id - PROP_RPIP1];
+  if (p->on)
+    g_snprintf(buf, sizeof buf, "%d,%d,%d,%d,%d,%06x,%d,%d,%d", p->x, p->y, p->w, p->h, p->st.bw, p->st.bc, p->st.bo, p->st.br, p->st.op);
+  g_mutex_unlock(&rd_lock);
+  g_value_set_string(v, buf);
+}
+
+/* Hauptbild-Punkt (lx, ly im kleinen Bild) aus den gesicherten Ecken; FALSE, wenn dort nichts gesichert ist */
+static gboolean rd_main_px(const RdCopy *c, gint lx, gint ly, gint *Y, gint *U, gint *V) {
+  const gint r = c->r, q = (ly >= c->h / 2 ? 2 : 0) + (lx >= c->w / 2 ? 1 : 0);
+  const gint x0 = (q & 1) ? c->w - r : 0, y0 = (q & 2) ? c->h - r : 0;
+  const gint cx = lx - x0, cy = ly - y0;
+  if (cx < 0 || cy < 0 || cx >= r || cy >= r)
+    return FALSE;
+  *Y = c->ys[q][cy * r + cx];
+  const gint ux = cx & ~1;
+  *U = c->uvs[q][(cy / 2) * r + ux];
+  *V = c->uvs[q][(cy / 2) * r + ux + 1];
+  return TRUE;
+}
+
+static const RdCopy *rd_find(gint pip, const RdPip *p, guint64 rt) {
+  const RdCopy *best = NULL;
+  guint64 bestd = RD_STALE_NS, bestseq = 0;
+  for (gint i = 0; i < RD_HIST; i++) {
+    const RdEntry *e = &rd_hist[i];
+    const RdCopy *c = &e->c[pip];
+    if (!e->valid || !c->ok || c->x != p->x || c->y != p->y || c->w != p->w || c->h != p->h)
+      continue;
+    if (rt == GST_CLOCK_TIME_NONE || e->rt == GST_CLOCK_TIME_NONE) {          /* ohne Zeit: das jüngste Bild */
+      if (e->seq > bestseq && bestd == RD_STALE_NS) {
+        bestseq = e->seq;
+        best = c;
+      }
+      continue;
+    }
+    const guint64 d = e->rt > rt ? e->rt - rt : rt - e->rt;
+    if (d < bestd) {
+      bestd = d;
+      best = c;
+      bestseq = G_MAXUINT64;
+    }
+  }
+  return best;
+}
+
+#define PB_RMIX(a, b, w) (((a) * (PB_ONE - (w)) + (b) * (w) + PB_ONE / 2) >> PB_SHIFT)
+
+/* Ein gerundetes kleines Bild im fertigen Ausgabebild bearbeiten (Rahmen und Ecken). Aufrufer hält rd_lock. */
+static void pb_round_pip(GstVideoFrame *f, gint idx, const RdPip *p, guint64 rt, gboolean black_ok) {
+  const gint fw = GST_VIDEO_FRAME_WIDTH(f), fh = GST_VIDEO_FRAME_HEIGHT(f);
+  if (p->x < 0 || p->y < 0 || p->x + p->w > fw || p->y + p->h > fh || p->st.op <= 0)
+    return;
+  PbStyle st = p->st;
+  const gint opf = (st.op * PB_ONE + 50) / 100;
+  st.op = 100;                                       /* nur die Form; die Deckkraft des Bildes steckt schon im Compositor */
+  PbShape s;
+  pb_shape_init(&s, &st, 1920, p->w, p->h);
+  if (s.ro <= 0 && s.bw <= 0)
+    return;
+  const RdCopy *mc = rd_find(idx, p, rt);
+  gint yb, ub, vb;
+  pb_rgb_to_nv12(st.bc, &yb, &ub, &vb);
+  guint8 *dy = GST_VIDEO_FRAME_PLANE_DATA(f, 0), *duv = GST_VIDEO_FRAME_PLANE_DATA(f, 1);
+  const gint sy = GST_VIDEO_FRAME_PLANE_STRIDE(f, 0), suv = GST_VIDEO_FRAME_PLANE_STRIDE(f, 1);
+  /* Luma */
+  for (gint r = 0; r < s.ch; r++) {
+    gint wb, a;
+    const gint zone = pb_row_zone(&s, r, &wb, &a);
+    if (zone == 0 && wb == 0)
+      continue;                                      /* reine Bildzeile ohne Rahmen und Rundung */
+    guint8 *row = dy + (gsize) (p->y + r) * sy + p->x;
+    const gint le = MIN(zone, s.cw), rs = MAX(s.cw - zone, le);
+    if (wb > 0 && rs > le) {                         /* Rahmenzeile: Mittelteil mit Rahmenfarbe */
+      const gint wbe = (wb * opf + PB_ONE / 2) >> PB_SHIFT;
+      for (gint m = le; m < rs; m++)
+        row[m] = (guint8) PB_RMIX((gint) row[m], yb, wbe);
+    }
+    for (gint pass = 0; pass < 2; pass++) {
+      const gint x0 = pass ? rs : 0, x1 = pass ? s.cw : le;
+      for (gint x = x0; x < x1; x++) {
+        gint wbp, ap, my = 0, mu = 0, mv = 0;
+        pb_shape_px(&s, x, r, &wbp, &ap);
+        gint c = row[x];
+        const gint wbe = (wbp * opf + PB_ONE / 2) >> PB_SHIFT;
+        if (wbe > 0)
+          c = PB_RMIX(c, yb, wbe);
+        if (ap < PB_ONE) {
+          if (mc && rd_main_px(mc, x, r, &my, &mu, &mv))
+            c = PB_RMIX(my, c, ap);
+          else if (black_ok)
+            c = PB_RMIX(16, c, ap);
+          else
+            continue;
+        }
+        row[x] = (guint8) c;
+      }
+    }
+  }
+  /* Chroma: je UV-Paar das Mittel der vier Luma-Bildpunkte */
+  for (gint mr = 0; mr < s.ch / 2; mr++) {
+    gint wb0, a0, wb1, a1;
+    const gint z0 = pb_row_zone(&s, 2 * mr, &wb0, &a0), z1 = pb_row_zone(&s, 2 * mr + 1, &wb1, &a1);
+    const gint zone = MAX(z0, z1);
+    if (zone == 0 && wb0 == 0 && wb1 == 0)
+      continue;
+    guint8 *row = duv + (gsize) (p->y / 2 + mr) * suv + p->x;
+    const gint np = s.cw / 2, kz = (zone + 1) / 2, le = MIN(kz, np), rs = MAX(np - kz, le);
+    const gint wbm = (wb0 + wb1 + 1) >> 1;
+    if (wbm > 0 && rs > le) {
+      const gint wbe = (wbm * opf + PB_ONE / 2) >> PB_SHIFT;
+      for (gint k = le; k < rs; k++) {
+        row[2 * k] = (guint8) PB_RMIX((gint) row[2 * k], ub, wbe);
+        row[2 * k + 1] = (guint8) PB_RMIX((gint) row[2 * k + 1], vb, wbe);
+      }
+    }
+    for (gint pass = 0; pass < 2; pass++) {
+      const gint k0 = pass ? rs : 0, k1 = pass ? np : le;
+      for (gint k = k0; k < k1; k++) {
+        gint w4 = 0, a4 = 0;
+        for (gint q = 0; q < 4; q++) {
+          gint w, a;
+          pb_shape_px(&s, 2 * k + (q & 1), 2 * mr + (q >> 1), &w, &a);
+          w4 += w;
+          a4 += a;
+        }
+        w4 = (w4 + 2) >> 2;
+        a4 = (a4 + 2) >> 2;
+        gint cu = row[2 * k], cv = row[2 * k + 1];
+        const gint wbe = (w4 * opf + PB_ONE / 2) >> PB_SHIFT;
+        if (wbe > 0) {
+          cu = PB_RMIX(cu, ub, wbe);
+          cv = PB_RMIX(cv, vb, wbe);
+        }
+        if (a4 < PB_ONE) {
+          gint my = 0, mu = 0, mv = 0;
+          if (mc && rd_main_px(mc, 2 * k, 2 * mr, &my, &mu, &mv)) {
+            cu = PB_RMIX(mu, cu, a4);
+            cv = PB_RMIX(mv, cv, a4);
+          } else if (black_ok) {
+            cu = PB_RMIX(128, cu, a4);
+            cv = PB_RMIX(128, cv, a4);
+          } else {
+            continue;
+          }
+        }
+        row[2 * k] = (guint8) cu;
+        row[2 * k + 1] = (guint8) cv;
+      }
+    }
+  }
+}
+
+static GstFlowReturn pb_round_transform_ip(GstVideoFilter *filter, GstVideoFrame *frame) {
+  g_mutex_lock(&rd_lock);
+  const guint64 rt = GST_BUFFER_PTS_IS_VALID(frame->buffer) ?
+      gst_segment_to_running_time(&GST_BASE_TRANSFORM(filter)->segment, GST_FORMAT_TIME, GST_BUFFER_PTS(frame->buffer)) : GST_CLOCK_TIME_NONE;
+  const gboolean black_ok = rd_active == 0;
+  for (gint i = 0; i < RD_PIPS; i++)
+    if (rd_pip[i].on)
+      pb_round_pip(frame, i, &rd_pip[i], rt, black_ok);
+  g_mutex_unlock(&rd_lock);
+  return GST_FLOW_OK;
+}
+
+static void pb_round_class_init(PbRoundClass *klass) {
+  GObjectClass *oc = G_OBJECT_CLASS(klass);
+  GstElementClass *ec = GST_ELEMENT_CLASS(klass);
+  GstVideoFilterClass *vc = GST_VIDEO_FILTER_CLASS(klass);
+  oc->set_property = pb_round_set_property;
+  oc->get_property = pb_round_get_property;
+  static const struct { guint id; const gchar *name; const gchar *nick; } pp[] = {
+    {PROP_RPIP1, "pip1", "Bild 1"}, {PROP_RPIP2, "pip2", "Bild 2"}, {PROP_RPIP3, "pip3", "Bild 3"}};
+  for (guint i = 0; i < G_N_ELEMENTS(pp); i++)
+    g_object_class_install_property(oc, pp[i].id,
+        g_param_spec_string(pp[i].name, pp[i].nick, "x,y,w,h,bw,bc,bo,br,op des gerundeten kleinen Bildes; off = nicht bearbeiten", "off",
+                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_PLAYING));
+  gst_element_class_set_static_metadata(ec, "IRL4YOU Ecken runden", "Filter/Effect/Video", "Rundet kleine Bilder und zeichnet den Rahmen", "IRL4YOU");
+  gst_element_class_add_static_pad_template(ec, &rnd_sink);
+  gst_element_class_add_static_pad_template(ec, &rnd_src);
+  vc->transform_frame_ip = pb_round_transform_ip;
+}
+
+static void pb_round_init(PbRound *self) {
+  gst_base_transform_set_in_place(GST_BASE_TRANSFORM(self), TRUE);
+}
+
 /* ------------------------------------------------------------------ pbpipsel */
 
 #define SEL_PADS 4
@@ -2210,6 +2610,8 @@ static gboolean plugin_init(GstPlugin *plugin) {
   return gst_element_register(plugin, "pbpipsink", GST_RANK_NONE, pb_pip_sink_get_type()) &&
          gst_element_register(plugin, "pbpipmix", GST_RANK_NONE, pb_pip_mix_get_type()) &&
          gst_element_register(plugin, "pbpipsel", GST_RANK_NONE, pb_pip_sel_get_type()) &&
+         gst_element_register(plugin, "pbtap", GST_RANK_NONE, pb_tap_get_type()) &&
+         gst_element_register(plugin, "pbround", GST_RANK_NONE, pb_round_get_type()) &&
          gst_element_register(plugin, "pbctl", GST_RANK_NONE, pb_ctl_get_type());
 }
 

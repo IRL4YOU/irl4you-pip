@@ -1,0 +1,9 @@
+[Unit]
+Description=IRL4YOU BOX Fernzugriff: öffentliche Freigabe nach Stromausfall prüfen und bei Bedarf neu anwenden
+After=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-remote.py heal
+TimeoutStartSec=5min
+Nice=10
