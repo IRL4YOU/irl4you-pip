@@ -1,0 +1,44 @@
+diff --git a/belacoder.c b/belacoder.c
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -126,6 +126,11 @@
+      buffer show that the link keeps up, and only goes down when they do not.
+ */
+ static int ctl_start = 1, ctl_lat = 0, ctl_cap = 1;
++// fast-decrease (SB_CTL letter D): under heavy congestion the bitrate is HALVED (instead of 10 % + 100 kbit/s) while the send buffer holds more than FAST_DRAIN_MS of data at the
++// rate the link really carries. The adaptive thresholds follow the surge itself (the jitter takes the jump), so a sudden drop of the link (12 -> 2 Mbit/s) needed 6-9 s to reach
++// the minimum and SRT dropped 300-650 packets (picture artefacts, sound stutter) in that time (test box, 16 Oct 2026).
++static int ctl_fast = 0;
++#define FAST_DRAIN_MS 600
+ static int incr_scale = BITRATE_INCR_SCALE;
+ #define CTL_START_BITRATE (1000 * 1000)
+ #define CAP_WINDOW_MS 3000.0
+@@ -862,7 +867,19 @@
+ 
+   } else if (ctime > next_bitrate_decr &&
+       (rtt > (ctl_latency / 5) || (!warm && bs > bs_th2))) {
+-    bitrate -= BITRATE_DECR_MIN + bitrate/BITRATE_DECR_SCALE;
++    double pkts_per_ms = (throughput / 8.0) / srt_pkt_size;
++    if (pkts_per_ms < 0.02) pkts_per_ms = 0.02;
++    if (ctl_fast && !warm && (double)bs / pkts_per_ms > FAST_DRAIN_MS) {
++      static uint64_t last_log = 0;
++      if (ctime > last_log + 2000) {
++        fprintf(stderr, "Fast decrease: %d packets in the send buffer = %.0f ms at the current rate, bitrate %d -> %d kbit/s\n", bs, (double)bs / pkts_per_ms,
++                bitrate / 1000, bitrate / 2000);
++        last_log = ctime;
++      }
++      bitrate /= 2;
++    } else {
++      bitrate -= BITRATE_DECR_MIN + bitrate/BITRATE_DECR_SCALE;
++    }
+     next_bitrate_decr = ctime + BITRATE_DECR_FAST_INT;
+     ctl.n_d2++;
+ 
+@@ -1899,6 +1916,7 @@
+     ctl_start = strchr(cf, 'A') != NULL;
+     ctl_lat = strchr(cf, 'B') != NULL;
+     ctl_cap = strchr(cf, 'C') != NULL;
++    ctl_fast = strchr(cf, 'D') != NULL;
+     if (ctl_start) cur_bitrate = min_max(CTL_START_BITRATE, min_bitrate, max_bitrate);
+     fprintf(stderr, "Bitrate controller: start %s, latency limit %s, cap by sent rate %s\n", ctl_start ? "soft" : "max",
+             ctl_lat ? "on" : "off", ctl_cap ? "on" : "off");

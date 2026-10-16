@@ -7,3 +7,5 @@ Bauen: `sudo sh build.sh` (installiert nach `/opt/pipbox/bin/belacoder`). Rückw
 **Wichtig:** Die Zahl hinter `-sb` in der Kennung (zum Beispiel `-jt2-sb12-eos`) steuert die Sendekette und wird nie hochgezählt. Neue Patches hängen nur einen Zusatz an.
 
 Siebter Patch `belacoder-feed-shift.patch`: Neuer Steuerbefehl `shift <Zweig> <ms>` verschiebt Bild und Ton einer Kamera um die eingestellte Verzögerung. Kennung: `-sb12-eos-sh`.
+
+Achter Patch `belacoder-fast-decrease.patch`: Schalter `SB_CTL=D`: Bei starkem Stau (Sendepuffer über 600 ms Daten bei der tatsächlichen Rate) wird die Bitrate halbiert statt um 10 % gesenkt. Kennung: `-sb12-eos-sh-fd`.
