@@ -2069,6 +2069,19 @@ class SendControl:
         except (OSError, ValueError):
             return {}
 
+    def measured_fps(self):
+        """Von belacoder gemessene Bildrate je Kamera {Schlüssel: fps} (nur bei laufender Sendekette mit der Engine "Alle Kameras immer bereit"). Für Kameras, die ihre Bildrate nicht
+        melden (Handys); der Sende-Dienst schreibt sie alle 2 Sekunden in seine Statusdatei."""
+        if self.demo:
+            return {}
+        d = self._detail()
+        try:
+            if time.time() - float(d.get("time", 0)) > 15:
+                return {}
+            return {k: float(v) for k, v in ((d.get("failover") or {}).get("fps") or {}).items() if isinstance(k, str) and isinstance(v, (int, float)) and v > 0}
+        except (TypeError, ValueError):
+            return {}
+
     def live_fast(self):
         """Läuft die Sendung? Billig (eine kleine Datei lesen, kein systemctl, keine Prozessliste): der Sende-Dienst schreibt seinen Zustand alle 2 Sekunden. Für die Statistik,
         die jede Sekunde fragt; status() prüft dagegen vieles mehr."""
@@ -3322,7 +3335,7 @@ class StatsShare:
     Die Seite verbindet sich mit dem Statistik-Server (StatsServer, Port 8781, von außen über Tailscale Funnel auf Port 8443) mit ?t=<Token>. Der Token (32 Zeichen, zufällig) erlaubt nur das Lesen des Schnappschusses; er steht in <Zustand>/stats-share.json (Modus 0600),
     lässt sich erneuern (der alte gilt sofort nicht mehr) und die Freigabe ist ab Werk aus. Je Gruppe (Senden, Netze, Prozessor, Temperaturen, Kameras, Meldungen) lässt sich
     einstellen, was nach außen geht. Zugriffsbegrenzung je Absender; der Schnappschuss wird eine Sekunde zwischengespeichert (viele Zuschauer kosten nicht mehr als einer)."""
-    GROUPS = ("send", "net", "cpu", "temp", "cameras", "alerts")
+    GROUPS = ("send", "net", "cpu", "temp", "cameras", "alerts", "cores", "disk")      # cores und disk (Details der Statusseite) kamen später dazu; fehlen sie in einer älteren Datei, gelten sie als an
     WINDOW_S, MAX_HITS = 10.0, 40          # Abrufe je Absender in diesem Zeitraum
     FAIL_WINDOW_S, MAX_FAILS = 60.0, 10    # falsche Token je Absender in diesem Zeitraum
     CACHE_S = 1.0
@@ -3430,9 +3443,18 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
     out = {"v": 1, "time": int(time.time() if now is None else now), "live": bool(send.get("active"))}
     if groups.get("send"):
         ss = det.get("send") if isinstance(det.get("send"), dict) else {}
+        rates0 = m.get("net") if isinstance(m.get("net"), dict) else {}
+        ups0 = m.get("uplinks") if isinstance(m.get("uplinks"), dict) else {}
+        wire = sum((r.get("tx_mbit") or 0) for n, r in rates0.items() if isinstance(r, dict) and n in ups0)
+        if not ups0:
+            wire = sum((r.get("tx_mbit") or 0) for n, r in rates0.items() if isinstance(r, dict) and n != "lo" and not n.startswith(("tailscale", "docker", "veth")))
+        pay = m.get("payload_mbit")
+        shown = min(pay, wire) if isinstance(pay, (int, float)) and not isinstance(pay, bool) else wire               # wie die Zahl neben "Live" in der Oberfläche
         out["send"] = {"fps": num(ss.get("fps")), "bitrate_kbps": num(ss.get("bitrate_kbps"), 0), "rtt_ms": num(ss.get("rtt_ms"), 0), "send_mbps": num(ss.get("send_mbps"), 2),
                        "buffer_ms": num(ss.get("snd_buf_ms"), 0), "loss_pct": num(ss.get("loss_pct"), 2), "retrans_pct": num(ss.get("retrans_pct"), 2),
-                       "payload_mbit": num(m.get("payload_mbit"), 2)}
+                       "payload_mbit": num(m.get("payload_mbit"), 2), "shown_mbit": num(shown, 2) if ss else None, "buf_pkts": num(ss.get("snd_buf_pkts"), 0),
+                       "retrans_total": num(ss.get("retrans_total"), 0), "loss_total": num(ss.get("loss_total"), 0), "drop_total": num(ss.get("drop_total"), 0),
+                       "sent_total": num(ss.get("sent_total"), 0)}
     if groups.get("net"):
         ups = m.get("uplinks") if isinstance(m.get("uplinks"), dict) else {}
         rates = m.get("net") if isinstance(m.get("net"), dict) else {}
@@ -3450,8 +3472,20 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
     if groups.get("cpu"):
         cpu = m.get("cpu") if isinstance(m.get("cpu"), dict) else {}
         mem = m.get("mem") if isinstance(m.get("mem"), dict) else {}
-        out["cpu"] = {"avg": num(cpu.get("avg")), "max": num(cpu.get("max")), "cores": [num(c) for c in (cpu.get("cores") or [])[:16]],
-                      "freq_mhz": [num(f, 0) for f in (cpu.get("freq_mhz") or [])[:16]], "mem_used_pct": num(mem.get("used_pct")), "mem_avail_mb": num(mem.get("avail_mb"), 0)}
+        out["cpu"] = {"avg": num(cpu.get("avg")), "max": num(cpu.get("max")), "mem_used_pct": num(mem.get("used_pct")), "mem_avail_mb": num(mem.get("avail_mb"), 0),
+                      "mem_total_mb": num(mem.get("total_mb"), 0)}
+    if groups.get("cores"):                                                        # Details: Prozessor (jeder Kern mit Takt, GPU, NPU)
+        cpu = m.get("cpu") if isinstance(m.get("cpu"), dict) else {}
+        acc = det.get("accel") if isinstance(det.get("accel"), dict) else {}
+
+        def accel(k):
+            v = acc.get(k)
+            return {"load_pct": num(v.get("load_pct"), 0), "mhz": num(v.get("mhz"), 0)} if isinstance(v, dict) else None
+        out["cores"] = {"load": [num(c) for c in (cpu.get("cores") or [])[:16]], "freq_mhz": [num(f, 0) for f in (cpu.get("freq_mhz") or [])[:16]],
+                        "gpu": accel("gpu"), "npu": accel("npu")}
+    if groups.get("disk"):                                                         # Details: Speicherplatz
+        k = det.get("disk")
+        out["disk"] = {x: num(k.get(x), 1) for x in ("used_gb", "free_gb", "total_gb", "used_pct")} if isinstance(k, dict) else None
     if groups.get("temp"):
         zones = det.get("temps") if isinstance(det.get("temps"), list) else []
         out["temp"] = {"max_c": num(m.get("temp_c")), "fan_pct": num(m.get("fan_pct"), 0),
@@ -9871,8 +9905,12 @@ class Handler(BaseHTTPRequestHandler):
         for c in m["cameras"]:
             p = pic.get(c["key"]) if pic else None
             c["pic"], c["pic_wait"] = (p[0], p[1]) if p else (None, 0)
+        measured = self.send.measured_fps()
         for c in m["cameras"]:
             if c.get("state") == "live" and not c.get("fps"):
+                if c["key"] in measured:
+                    c["fps"], c["fps_measured"] = measured[c["key"]], True        # von belacoder am Mischer gemessen (Kameras ohne Metadaten, zum Beispiel Handys)
+                    continue
                 f = self.djisvc.fps_for_key(c["key"])
                 if f:
                     c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
