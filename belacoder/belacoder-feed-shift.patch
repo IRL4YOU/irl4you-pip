@@ -1,0 +1,52 @@
+diff --git a/belacoder.c b/belacoder.c
+--- a/belacoder.c
++++ b/belacoder.c
+@@ -356,6 +356,7 @@
+   GstPad *vpad, *apad;
+   gboolean aligned;
+   gint64 offset;         // ns, applied to the src pads of the flvdemux
++  gint64 shift;          // ns, feed-shift: extra delay of the whole feed (picture and sound), set live with "shift"; added to the offset
+   GMutex lock;
+   GstClock *clock;
+   GstClockTime base;
+@@ -386,8 +387,8 @@
+ }
+ 
+ static void feed_apply_offset(Feed *fd) {
+-  if (fd->vpad) gst_pad_set_offset(fd->vpad, fd->offset);
+-  if (fd->apad) gst_pad_set_offset(fd->apad, fd->offset);
++  if (fd->vpad) gst_pad_set_offset(fd->vpad, fd->offset + fd->shift);
++  if (fd->apad) gst_pad_set_offset(fd->apad, fd->offset + fd->shift);
+ }
+ 
+ static gboolean feed_now(Feed *fd, GstPad *pad, GstClockTime *now) {
+@@ -448,7 +449,7 @@
+     gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, probe_align, fd, NULL);
+   } else if (strncmp(name, "audio", 5) == 0) {
+     fd->apad = gst_object_ref(pad);
+-    if (fd->aligned) gst_pad_set_offset(pad, fd->offset);   // the audio pad came after the first video buffer
++    if (fd->aligned) gst_pad_set_offset(pad, fd->offset + fd->shift);   // the audio pad came after the first video buffer
+   }
+   g_mutex_unlock(&fd->lock);
+   g_free(name);
+@@ -1515,6 +1516,20 @@
+       fprintf(stderr, "control: no pad %s on %s\n", a, elem_name);
+     }
+     gst_object_unref(elem);
++  } else if (strcmp(cmd, "shift") == 0) {
++    // feed-shift: "shift <feed> <ms>" delays the pictures AND the sound of a feed by <ms> on top of the alignment (0 = none): the due time of every frame moves, so the picture
++    // is really shown later. The hold of the compressed data (control "set ..._vq min-threshold-time") keeps the frames from piling up raw in the queues, the caller sets it with it.
++    int ms = 0;
++    if (sscanf(line, "%*s %63s %d", elem_name, &ms) < 2) return;
++    Feed *fd = feed_by_name(elem_name);
++    if (!fd) { fprintf(stderr, "control: no dynamic feed %s\n", elem_name); return; }
++    if (ms < 0) ms = 0;
++    if (ms > 5000) ms = 5000;
++    g_mutex_lock(&fd->lock);
++    fd->shift = (gint64)ms * 1000000;
++    if (fd->aligned) feed_apply_offset(fd);
++    g_mutex_unlock(&fd->lock);
++    fprintf(stderr, "Feed %s shifted by %d ms\n", fd->name, ms);
+   } else if (strcmp(cmd, "feed") == 0) {
+     char onoff[8];
+     if (sscanf(line, "%*s %63s %7s", elem_name, onoff) < 2) return;

@@ -5,3 +5,5 @@ Patches für `belacoder.c` aus [BELABOX/belacoder](https://github.com/BELABOX/be
 Bauen: `sudo sh build.sh` (installiert nach `/opt/pipbox/bin/belacoder`). Rückweg: diese Datei löschen, dann gilt das Original aus `/usr/bin`.
 
 **Wichtig:** Die Zahl hinter `-sb` in der Kennung (zum Beispiel `-jt2-sb12-eos`) steuert die Sendekette und wird nie hochgezählt. Neue Patches hängen nur einen Zusatz an.
+
+Siebter Patch `belacoder-feed-shift.patch`: Neuer Steuerbefehl `shift <Zweig> <ms>` verschiebt Bild und Ton einer Kamera um die eingestellte Verzögerung. Kennung: `-sb12-eos-sh`.
