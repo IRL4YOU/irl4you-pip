@@ -991,6 +991,60 @@ def usb_devices():
     return "\n".join(rows) + "\n"
 
 
+def tailscale_boot(window_s=600, cap=250):
+    """Die Zeilen von tailscaled in den ersten 10 Minuten nach dem Start (Zeit seit dem Start, nicht die Uhrzeit: nach einem Stromausfall springt die Uhr). Nur das Rauschen
+    der Gegenstellen (magicsock, derp, disco, netcheck, portmapper) fehlt. So sieht man, ob tailscaled vor dem Netz oder vor der Uhr startete und wann er "Running" meldete."""
+    try:
+        p = subprocess.Popen(["journalctl", "-u", "tailscaled", "-b", "--no-pager", "-q", "-o", "short-monotonic"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             text=True, errors="replace")
+    except OSError:
+        return "(journalctl nicht verfügbar)\n"
+    out, noise = [], re.compile(r"(?i)magicsock|derp|disco|netcheck|portmapper|wgengine")
+    try:
+        for line in p.stdout:
+            m = re.match(r"\[\s*(\d+(?:\.\d+)?)\]", line)
+            if m and float(m.group(1)) > window_s:
+                break
+            if noise.search(line):
+                continue
+            out.append(line.rstrip())
+            if len(out) >= cap:
+                break
+    finally:
+        try:
+            p.kill()
+            p.wait(timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "\n".join(out) + "\n" if out else "(keine Zeilen)\n"
+
+
+def tailscale_state_text():
+    """Zustand von Tailscale, gekürzt aus 'tailscale status --json' (ohne Schlüssel, Peers und Konten)."""
+    try:
+        d = json.loads(run(["tailscale", "status", "--json"], 15) or "{}")
+    except ValueError:
+        return "(status --json nicht lesbar)\n"
+    me = d.get("Self") or {}
+    keep = {"Version": d.get("Version"), "BackendState": d.get("BackendState"), "Health": d.get("Health"), "MagicDNSSuffix": d.get("MagicDNSSuffix"),
+            "Self": {k: me.get(k) for k in ("DNSName", "Online", "Active", "Relay", "Created", "LastSeen", "LastHandshake", "KeyExpiry", "Capabilities", "Tags", "InNetworkMap", "InMagicSock", "InEngine")
+                     if k in me},
+            "CapMapKeys": sorted((me.get("CapMap") or {}).keys())[:40], "PeerCount": len(d.get("Peer") or {})}
+    return json.dumps(keep, indent=1, ensure_ascii=False, default=str) + "\n"
+
+
+def clock_report():
+    """Uhr und Zeitsynchronisation, Zeitpunkte von tailscaled, Zustand der Selbstheilung: Ist die Uhr nach dem Start gesprungen?"""
+    parts = [run(["timedatectl"], 10).strip(),
+             run(["timedatectl", "show-timesync", "--all"], 10).strip(),
+             "Start des Systems: " + run(["uptime", "-s"], 5).strip() + " (Uhr jetzt " + time.strftime("%Y-%m-%d %H:%M:%S") + ")",
+             run(["systemctl", "show", "tailscaled", "-p", "ActiveState", "-p", "SubState", "-p", "ActiveEnterTimestamp", "-p", "ActiveEnterTimestampMonotonic", "-p", "NRestarts"], 10).strip(),
+             "Selbstheilung (/run/pipbox-remote/heal.json): " + read_small("/run/pipbox-remote/heal.json", 2000),
+             "Merkzettel gewollte Freigabe: " + ("ja" if os.path.exists("/var/lib/pipbox-remote/funnel-wanted") else "nein"),
+             "Protokoll des Fernzugriff-Helfers (letzte Zeilen):\n" + tail_file("/var/log/pipbox-remote.log", 40)]
+    return "\n\n".join(parts) + "\n"
+
+
 def usb_events():
     """USB-Trennungen, abgeschaltete Anschlüsse und Überstrom der letzten 3 Tage (Kernel-Journal) und die Ereignisse, die die Oberfläche gemerkt hat."""
     pat = re.compile(r"usb \d+-[\d.]+: USB disconnect|disabled by hub|over-current|unable to enumerate USB device|device descriptor read/\w+, error -71|xhci_hcd.*(died|dead|host controller)")
@@ -1063,6 +1117,10 @@ def sections():
            if re.search(r"(?i)serve|funnel|cert|acme|login|auth|expire|error|fail|warn|denied|health|hostinfo|netmap.*(changed|self)", l)
            and not re.search(r"(?i)portmapper|magicsock|derp|disco|netcheck", l)]
     out.append(("Journal tailscaled (nur Freigabe, Zertifikat, Anmeldung, Fehler)", "\n".join(tsj[-120:]) + "\n"))
+    out.append(("Tailscale: Start (tailscaled in den ersten 10 Minuten nach dem Start, Zeit seit dem Start; ohne Rauschen der Gegenstellen)", tailscale_boot()))
+    out.append(("Tailscale: Zustand (status --json, gekürzt)", tailscale_state_text()))
+    out.append(("Uhr, Zeitsynchronisation und Selbstheilung der Freigabe", clock_report()))
+    out.append(("Journal pipbox-remote-heal", collapse_repeats(journal("pipbox-remote-heal", 60))))
     out.append(("Warnungen und Fehler des Systems (seit dem Start)", run(["journalctl", "-p", "warning", "-b", "--no-pager", "-o", "short-iso", "-n", "200"], 20)))
     out.append(("Vorheriger Start (Ende des Journals: Kernel und Dienste vor dem letzten Neustart, zum Beispiel nach einem Hänger)", previous_boot()))
     out.append(("USB-Ereignisse (Trennungen, abgeschaltete Anschlüsse; Ausfall eines Adapters oder Routers)", usb_events()))

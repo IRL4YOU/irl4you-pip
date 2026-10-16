@@ -60,6 +60,28 @@ def supported():
         return False
 
 
+PLUGIN_SO = os.environ.get("PIPBOX_PLUGIN", "/opt/pipbox/gst/libgstpbpip.so")
+_FRM = {"mtime": None, "ok": False}
+FRAME_BUILT = False        # hat die zuletzt gebaute Pipeline pbtap/pbround? (build() setzt es; der Regler sendet danach nur dann Befehle für sie)
+
+
+def frame_ok():
+    """Kennt der installierte Baustein pbtap und pbround (gerundete kleine Bilder in dieser Engine)? Ein älterer Baustein kennt sie nicht: die Pipeline bliebe beim Start stehen,
+    darum entfällt die Rundung dann ganz. PIPBOX_FRAME=0/1 erzwingt die Antwort (Tests)."""
+    force = os.environ.get("PIPBOX_FRAME")
+    if force in ("0", "1"):
+        return force == "1"
+    try:
+        mt = os.stat(PLUGIN_SO).st_mtime
+        if _FRM["mtime"] != mt:
+            with open(PLUGIN_SO, "rb") as f:
+                data = f.read()
+            _FRM.update(mtime=mt, ok=b"pbround" in data and b"pbtap" in data)
+        return _FRM["ok"]
+    except OSError:
+        return False
+
+
 _ENG = {"mtime": None, "level": 0}
 COPY_LEVEL = 13            # ab belacoder "-sb13" kopiert die Engine das ganzflächige Hauptbild aus dem Speicher des Dekoders (belacoder-frame-copy.patch)
 
@@ -148,7 +170,7 @@ def small_geometry(c, k):
     if br["enabled"] and br["width"] > 0:
         bw = max(1, min(int(br["width"]), min(cw, ch) // 2))
     return {"sw": pw, "sh": ph, "crop": (l, r, t, b), "w": cw, "h": ch, "x": x, "y": y,
-            "opacity": int(st["opacity"]) if st["visible"] else 0, "bw": bw,
+            "opacity": int(st["opacity"]) if st["visible"] else 0, "bw": bw, "radius": int(st.get("radius", 0)),
             "bcolor": int(br["color"][1:], 16), "bopacity": int(br["opacity"])}
 
 
@@ -274,11 +296,14 @@ def hold_delays(delays, buffer, big_key=None, big_lead=None, uniform=False):
 
 # ------------------------------------------------------------------------------------------------ Pipeline-Text
 
-def build(c, base=RTMP_BASE):
+def build(c, base=RTMP_BASE, frame=None):
     """Pipeline-Text für belacoder. c ist eine geprüfte Einstellung. Die Schlüssel sind geprüft (a-z, 0-9, -, _).
 
     Alle Zweige starten gestoppt (`#sb-absent`): die Sendung beginnt sofort mit Schwarz und Stille, jede Kamera legt sich dann darauf, sobald ihr
     Stream da ist (Regler: `feed sbf<N> on`)."""
+    global FRAME_BUILT
+    frame = frame_ok() if frame is None else bool(frame)
+    FRAME_BUILT = frame
     q = "queue max-size-time=10000000000 max-size-buffers=1000 max-size-bytes=41943040"
     keys = slot_keys(c)
     # Ton wartet bis zum Termin (Puffer) in diesen Warteschlangen; der Ton ist klein (192 kB/s roh), die Grenzen wachsen darum mit dem Puffer (vorher fest 2 s und 1 s: bei Puffern über 2,5 s lief der Ton über und hielt das Bild an)
@@ -295,7 +320,8 @@ def build(c, base=RTMP_BASE):
             n += 1
     out.append("compositor name=pipcomp background=black " + " ".join(pads) + " !\n"
                f"video/x-raw,format=NV12,width={CANVAS_W},height={CANVAS_H},framerate={FPS}/1,colorimetry=bt709 !\n"
-               "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
+               + ("pbround name=rnd !\n" if frame else "")      # rundet die kleinen Bilder und zeichnet ihren Rahmen (Ecken des Hauptbildes holt pbtap)
+               + "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
                "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                f"h265parse config-interval=-1 ! {q} ! mux.\n")
     # Ton-Umschalter VOR den Zweigen (GStreamer löst asel.sink_N nur auf, wenn asel schon im Text steht)
@@ -328,7 +354,7 @@ def build(c, base=RTMP_BASE):
             f"videoscale name={nm}_sc method=nearest-neighbour ! "
             f"capsfilter name={nm}_scc caps=\"video/x-raw,format=NV12,width={CANVAS_W},height={CANVAS_H}\" ! "
             f"capssetter name={nm}_c2 join=true replace=false caps=\"video/x-raw,colorimetry=bt709\" ! "   # nur beschriften, nie umrechnen (eine Umrechnung kostete zeitweise einen ganzen Kern)
-            
+            + (f"pbtap name={nm}_tap ! " if frame else "") +
             f"queue name={nm}_q max-size-buffers={BRANCH_QUEUE_BUFFERS} max-size-bytes=0 max-size-time=0 ! pipcomp.sink_{s}\n"
             f"{nm}.audio ! queue name={nm}_aq max-size-time={abuf} max-size-buffers=0 max-size-bytes=0 ! aacparse name={nm}_ap ! avdec_aac name={nm}_ad ! "
             f"audioconvert name={nm}_ac1 ! audioresample name={nm}_ar ! capsfilter name={nm}_ac2 caps=\"{AUDIO_CAPS}\" ! "
@@ -451,11 +477,24 @@ class Layout:
             add(("h", s), f"pad pipcomp sink_{s} height {h}", z)
             add(("z", s), f"pad pipcomp sink_{s} zorder {z}", z)
             add(("a", s), f"pad pipcomp sink_{s} alpha {alpha:.2f}", z)
+        # Gerundete kleine Bilder: Ecken und Rahmen zeichnet pbround hinter dem Compositor; die Ecken des Hauptbildes sichert pbtap des Hauptbild-Zweigs
+        rounded = {}
+        if FRAME_BUILT:
+            for s in range(SLOTS):
+                add(("tap", s), f"set sbf{s}_tap active {'true' if roles.get(s) == 0 else 'false'}", 100)
+            for k in (1, 2, 3):
+                g = geoms[k]
+                s = by_pos.get(k)
+                shown = s is not None and g["opacity"] > 0 and not (hide >> (k - 1)) & 1
+                on = shown and g["radius"] > 0
+                rounded[k] = on
+                val = (f"{g['x']},{g['y']},{g['w']},{g['h']},{g['bw']},{g['bcolor']:06x},{g['bopacity']},{g['radius']},{g['opacity']}") if on else "off"
+                add(("rnd", k), f"set rnd pip{k} {val}", 2 * k + 1)
         # Rahmen der kleinen Bilder
         for k in (1, 2, 3):
             g = geoms[k]
             s = by_pos.get(k)
-            shown = s is not None and g["bw"] > 0 and g["opacity"] > 0 and not (hide >> (k - 1)) & 1
+            shown = s is not None and g["bw"] > 0 and g["opacity"] > 0 and not (hide >> (k - 1)) & 1 and not rounded.get(k)
             rects = ring_rects(g) if shown else [(0, 0, 2, 2)] * 4
             alpha = (g["bopacity"] / 100.0) * (g["opacity"] / 100.0) if shown else 0.0
             for j in range(4):
