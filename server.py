@@ -6351,6 +6351,12 @@ def controller_action(fn, pipeline, cams, send):
             send.change_view(audio=f["audio"]["next"])
 
 
+PHONE_FRAME = """<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>IRL4YOU BOX</title>
+<script>try{if(window.top!==window||matchMedia("(max-width:620px)").matches)location.replace("/?app=1")}catch(e){location.replace("/?app=1")}</script></head>
+<body style="margin:0;background:#0f172a"><iframe title="IRL4YOU BOX" src="/?app=1" style="display:block;margin:0 auto;border:0;width:480px;max-width:100%;height:100vh;height:100dvh"></iframe>
+<script>try{var t=localStorage.getItem("pb_theme"),v=JSON.parse(localStorage.getItem("pb_views")||"null"),d=v&&v.mobile&&v.mobile.design;if(t==="light"||(t!=="dark"&&d==="klar"))document.body.style.background="#f1f5f9"}catch(e){}</script></body></html>"""
+
+
 class Handler(BaseHTTPRequestHandler):
     ERR_NO_ACCOUNT = "Zum Schreiben und Moderieren bitte in diesem Browser bei Twitch anmelden (Zuschauer oder Moderator)"
     ERR_NOT_MOD = "Moderieren dürfen nur der Streamer und Moderatoren dieses Kanals"
@@ -6562,7 +6568,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
         if cookie:
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
@@ -6680,12 +6686,21 @@ class Handler(BaseHTTPRequestHandler):
         body = page.replace("__STATS_URL__", st["ws_url"]).encode("utf-8")
         return self.send_bytes(200, body, "text/html; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="statistik.html"'})
 
+    def phone_view_wanted(self):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, val = part.strip().partition("=")
+            if k == "pb_view_mode" and val == "mobile":
+                return True
+        return False
+
     def do_GET(self):
         self.request_read()
         path = self.path.split("?")[0]
         if (path == "/i18n.js" or path.startswith("/i18n/")) and self.i18n_file(path):
             return
         if path in ("/", "/index.html"):
+            if self.authed() and "app=1" not in self.path and self.phone_view_wanted():
+                return self.send_bytes(200, PHONE_FRAME.encode("utf-8"), "text/html; charset=utf-8")
             return self.page("index.html" if self.authed() else "login.html")
         if path == "/api/auth":
             out = {"configured": self.auth.configured, "mode": self.auth.mode, "authed": self.authed()}

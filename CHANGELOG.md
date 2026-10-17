@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.68
+- „Immer Mobil“ zeigt die Handy-Ansicht jetzt auch am Rechner.
+
 ## 1.0.67
 - Standardwerte der Systemwarnungen im Chat angepasst.
 
