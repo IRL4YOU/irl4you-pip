@@ -54,11 +54,11 @@ P
   rm -f "$D/get-pip.py"
   return $r
 }
-if ! "$D/venv/bin/python" -c "import cv2, numpy, rknnlite.api" 2>/dev/null; then
+if ! "$D/venv/bin/python" -c "import cv2, numpy, rknnlite.api; assert numpy.__version__ == \"1.26.4\" and cv2.__version__.startswith(\"4.11\")" 2>/dev/null; then
   mkvenv || { echo "WARNUNG: Python-Umgebung konnte nicht angelegt werden."; exit 1; }
   "$D/venv/bin/python" -m pip install --quiet numpy==1.26.4 opencv-python-headless==4.11.0.86 psutil ruamel.yaml fast-histogram \
     "$RAW/rknn-toolkit-lite2/packages/rknn_toolkit_lite2-$RT_VER-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl" >/dev/null 2>&1 || true
-  "$D/venv/bin/python" -c "import cv2, numpy, rknnlite.api" 2>/dev/null || { echo "WARNUNG: Python-Pakete für die Testfunktion konnten nicht installiert werden."; exit 1; }
+  "$D/venv/bin/python" -c "import cv2, numpy, rknnlite.api; assert numpy.__version__ == \"1.26.4\" and cv2.__version__.startswith(\"4.11\")" 2>/dev/null || { echo "WARNUNG: Python-Pakete für die Testfunktion konnten nicht installiert werden."; exit 1; }
 fi
 id -nG pipbox | grep -qw video || usermod -aG video,render pipbox 2>/dev/null || true
 systemctl daemon-reload
