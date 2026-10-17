@@ -84,6 +84,17 @@ THERMAL_NAMES = {"soc-thermal": "SoC", "bigcore0-thermal": "Große Kerne 4–5",
 
 
 NPU_FILE = "/run/pipbox-npu"
+PRIVACY_URL = "http://127.0.0.1:8790/"
+
+
+def privacy_status():
+    try:
+        with urllib.request.urlopen(PRIVACY_URL, timeout=0.6) as r:
+            d = json.loads(r.read(65536))
+        return {"up": True, "pass_s": float(d.get("pass_s", 0)), "slow": float(d.get("slow", 0)), "temp": float(d.get("temp", 0)),
+                "warn": str(d.get("warn", ""))[:200], "frames": int(d.get("tap_frames", 0))}
+    except Exception:
+        return {"up": False}
 
 
 def npu_load():
@@ -1258,7 +1269,8 @@ class PipelineStore:
     DEFAULT = {"type": "single", "main": "", "pip": "", "corner": 3, "size_pct": 25, "size_pct2": 25, "size_pct3": 25, "audio": "main",
                "pip2": "", "corner2": 2, "pip3": "", "corner3": 0, "x": 500, "y": 500, "x2": 500, "y2": 500, "x3": 500, "y3": 500, "main_delay_ms": DEFAULT_MAIN_DELAY_MS,
                "pip_delay_ms": DEFAULT_PIP_DELAY_MS, "pip2_delay_ms": DEFAULT_PIP_DELAY_MS,
-               "pip3_delay_ms": DEFAULT_PIP_DELAY_MS, "auto_failover": True, "swap_cams": 0, "always_ready": False, "facecam": ""}
+               "pip3_delay_ms": DEFAULT_PIP_DELAY_MS, "auto_failover": True, "swap_cams": 0, "always_ready": False, "facecam": "",
+               "privacy": False, "privacy_delay_ms": 6000}
     SLOTS = ("main", "pip", "pip2", "pip3")
     Q = "queue max-size-time=10000000000 max-size-buffers=1000 max-size-bytes=41943040"
 
@@ -1465,6 +1477,8 @@ class PipelineStore:
         fc = self._carry_facecam(cfg)
         if fc:
             cfg["facecam"] = fc
+        cfg["privacy"] = req.get("privacy") is True if "privacy" in req else self.cfg.get("privacy") is True
+        cfg["privacy_delay_ms"] = req.get("privacy_delay_ms", self.cfg.get("privacy_delay_ms", 6000)) if cfg["privacy"] else self.cfg.get("privacy_delay_ms", 6000)
         with self.lock:
             self.cfg = cfg
             self.save()
@@ -1510,6 +1524,8 @@ class PipelineStore:
             num(k, 0, 1000)
         for k in ("main_delay_ms", "pip_delay_ms", "pip2_delay_ms", "pip3_delay_ms"):
             num(k, 0, 3000)
+        num("privacy_delay_ms", 2000, 12000)
+        out["privacy"] = out.get("privacy") is True and out.get("type") != "pip"
         num("swap_cams", 0, 4)
         if out["swap_cams"] not in (2, 4):
             out["swap_cams"] = 0
@@ -1685,6 +1701,11 @@ class PipelineStore:
                 delay = 0
         qa = q + (f" min-threshold-time={delay * 1000000}" if delay else "")
         qv = q + (f" min-threshold-time={(delay + FRAME_MS) * 1000000}" if delay else "")
+        privacy = bool(c.get("privacy")) and not pip and c["type"] != "pip"
+        if privacy:
+            pd = int(c["privacy_delay_ms"])
+            qa = q + f" min-threshold-time={pd * 1000000}"
+            qv = q + f" min-threshold-time={(pd + FRAME_MS) * 1000000}"
         if pip:
             qv, qa = qv + " name=mainq_v", qa + " name=mainq_a"
 
@@ -1710,8 +1731,15 @@ class PipelineStore:
                  + (f"pbpipmix name=pipmix2 slot=1 corner={c['corner2']}{xy(c, 'x', 'y', c['corner2'])} width-pct={c['size_pct']}{sty(1, 1)} !\n" if pip2 and not multi else "") +
                  "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n")
         else:
-            v = (f"demux.video !\n{q} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
-                 "videorate ! video/x-raw,framerate=30/1,format=NV12 ! queue !\n")
+            if privacy:
+                v = ("demux.video !\ntee name=ptee\n"
+                     "ptee. !\nqueue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 leaky=downstream !\nh264parse ! mppvideodec !\n"
+                     "pbpixeltap shm=/dev/shm/pbpixel-tap interval-ms=100 !\nfakesink sync=false async=false\n"
+                     f"ptee. !\n{qv} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
+                     "pbpixelmask boxes=/dev/shm/pbpixel-boxes !\nvideorate ! video/x-raw,framerate=30/1,format=NV12 ! queue !\n")
+            else:
+                v = (f"demux.video !\n{q} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
+                     "videorate ! video/x-raw,framerate=30/1,format=NV12 ! queue !\n")
         v += ("mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
               f"h265parse config-interval=-1 ! {q} ! mux.\n")
         out.append(v)
@@ -6873,6 +6901,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/pipeline":
             st = self.pipeline.status(self.cams.listing(""))
             st["live"] = {"main": self.send.delay_live(), "pips": self.send.delay_live_pips()}
+            st["privacy_available"] = bool(re.search(r"-test\d+$", self.swupdate.version))
+            if st.get("config", {}).get("privacy"):
+                st["privacy_state"] = privacy_status()
             return self.reply(200, st)
         if path == "/api/send":
             out = self.send.status()
