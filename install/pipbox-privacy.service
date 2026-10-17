@@ -1,0 +1,15 @@
+[Unit]
+Description=IRL4YOU BOX Datenschutz (Beta): Kennzeichen und Gesichter erkennen
+After=pipbox.service
+
+[Service]
+User=pipbox
+Group=pipbox
+SupplementaryGroups=video render
+ExecStart=/usr/bin/python3 -u /opt/pipbox/pipbox-privacy.py
+Nice=5
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

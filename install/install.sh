@@ -182,8 +182,10 @@ PY
     gst_changed=0
     cmp -s "$HERE/gst/gstpbpip.c" /opt/pipbox/gst-src/gstpbpip.c || gst_changed=1
     install -m 644 "$HERE/gst/gstpbpip.c" /opt/pipbox/gst-src/gstpbpip.c
+    cmp -s "$HERE/gst/gstpbpixel.c" /opt/pipbox/gst-src/gstpbpixel.c || gst_changed=1
+    install -m 644 "$HERE/gst/gstpbpixel.c" /opt/pipbox/gst-src/gstpbpixel.c
     install -m 755 "$HERE/gst/build.sh" /opt/pipbox/gst-src/build.sh
-    if [ ! -f /opt/pipbox/gst/libgstpbpip.so ] || [ "$gst_changed" = 1 ]; then
+    if [ ! -f /opt/pipbox/gst/libgstpbpip.so ] || [ ! -f /opt/pipbox/gst/libgstpbpixel.so ] || [ "$gst_changed" = 1 ]; then
       sh /opt/pipbox/gst-src/build.sh || echo "WARNUNG: Der PiP-Baustein konnte nicht gebaut werden; Bild-in-Bild bleibt gesperrt."
     fi
     echo "PIPBOX-STEP srtla"
