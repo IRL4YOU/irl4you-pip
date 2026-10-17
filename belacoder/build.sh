@@ -24,23 +24,20 @@ git checkout --quiet "$COMMIT"
 patch -p1 --quiet < "$HERE/belacoder-jitter-tolerant.patch"
 patch -p1 --quiet < "$HERE/belacoder-stall-output.patch"
 patch -p1 --quiet < "$HERE/belacoder-stats.patch"
-# Kamera-Zweige, die im laufenden Betrieb gestartet und gestoppt werden (Steuerkanal -C, Statistik -S, Ausrichtung -A), Engine pipbox_live.py
+# Kamera-Zweige im laufenden Betrieb
 patch -p1 --quiet < "$HERE/belacoder-live-feeds.patch"
-# Jedes Bild, das vergrößert wird, einmal in normalen Speicher kopieren (die Bilder des Hardware-Dekoders liegen in langsam lesbarem Speicher), Issue #35
+# Bildkopie
 patch -p1 --quiet < "$HERE/belacoder-frame-copy.patch"
-# Beim Tausch der Größe eines Kamerabilds (Hauptbild wechseln) das "Neu verhandeln" nicht bis zum Hardware-Dekoder zurückgeben: Der Dekoder lieferte sonst etwa 1 s lang keine Bilder (Testbox, 14. Oktober 2026)
+# Größenwechsel ohne Aussetzer
 patch -p1 --quiet < "$HERE/belacoder-no-reconfigure.patch"
-# Das Ende einer Kamera (EOS) erreicht den Ton-Umschalter nicht mehr: sonst war der Ton der ganzen Sendung nach einem Ausfall der Hauptkamera für immer weg (Testbox, 15. Oktober 2026)
+# Ton nach Kameraausfall
 patch -p1 --quiet < "$HERE/belacoder-audio-eos.patch"
-# Befehl "shift <Zweig> <ms>": verschiebt Bild und Ton einer Kamera wirklich um die eingestellte Verzögerung (die Haltezeit allein verschob das Bild nicht), Testbox, 16. Oktober 2026
+# Verzögerung der Kameras
 patch -p1 --quiet < "$HERE/belacoder-feed-shift.patch"
-# Regler: bei starkem Stau (Sendepuffer über 600 ms) die Bitrate halbieren statt um 10 % senken; Schalter SB_CTL=D (pipbox_send.py setzt ihn), Testbox, 16. Oktober 2026
+# Schnellere Regelung bei Stau
 patch -p1 --quiet < "$HERE/belacoder-fast-decrease.patch"
 DBG=""
 [ "${BELACODER_DEBUG:-0}" = 1 ] && DBG="-DDEBUG=1"
-# ACHTUNG Kennung: Die Engine (pipbox_live.py, engine_level) liest die Zahl hinter "-sb" als Fähigkeit des belacoder: ab 13 glaubt sie, das ganzflächige Hauptbild werde kopiert, und
-# nimmt einen größeren Puffer (1350 statt 1050 ms) und mehr Vorlauf für das Hauptbild (1000 statt 600 ms). Der Kopier-Patch kopiert aber nur VERGRÖSSERTE Bilder. Darum bleibt die Zahl 12;
-# neue Patches hängen einen Zusatz an ("-sb12-eos"), sie zählen nie hoch (Testbox, 15. Oktober 2026: mit "-sb13" Einbrüche beim Tausch des Hauptbilds auf 18,8 statt mindestens 27,8 Bilder/s).
 gcc -O2 -Wall $DBG -DVERSION=\"${COMMIT%${COMMIT#???????}}-jt2-sb12-eos-sh-fd\" belacoder.c -o belacoder.new \
   -I"$R/usr/include/gstreamer-1.0" -I"$R/usr/lib/aarch64-linux-gnu/gstreamer-1.0/include" \
   -I"$R/usr/include/glib-2.0" -I"$R/usr/lib/aarch64-linux-gnu/glib-2.0/include" -I/usr/include/srt \
