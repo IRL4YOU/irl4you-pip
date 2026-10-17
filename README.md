@@ -26,13 +26,13 @@ Das dauert einige Minuten, weil unter anderem der Encoder (`belacoder`) gebaut w
 
 **Update und Rückweg:** Spätere Versionen spielt die Karte „Software-Update (IRL4YOU BOX)“ ein. Entfernen: `sudo sh install/install.sh uninstall`.
 
-MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`). **Version 1.0.68.**
+MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`). **Version 1.0.69.**
 
 Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
 ## Hilfe
 
-Fragen und Fehler: [Discord](https://discord.gg/nrBCEarMup). Bei Hardware-Fragen (Kameras, Bluetooth-Sticks, WLAN, Strom) bitte dort an **Akinos01** wenden.
+Webseite: [irl4you.de](https://irl4you.de). Fragen und Fehler: [Discord](https://discord.gg/nrBCEarMup). Bei Hardware-Fragen (Kameras, Bluetooth-Sticks, WLAN, Strom) bitte dort an **Akinos01** wenden.
 
 ## Herkunft und Dank
 
