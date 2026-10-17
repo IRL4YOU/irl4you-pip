@@ -131,3 +131,10 @@ IRL4YOU BOX läuft neben der Original-Oberfläche der BELABOX (belaUI) und verä
 und welches) und schaltet den SSH-Dienst des Systems (`systemctl start/stop ssh`) sowie das Passwort des SSH-Benutzers (`chpasswd`) mit eigenem Code; ein
 von IRL4YOU BOX erzeugtes Passwort liegt in einer eigenen Datei (`ssh-pass.json`), die Dateien der Original-Oberfläche werden nicht beschrieben. Auch das
 BELABOX-Passwort wird nur zum Anmelden mitbenutzt.
+
+## Datenschutz-Test
+
+- [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX): Apache-2.0
+- [open-image-models](https://github.com/ankandrew/open-image-models): MIT
+- [YuNet (OpenCV Zoo)](https://github.com/opencv/opencv_zoo): MIT
+- [Rockchip RKNN](https://github.com/airockchip/rknn-toolkit2): Lizenz des Anbieters

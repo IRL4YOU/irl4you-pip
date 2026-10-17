@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.72-test1
+- Test: Kennzeichen und Gesichter automatisch verpixeln (nur mit einer Kamera, deutlich mehr Last und Wärme).
+
 ## 1.0.72
 - NPU-Auslastung in den Prozessor-Details und in der Statistik.
 - Update-Karte: Test für das Verpixeln einschaltbar, mit Rückweg auf die stabile Version.
