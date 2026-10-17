@@ -1,6 +1,4 @@
 #!/bin/sh
-# Baut den PiP-Baustein auf der Box. Lädt nur die Header-Pakete herunter und entpackt sie
-# in ein temporäres Verzeichnis (keine 58 Entwicklerpakete installieren). Als root ausführen.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${PBOUT:-/opt/pipbox/gst}
@@ -16,5 +14,5 @@ gcc -O2 -Wall -fPIC -shared -DPACKAGE=\"irl4you-pip\" "$HERE/gstpbpip.c" -o "$OU
   -I"$R/usr/include/glib-2.0" -I"$R/usr/lib/aarch64-linux-gnu/glib-2.0/include" \
   -l:libgstvideo-1.0.so.0 -l:libgstbase-1.0.so.0 -l:libgstreamer-1.0.so.0 \
   -l:libgobject-2.0.so.0 -l:libglib-2.0.so.0
-mv -f "$OUT/libgstpbpip.so.new" "$OUT/libgstpbpip.so"   # ersetzen statt überschreiben: ein laufender belacoder bleibt heil
+mv -f "$OUT/libgstpbpip.so.new" "$OUT/libgstpbpip.so"
 echo "Baustein gebaut: $OUT/libgstpbpip.so"

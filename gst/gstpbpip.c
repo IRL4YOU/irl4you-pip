@@ -1,35 +1,4 @@
-/* IRL4YOU PIP: Bild-in-Bild-Baustein für GStreamer (NV12).
- *
- * Zwei Elemente, die sich einen kleinen Zwischenspeicher teilen (Eigenschaft slot 0, 1 oder 2,
- * so sind bis zu drei kleine Bilder gleichzeitig möglich; Platz 3 gehört der Hauptkamera beim Tausch):
- *
- *   pbpipsink  nimmt das KLEINE Bild entgegen (schon vom Hardware-Decoder auf z. B. 480x270
- *              verkleinert) und legt es in einem Ringspeicher ab.
- *   pbpipmix   steht im Hauptbild-Pfad und schreibt pro Hauptbild das nächste kleine Bild an
- *              die gewählte Ecke HINEIN. Das große Bild wird nie gelesen, außer ein Stil (Eigenschaften
- *              style1 bis style3: Beschnitt, Deckkraft, Rahmen, Eckenrundung) verlangt es: dann nur in
- *              genau den Bildpunkten, die vom Hauptbild abhängen (Deckkraft unter 100 %, durchscheinender
- *              Rahmen, weiche Kante an gerundeten Ecken). Ohne Stil bleibt es beim reinen Schreiben.
- *
- * Warum so: Auf dem RK3588 ist das Lesen von Decoder-Bildern durch die CPU extrem langsam
- * (gemessen: 1080p-Umwandlung ca. 9 Bilder/s). Schreiben in diesen Speicher ist schnell.
- * Ein Standard-Mischer (compositor) muss das große Bild lesen und schafft deshalb kein 30 fps.
- *
- * Der Ringspeicher gleicht Schübe des kleinen Bildes aus (Vorlauf von wenigen Bildern, zu alte
- * Bilder werden verworfen). Bleibt das kleine Bild länger als 2 Sekunden aus, wird nichts mehr
- * eingeblendet (statt eines eingefrorenen Bildes).
- *
- * Drittes Element pbctl: liest alle 0,3 s eine kleine Datei (bis zu vier Zahlen in Millisekunden: Hauptbild,
- * kleines Bild 1, 2 und 3) und stellt damit die Wartezeit (min-threshold-time) benannter queue-Elemente um.
- * So lassen sich die Verzögerungen im laufenden Betrieb ändern, ohne die Sendekette neu zu starten.
- *
- * Viertes Element pbpipsel (Tausch ohne Unterbrechung): wählt eines von bis zu vier Eingängen (jede Kamera hat
- * dann zwei Zweige: groß für das Hauptbild, klein für das Bild-in-Bild). Verworfen wird, was nicht gewählt ist;
- * die Zeitstempel laufen beim Umschalten lückenlos weiter (der Encoder sieht keinen Sprung). pbctl schaltet es
- * über eine kleine Datei um, pbpipmix erfährt über das Bild selbst, welche kleinen Bilder jetzt zu zeigen sind.
- *
- * MIT-Lizenz, Copyright (c) 2026 IRL4YOU. Eigene Umsetzung.
- */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -45,22 +14,20 @@
 GST_DEBUG_CATEGORY_STATIC(pbpip_debug);
 #define GST_CAT_DEFAULT pbpip_debug
 
-#define RING_CAP 12              /* höchstens so viele kleine Bilder vorhalten */
-#define PREBUFFER 3              /* Vorlauf, bevor das erste Bild gezeigt wird */
-#define NSLOTS 4                 /* Plätze 0 bis 2: kleine Bilder 1 bis 3; Platz 3: kleines Bild der Hauptkamera (nur beim Tausch ohne Unterbrechung) */
+#define RING_CAP 12
+#define PREBUFFER 3
+#define NSLOTS 4
 #define STALE_US (2 * G_USEC_PER_SEC)
-
-/* ------------------------------------------------------------------ gemeinsamer Speicher */
 
 static GMutex ring_lock;
 typedef struct {
   guint8 *slot[RING_CAP];
   gsize slot_size;
-  guint rd, count;               /* Lesepunkt, Anzahl belegter Plätze */
-  gint w, h;                     /* Größe des kleinen Bildes (dicht gepackt: Stride = w) */
+  guint rd, count;
+  gint w, h;
   gboolean started;
-  gint64 last_push;              /* Zeitpunkt des letzten kleinen Bildes */
-  guint8 *cur;                   /* zuletzt gezeigtes Bild */
+  gint64 last_push;
+  guint8 *cur;
   gboolean have_cur;
   guint64 pushed, dropped, shown, repeated;
 } Ring;
@@ -87,8 +54,6 @@ static void ring_resize_locked(Ring *ring, gint w, gint h) {
   ring->h = h;
   ring_reset_locked(ring);
 }
-
-/* ------------------------------------------------------------------ pbpipsink */
 
 typedef struct { GstBaseSink parent; GstVideoInfo info; gboolean have_info; guint slot; } PbPipSink;
 typedef struct { GstBaseSinkClass parent_class; } PbPipSinkClass;
@@ -118,7 +83,7 @@ static GstFlowReturn pb_sink_render(GstBaseSink *bs, GstBuffer *buf) {
   Ring *ring = &rings[self->slot];
   const gint w = ring->w, h = ring->h;
   g_mutex_lock(&ring_lock);
-  if (ring->count == RING_CAP) {                    /* voll: ältestes verwerfen */
+  if (ring->count == RING_CAP) {
     ring->rd = (ring->rd + 1) % RING_CAP;
     ring->count--;
     ring->dropped++;
@@ -176,16 +141,11 @@ static void pb_pip_sink_class_init(PbPipSinkClass *klass) {
 }
 
 static void pb_pip_sink_init(PbPipSink *self) {
-  gst_base_sink_set_sync(GST_BASE_SINK(self), FALSE);   /* sofort, ohne Taktabgleich */
+  gst_base_sink_set_sync(GST_BASE_SINK(self), FALSE);
   gst_base_sink_set_async_enabled(GST_BASE_SINK(self), FALSE);
   self->have_info = FALSE;
 }
 
-/* ------------------------------------------------------------------ pbpipmix */
-
-/* PB_POS_BEGIN */
-/* Position des kleinen Bildes: 0 oben links, 1 oben rechts, 2 unten links, 3 unten rechts, 4 unten Mitte,
- * 5 frei: fx/fy in Promille des Verschiebewegs (0 = Rand links/oben, 1000 = Rand rechts/unten), das Bild bleibt immer im Bild */
 static void pb_pos(guint corner, gint mw, gint mh, gint pw, gint ph, gint margin, gint fx, gint fy, gint *x, gint *y) {
   if (corner == 5u) {
     if (fx < 0) fx = 0;
@@ -203,7 +163,7 @@ static void pb_pos(guint corner, gint mw, gint mh, gint pw, gint ph, gint margin
     *x = (corner & 1u) ? mw - pw - margin : margin;
     *y = (corner & 2u) ? mh - ph - margin : margin;
   }
-  /* Ein großes Bild (bis so groß wie das Hauptbild) behält keinen vollen Rand: Der Rand schrumpft, das Bild bleibt im Bild */
+
   if (corner != 5u) {
     if (*x > mw - pw) *x = mw - pw;
     if (*y > mh - ph) *y = mh - ph;
@@ -211,38 +171,21 @@ static void pb_pos(guint corner, gint mw, gint mh, gint pw, gint ph, gint margin
     if (*y < 0) *y = 0;
   }
 }
-/* PB_POS_END */
 
-/* PB_DRAW_BEGIN */
-/* Gestaltung eines kleinen Bildes: Beschnitt, Deckkraft, Rahmen mit Eckenrundung.
- *
- * Das kleine Bild ist NV12, dicht gepackt (Stride = Breite): erst die Y-Ebene, dann die UV-Ebene. Das Hauptbild wird in
- * Y und UV mit je eigenem Stride beschrieben. Ohne Stil (Deckkraft 100 %, kein Rahmen) werden nur Zeilen kopiert und das
- * Hauptbild nie gelesen. Mit Stil wird das Hauptbild nur dort gelesen, wo das Ergebnis davon abhängt: Deckkraft unter
- * 100 % und die weiche Kante an gerundeten Ecken. Ein durchscheinender Rahmen mischt Rahmenfarbe und Bild (beides liegt im
- * Ring-Speicher), das Hauptbild geht erst über die Deckkraft des ganzen Bildes ein.
- *
- * Schichtung je Bildpunkt: S = Bild + (Rahmenfarbe - Bild) * Rahmenanteil; Ergebnis = Hauptbild + (S - Hauptbild) * Deckkraft.
- * Rahmenanteil = bo * (1 - Abdeckung der Innenform), Deckkraft = op * Abdeckung der Außenform. Beides wird in Festkomma mit
- * PB_ONE = 1024 gerechnet (ein Rundungsschritt am Ende, bei Deckkraft 1 geht das Hauptbild gar nicht ein).
- *
- * Chroma (UV) liegt auf einem 2x2-Raster: Rahmenanteil und Deckkraft eines UV-Paares sind das Mittel der vier zugehörigen
- * Luma-Bildpunkte. Das Hauptbild-Chroma wird nur gelesen, wenn dieses Mittel unter voller Deckkraft liegt. */
 #define PB_SHIFT 10
-#define PB_ONE (1 << PB_SHIFT)                /* Abdeckung/Anteil in Festkomma: PB_ONE = voll */
-#define PB_HALF (1 << (2 * PB_SHIFT - 1))     /* halbe Einheit nach der Multiplikation zweier Festkomma-Werte */
-#define PB_CHUNK 128                          /* Bildpunkte je Arbeitsstück (Puffer liegen auf dem Stack) */
+#define PB_ONE (1 << PB_SHIFT)
+#define PB_HALF (1 << (2 * PB_SHIFT - 1))
+#define PB_CHUNK 128
 
 typedef struct {
-  gint op;                 /* Deckkraft des ganzen Bildes in Prozent (0 bis 100); 0 = nicht zeichnen */
-  gint cl, cr, ct, cb;     /* Beschnitt links/rechts/oben/unten in Pixeln eines 1920x1080-Bildes (0 bis 1900) */
-  gint bw;                 /* Rahmenbreite in Pixeln eines 1920 Pixel breiten Hauptbildes (0 bis 64); 0 = kein Rahmen */
-  guint bc;                /* Rahmenfarbe 0xRRGGBB */
-  gint bo;                 /* Deckkraft des Rahmens über dem Bild in Prozent (0 bis 100) */
-  gint br;                 /* Eckenradius in Pixeln eines 1920 Pixel breiten Hauptbildes (0 bis 200); gilt für das Bild selbst, mit oder ohne Rahmen */
+  gint op;
+  gint cl, cr, ct, cb;
+  gint bw;
+  guint bc;
+  gint bo;
+  gint br;
 } PbStyle;
 
-/* Ort und Größe des (beschnittenen) kleinen Bildes: Ausschnitt (cx, cy, cw, ch) im kleinen Bild, Ziel (x, y) im Hauptbild */
 typedef struct { gint cx, cy, cw, ch, x, y; } PbPlace;
 
 static void pb_style_default(PbStyle *st) {
@@ -254,7 +197,6 @@ static void pb_style_default(PbStyle *st) {
   st->br = 0;
 }
 
-/* Kleine Helfer für den Text [s, e): ohne Bibliotheksfunktionen, damit der Abschnitt einzeln übersetzbar bleibt */
 static gboolean pb_tok_is(const char *s, const char *e, const char *lit) {
   while (s < e && *lit && *s == *lit) {
     s++;
@@ -270,7 +212,6 @@ static void pb_tok_trim(const char **s, const char **e) {
     (*e)--;
 }
 
-/* Ganze Zahl mit optionalem Vorzeichen. Sehr große Zahlen bleiben sehr groß (werden danach begrenzt), ohne zu überlaufen. */
 static gboolean pb_tok_num(const char *s, const char *e, gint *out) {
   gboolean neg = FALSE;
   gint v = 0;
@@ -308,9 +249,6 @@ static gboolean pb_tok_hex6(const char *s, const char *e, guint *out) {
 
 #define PB_CLAMP(v, lo, hi) MIN(MAX((v), (lo)), (hi))
 
-/* Stil aus Text "schluessel=wert,..." lesen. Alle Schlüssel sind optional. Unbekannte Schlüssel, Teile ohne "=" und
- * fehlerhafte Werte werden ignoriert (der Schlüssel behält dann seinen bisherigen Wert), zu große oder zu kleine Zahlen
- * werden begrenzt. Bei doppeltem Schlüssel gilt der letzte. NULL oder leerer Text ergibt den Standardstil. */
 static void pb_style_parse(const char *text, PbStyle *st) {
   pb_style_default(st);
   if (!text)
@@ -349,10 +287,6 @@ static void pb_style_parse(const char *text, PbStyle *st) {
   }
 }
 
-/* Beschnitt auf ein kleines Bild der Größe sw x sh umrechnen. Die Werte beziehen sich auf ein Bild von 1920x1080 und werden
- * auf die tatsächliche Größe umgerechnet (gerundet) und auf gerade Werte abgerundet (NV12-Chroma ist 2x2). Bleiben weniger
- * als 16x16 Bildpunkte übrig, wird der Beschnitt ganz ignoriert. Rückgabe TRUE: es gilt ein Ausschnitt (cx, cy, cw, ch),
- * FALSE: das ganze Bild (0, 0, sw, sh). Ein Ausschnitt behält seinen Maßstab, er wird nicht vergrößert. */
 static gboolean pb_style_crop(const PbStyle *st, gint sw, gint sh, gint *cx, gint *cy, gint *cw, gint *ch) {
   *cx = 0;
   *cy = 0;
@@ -374,45 +308,37 @@ static gboolean pb_style_crop(const PbStyle *st, gint sw, gint sh, gint *cx, gin
   return TRUE;
 }
 
-/* Ausschnitt und Platz im Hauptbild (mw x mh) bestimmen. Die Position (Ecke, fx/fy, Rand) wird mit der Größe des
- * Ausschnitts berechnet, nicht mit der des ganzen kleinen Bildes. Rückgabe FALSE: nichts zeichnen (Deckkraft 0, passt
- * nicht ins Hauptbild). x und y sind danach gerade (UV-Raster des Hauptbildes). */
 static gboolean pb_place(const PbStyle *st, gint mw, gint mh, gint pw, gint ph, guint corner, gint fx, gint fy, PbPlace *pl) {
   if (st->op <= 0)
     return FALSE;
   pb_style_crop(st, pw, ph, &pl->cx, &pl->cy, &pl->cw, &pl->ch);
   if (pl->cw > mw || pl->ch > mh)
     return FALSE;
-  const gint margin = (mw / 60) & ~1;              /* ca. 2 % der Breite, gerade */
+  const gint margin = (mw / 60) & ~1;
   pb_pos(corner, mw, mh, pl->cw, pl->ch, margin, fx, fy, &pl->x, &pl->y);
   pl->x &= ~1;
   pl->y &= ~1;
   return pl->x >= 0 && pl->y >= 0 && pl->x + pl->cw <= mw && pl->y + pl->ch <= mh;
 }
 
-/* RGB (0xRRGGBB) nach NV12: BT.709, begrenzter Bereich (Y 16..235, U/V 16..240), gerundet. Koeffizienten in Zehntausendsteln. */
 static void pb_rgb_to_nv12(guint rgb, gint *y, gint *u, gint *v) {
   const gint r = (gint) ((rgb >> 16) & 0xffu), g = (gint) ((rgb >> 8) & 0xffu), b = (gint) (rgb & 0xffu);
   const gint den = 255 * 10000;
   *y = 16 + (219 * (2126 * r + 7152 * g + 722 * b) + den / 2) / den;
-  *u = (128 * den + 224 * (-1146 * r - 3854 * g + 5000 * b) + den / 2) / den;     /* Zähler bleibt positiv */
+  *u = (128 * den + 224 * (-1146 * r - 3854 * g + 5000 * b) + den / 2) / den;
   *v = (128 * den + 224 * (5000 * r - 4542 * g - 458 * b) + den / 2) / den;
   *y = PB_CLAMP(*y, 16, 235);
   *u = PB_CLAMP(*u, 16, 240);
   *v = PB_CLAMP(*v, 16, 240);
 }
 
-/* Form des gestalteten Bildes (Maße in Bildpunkten des Hauptbildes) */
 typedef struct {
-  gint cw, ch;             /* Größe des Ausschnitts (gerade) */
-  gint bw;                 /* Rahmenbreite, 0 = kein Rahmen */
-  gint ro, ri;             /* Eckenradius außen / innen (innen = max(außen - Rahmenbreite, 0)) */
-  gint op, bo;             /* Deckkraft Bild / Rahmen in Festkomma 0..PB_ONE */
+  gint cw, ch;
+  gint bw;
+  gint ro, ri;
+  gint op, bo;
 } PbShape;
 
-/* Rahmenbreite und Eckenradius skalieren mit der Breite des Hauptbildes (Bezug 1920). Der Rahmen liegt innen im Ausschnitt;
- * Breite höchstens min(cw, ch) / 2, Radius ebenso. Der Radius gilt für das Bild selbst, auch ohne Rahmen (dann sind nur die Ecken des Bildes
- * abgerundet); mit Rahmen folgt die Innenkante des Rahmens der Rundung (Radius außen minus Rahmenbreite). */
 static void pb_shape_init(PbShape *s, const PbStyle *st, gint mw, gint cw, gint ch) {
   const gint lim = MIN(cw, ch) / 2;
   s->cw = cw;
@@ -428,7 +354,6 @@ static void pb_shape_init(PbShape *s, const PbStyle *st, gint mw, gint cw, gint 
   s->bo = (PB_CLAMP(st->bo, 0, 100) * PB_ONE + 50) / 100;
 }
 
-/* Ganzzahlige Quadratwurzel (abgerundet) */
 static gint64 pb_isqrt(gint64 v) {
   gint64 r = 0, bit = (gint64) 1 << 62;
   while (bit > v)
@@ -445,32 +370,26 @@ static gint64 pb_isqrt(gint64 v) {
   return r;
 }
 
-/* Abdeckung (0..PB_ONE) des Bildpunkts (fx, fy) im Eckquadrat einer Rundung mit Radius r: fx, fy zählen vom Rand nach innen,
- * der Eckmittelpunkt liegt bei (r, r). Abdeckung = r - Abstand(Bildpunktmitte, Eckmittelpunkt) + 0,5, begrenzt auf 0..1:
- * ein Bildpunkt Übergang. Mit doppelten Abständen gerechnet, damit die Entscheidung "ganz drin / ganz draußen" ohne Wurzel
- * auskommt; nur im Übergang wird die Wurzel gezogen. */
 static gint pb_corner_cov(gint fx, gint fy, gint r) {
   const gint64 ux = 2 * (gint64) (r - fx) - 1, uy = 2 * (gint64) (r - fy) - 1;
-  const gint64 d2 = ux * ux + uy * uy;               /* (2 * Abstand)^2 */
+  const gint64 d2 = ux * ux + uy * uy;
   const gint64 in = 2 * (gint64) r - 1, out = 2 * (gint64) r + 1;
   if (d2 <= in * in)
     return PB_ONE;
   if (d2 >= out * out)
     return 0;
-  const gint64 s = pb_isqrt(d2 << (2 * PB_SHIFT));   /* 2 * Abstand * PB_ONE */
-  const gint64 c = (out * PB_ONE - s + 1) / 2;       /* (2r + 1 - 2 * Abstand) / 2 */
+  const gint64 s = pb_isqrt(d2 << (2 * PB_SHIFT));
+  const gint64 c = (out * PB_ONE - s + 1) / 2;
   return (gint) PB_CLAMP(c, 0, PB_ONE);
 }
 
-/* Rahmenanteil *wb und Deckkraft *a (beide 0..PB_ONE) des Luma-Bildpunkts (x, y) des Ausschnitts. Die Form ist an beiden
- * Achsen symmetrisch; gerechnet wird deshalb mit dem Abstand zum nächsten Rand (fx, fy). */
 static void pb_shape_px(const PbShape *s, gint x, gint y, gint *wb, gint *a) {
   const gint fx = MIN(x, s->cw - 1 - x), fy = MIN(y, s->ch - 1 - y);
   gint ao = PB_ONE, ai = PB_ONE;
   if (s->ro > 0 && fx < s->ro && fy < s->ro)
-    ao = pb_corner_cov(fx, fy, s->ro);               /* Außenform: Bildpunkte außerhalb bleiben Hauptbild */
+    ao = pb_corner_cov(fx, fy, s->ro);
   if (s->bw > 0) {
-    const gint ix = fx - s->bw, iy = fy - s->bw;     /* Lage zur Innenform (Inset = Rahmenbreite) */
+    const gint ix = fx - s->bw, iy = fy - s->bw;
     if (ix < 0 || iy < 0)
       ai = 0;
     else if (s->ri > 0 && ix < s->ri && iy < s->ri)
@@ -480,23 +399,21 @@ static void pb_shape_px(const PbShape *s, gint x, gint y, gint *wb, gint *a) {
   *wb = (s->bo * (PB_ONE - ai) + PB_ONE / 2) >> PB_SHIFT;
 }
 
-/* Für die Zeile y: Breite *zone der Randbereiche (links und rechts), in denen der Bildpunkt einzeln bewertet werden muss.
- * Dazwischen sind Rahmenanteil *wb und Deckkraft *a für die ganze Zeile gleich (Rahmenzeile oder Bildzeile). */
 static gint pb_row_zone(const PbShape *s, gint y, gint *wb, gint *a) {
   const gint fy = MIN(y, s->ch - 1 - y);
   gint zone = 0;
   *a = s->op;
   *wb = 0;
-  if (s->bw <= 0) {                                  /* ohne Rahmen schneidet nur die Außenrundung an den Ecken */
+  if (s->bw <= 0) {
     if (fy < s->ro)
       zone = s->ro;
     return zone;
   }
-  if (fy < s->bw) {                                  /* Zeile liegt ganz im Rahmen, nur die Außenrundung schneidet an den Enden */
+  if (fy < s->bw) {
     *wb = s->bo;
     if (fy < s->ro)
       zone = s->ro;
-  } else {                                           /* Bildzeile: links/rechts Rahmenspalten, an den Rundungen mehr */
+  } else {
     zone = s->bw;
     if (fy < s->ro)
       zone = MAX(zone, s->ro);
@@ -506,16 +423,10 @@ static gint pb_row_zone(const PbShape *s, gint y, gint *wb, gint *a) {
   return zone;
 }
 
-/* Ein Bildpunkt: Ergebnis aus Hauptbild d, Bild p, Rahmenfarbe b, Rahmenanteil wb und Deckkraft a (0 < a <= PB_ONE).
- * Bei a == PB_ONE geht d nicht ein. Ein einziger Rundungsschritt. */
 static gint pb_mix(gint d, gint p, gint b, gint wb, gint a) {
   return (d * (PB_ONE - a) * PB_ONE + (p * (PB_ONE - wb) + b * wb) * a + PB_HALF) >> (2 * PB_SHIFT);
 }
 
-/* n (höchstens PB_CHUNK) Luma-Bildpunkte mischen. wbv[i]/av[i]: Rahmenanteil/Deckkraft je Bildpunkt; sind die Zeiger NULL,
- * gelten wc/ac für alle. Bildpunkte mit Deckkraft 0 (außerhalb der Form) werden weder gelesen noch geschrieben. Das Hauptbild
- * wird nur für zusammenhängende Läufe gelesen, die einen Bildpunkt mit Deckkraft unter 1 enthalten, und dann in einem Stück
- * (breite Zugriffe, das ist bei Decoder-Speicher viel schneller als einzelne Bytes). */
 static void pb_y_vec(guint8 *dst, const guint8 *src, gint n, gint b, const gint *wbv, const gint *av, gint wc, gint ac) {
   gint i = 0;
   while (i < n) {
@@ -542,7 +453,6 @@ static void pb_y_vec(guint8 *dst, const guint8 *src, gint n, gint b, const gint 
   }
 }
 
-/* Dasselbe für n UV-Paare (je U und V, 2 Bytes) */
 static void pb_uv_vec(guint8 *dst, const guint8 *src, gint n, gint bu, gint bv, const gint *wbv, const gint *av, gint wc, gint ac) {
   gint i = 0;
   while (i < n) {
@@ -570,8 +480,6 @@ static void pb_uv_vec(guint8 *dst, const guint8 *src, gint n, gint bu, gint bv, 
   }
 }
 
-/* Lauf mit gleichem Rahmenanteil und gleicher Deckkraft (Mittelteil einer Zeile). Schnellwege: Bild unverändert bei voller
- * Deckkraft (nur kopieren), reine Rahmenfarbe bei voller Deckkraft (nur schreiben). */
 static void pb_y_run(guint8 *dst, const guint8 *src, gint n, gint b, gint wb, gint a) {
   if (n <= 0 || a <= 0)
     return;
@@ -598,7 +506,6 @@ static void pb_uv_run(guint8 *dst, const guint8 *src, gint n, gint bu, gint bv, 
     pb_uv_vec(dst + 2 * i, src + 2 * i, MIN(PB_CHUNK, n - i), bu, bv, NULL, NULL, wb, a);
 }
 
-/* Luma-Bildpunkte x0 bis x1-1 der Zeile y einzeln bewerten und mischen (d, p: Zeilenanfang im Ziel / im Bild) */
 static void pb_y_edge(const PbShape *s, gint y, gint x0, gint x1, guint8 *d, const guint8 *p, gint b) {
   gint wbv[PB_CHUNK], av[PB_CHUNK];
   for (gint x = x0; x < x1; x += PB_CHUNK) {
@@ -609,7 +516,6 @@ static void pb_y_edge(const PbShape *s, gint y, gint x0, gint x1, guint8 *d, con
   }
 }
 
-/* UV-Paare k0 bis k1-1 der Paarzeile mit der Luma-Zeile y (gerade) einzeln bewerten: Mittel der vier Luma-Bildpunkte */
 static void pb_uv_edge(const PbShape *s, gint y, gint k0, gint k1, guint8 *d, const guint8 *p, gint bu, gint bv) {
   gint wbv[PB_CHUNK], av[PB_CHUNK];
   for (gint k = k0; k < k1; k += PB_CHUNK) {
@@ -629,10 +535,6 @@ static void pb_uv_edge(const PbShape *s, gint y, gint k0, gint k1, guint8 *d, co
   }
 }
 
-/* Schreibt den Ausschnitt pl (cx, cy, cw, ch) des kleinen Bildes src (pw x ph, NV12 dicht gepackt) mit Stil st an (x, y) in
- * das Hauptbild: dy/ystride = Y-Ebene, duv/uvstride = UV-Ebene, mw = Breite des Hauptbildes (für Rahmenbreite und Radius).
- * Voraussetzung (stellt pb_place sicher): x, y, cx, cy gerade, der Ausschnitt liegt im kleinen Bild und das Ziel im Hauptbild.
- * Ohne Stil (Deckkraft 100 %, kein Rahmen) werden nur Zeilen kopiert, das Hauptbild wird nicht gelesen. */
 static void pb_draw_picture(guint8 *dy, gint ystride, guint8 *duv, gint uvstride, gint mw,
                             const guint8 *src, gint pw, gint ph, const PbPlace *pl, const PbStyle *st) {
   if (st->op <= 0)
@@ -660,11 +562,11 @@ static void pb_draw_picture(guint8 *dy, gint ystride, guint8 *duv, gint uvstride
     pb_y_run(d + le, p + le, rs - le, yb, wb, a);
     pb_y_edge(&s, r, rs, s.cw, d, p, yb);
   }
-  const gint np = s.cw / 2;                          /* UV-Paare je Zeile */
+  const gint np = s.cw / 2;
   for (gint m = 0; m < s.ch / 2; m++) {
     gint wb0, a0, wb1, a1;
     const gint z0 = pb_row_zone(&s, 2 * m, &wb0, &a0), z1 = pb_row_zone(&s, 2 * m + 1, &wb1, &a1);
-    const gint zone = MAX(z0, z1);                   /* beide Zeilen des Paares sind im Mittelteil konstant */
+    const gint zone = MAX(z0, z1);
     guint8 *d = duv + (gsize) (y / 2 + m) * uvstride + x;
     const guint8 *p = suv + (gsize) (cy / 2 + m) * pw + cx;
     const gint kz = (zone + 1) / 2, le = MIN(kz, np), rs = MAX(np - kz, le);
@@ -673,14 +575,13 @@ static void pb_draw_picture(guint8 *dy, gint ystride, guint8 *duv, gint uvstride
     pb_uv_edge(&s, 2 * m, rs, np, d, p, ub, vb);
   }
 }
-/* PB_DRAW_END */
 
 typedef struct { GstVideoFilter parent; guint corner; guint slot; gint slot2; guint corner2; gint slot3; guint corner3; guint fx, fy, fx2, fy2, fx3, fy3; gint follow_tag; PbStyle style[3]; gchar *style_txt[3]; } PbPipMix;
 typedef struct { GstVideoFilterClass parent_class; } PbPipMixClass;
 G_DEFINE_TYPE(PbPipMix, pb_pip_mix, GST_TYPE_VIDEO_FILTER)
 
 enum { PROP_0, PROP_CORNER, PROP_WIDTH_PCT, PROP_SLOT, PROP_SLOT2, PROP_CORNER2, PROP_SLOT3, PROP_CORNER3, PROP_X, PROP_Y, PROP_X2, PROP_Y2, PROP_X3, PROP_Y3, PROP_FOLLOW,
-       PROP_STYLE1, PROP_STYLE2, PROP_STYLE3 };      /* Stil 1 bis 3 müssen lückenlos aufeinander folgen */
+       PROP_STYLE1, PROP_STYLE2, PROP_STYLE3 };
 
 static GstStaticPadTemplate mix_sink = GST_STATIC_PAD_TEMPLATE(
     "sink", GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw, format=(string)NV12"));
@@ -691,7 +592,7 @@ static void pb_mix_set_property(GObject *o, guint id, const GValue *v, GParamSpe
   PbPipMix *self = (PbPipMix *) o;
   switch (id) {
     case PROP_CORNER: g_atomic_int_set(&self->corner, MIN(g_value_get_uint(v), 5u)); break;
-    case PROP_WIDTH_PCT: break;      /* nur zur Dokumentation; die Größe liefert der Decoder */
+    case PROP_WIDTH_PCT: break;
     case PROP_SLOT: self->slot = g_value_get_uint(v) % NSLOTS; break;
     case PROP_SLOT2: self->slot2 = g_value_get_int(v) < 0 ? -1 : g_value_get_int(v) % NSLOTS; break;
     case PROP_CORNER2: g_atomic_int_set(&self->corner2, MIN(g_value_get_uint(v), 5u)); break;
@@ -705,7 +606,7 @@ static void pb_mix_set_property(GObject *o, guint id, const GValue *v, GParamSpe
     case PROP_CORNER3: g_atomic_int_set(&self->corner3, MIN(g_value_get_uint(v), 5u)); break;
     case PROP_FOLLOW: g_atomic_int_set(&self->follow_tag, g_value_get_boolean(v) ? 1 : 0); break;
     case PROP_STYLE1: case PROP_STYLE2: case PROP_STYLE3: {
-      /* Text parsen und übernehmen unter ring_lock: der Videofaden liest den Stil unter demselben Schloss und sieht nie etwas Halbes */
+
       const guint i = id - PROP_STYLE1;
       g_mutex_lock(&ring_lock);
       g_free(self->style_txt[i]);
@@ -753,14 +654,13 @@ static void pb_mix_finalize(GObject *o) {
   G_OBJECT_CLASS(pb_pip_mix_parent_class)->finalize(o);
 }
 
-/* Zeichnet das kleine Bild aus Platz "slot" mit dem Stil st in das Hauptbild. Aufrufer hält ring_lock (schützt auch st). */
 static void pb_mix_draw(GstVideoFrame *frame, guint slot, guint corner, gint fx, gint fy, const PbStyle *st) {
   Ring *ring = &rings[slot];
   if (ring->w <= 0 || ring->slot_size == 0)
     return;
   if (!ring->started && ring->count >= PREBUFFER)
     ring->started = TRUE;
-  while (ring->count > PREBUFFER + 3) {             /* zu viel Vorrat: aufholen */
+  while (ring->count > PREBUFFER + 3) {
     ring->rd = (ring->rd + 1) % RING_CAP;
     ring->count--;
     ring->dropped++;
@@ -778,8 +678,7 @@ static void pb_mix_draw(GstVideoFrame *frame, guint slot, guint corner, gint fx,
   const gboolean draw = ring->have_cur && age < STALE_US;
   const gint pw = ring->w, ph = ring->h;
   const gint mw = GST_VIDEO_FRAME_WIDTH(frame), mh = GST_VIDEO_FRAME_HEIGHT(frame);
-  /* Ausschnitt, Platz und Stil: Position mit der Größe des beschnittenen Bildes. Deckkraft 0 oder zu groß: nichts zeichnen
-   * (der Ring lief oben trotzdem weiter, das Bild erscheint sofort wieder). Ohne Stil bleibt es beim reinen Kopieren. */
+
   PbPlace pl = { 0, 0, 0, 0, 0, 0 };
   if (draw && pb_place(st, mw, mh, pw, ph, corner, fx, fy, &pl)) {
     guint8 *dy = GST_VIDEO_FRAME_PLANE_DATA(frame, 0), *duv = GST_VIDEO_FRAME_PLANE_DATA(frame, 1);
@@ -788,8 +687,6 @@ static void pb_mix_draw(GstVideoFrame *frame, guint slot, guint corner, gint fx,
   }
 }
 
-/* Ein wartendes kleines Bild (gerade nicht gezeigt) auf den Vorlauf beschneiden: beim Tausch passt es dann sofort und
- * mit demselben Abstand zum Hauptbild wie im Dauerbetrieb. Aufrufer hält ring_lock. */
 static void pb_mix_trim(guint slot) {
   Ring *ring = &rings[slot];
   while (ring->count > PREBUFFER) {
@@ -801,8 +698,7 @@ static void pb_mix_trim(guint slot) {
 
 static GstFlowReturn pb_mix_transform_ip(GstVideoFilter *filter, GstVideoFrame *frame) {
   PbPipMix *self = (PbPipMix *) filter;
-  /* Tausch ohne Unterbrechung: pbpipsel schreibt in GST_BUFFER_OFFSET, welche Kamera Hauptbild ist und welche Kamera
-   * an welcher Stelle (1 bis 3) kleiner gezeigt wird. Der Zustand reist so mit dem Bild und passt immer genau zu ihm. */
+
   const guint64 tag = GST_BUFFER_OFFSET(frame->buffer);
   const gboolean follow = g_atomic_int_get(&self->follow_tag) && (tag >> 60) == 9;
   g_mutex_lock(&ring_lock);
@@ -814,9 +710,9 @@ static GstFlowReturn pb_mix_transform_ip(GstVideoFilter *filter, GstVideoFrame *
     for (guint p = 0; p < 3; p++) {
       const guint cam = (guint) ((tag >> (4 * (p + 1))) & 0xF);
       if (cam > 3)
-        continue;                                      /* 15: an dieser Stelle gibt es kein kleines Bild */
-      const guint ring = (cam + 3) % NSLOTS;           /* Kamera 1 -> Platz 0, 2 -> 1, 3 -> 2, Hauptkamera 0 -> 3 */
-      pb_mix_draw(frame, ring, cn[p], fx[p], fy[p], &self->style[p]);   /* Stil p+1 gehört zur Stelle p, egal welche Kamera dort ist */
+        continue;
+      const guint ring = (cam + 3) % NSLOTS;
+      pb_mix_draw(frame, ring, cn[p], fx[p], fy[p], &self->style[p]);
       shown |= 1u << ring;
     }
     for (guint r = 0; r < NSLOTS; r++)
@@ -824,7 +720,7 @@ static GstFlowReturn pb_mix_transform_ip(GstVideoFilter *filter, GstVideoFrame *
         pb_mix_trim(r);
   } else {
     pb_mix_draw(frame, self->slot, g_atomic_int_get(&self->corner), g_atomic_int_get(&self->fx), g_atomic_int_get(&self->fy), &self->style[0]);
-    if (self->slot2 >= 0)                              /* zweites kleines Bild im selben Durchgang (nur ein Mapping des Hauptbilds) */
+    if (self->slot2 >= 0)
       pb_mix_draw(frame, (guint) self->slot2, g_atomic_int_get(&self->corner2), g_atomic_int_get(&self->fx2), g_atomic_int_get(&self->fy2), &self->style[1]);
     if (self->slot3 >= 0)
       pb_mix_draw(frame, (guint) self->slot3, g_atomic_int_get(&self->corner3), g_atomic_int_get(&self->fx3), g_atomic_int_get(&self->fy3), &self->style[2]);
@@ -873,8 +769,7 @@ static void pb_pip_mix_class_init(PbPipMixClass *klass) {
       g_param_spec_boolean("follow-tag", "Zustand aus dem Bild", "kleine Bilder nach dem Zustand zeigen, den pbpipsel ins Bild schreibt (Tausch ohne Unterbrechung)",
                            FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_PLAYING));
   {
-    /* style1 gilt für das Bild von slot/corner/x/y, style2 für slot2/corner2/x2/y2, style3 für slot3/corner3/x3/y3; im Modus
-     * follow-tag gilt style<p+1> für die Stelle p, egal welche Kamera dort gerade ist */
+
     static const struct { guint id; const gchar *name; const gchar *nick; } sp[] = {
       {PROP_STYLE1, "style1", "Stil 1"}, {PROP_STYLE2, "style2", "Stil 2"}, {PROP_STYLE3, "style3", "Stil 3"}};
     for (guint i = 0; i < G_N_ELEMENTS(sp); i++)
@@ -901,16 +796,6 @@ static void pb_pip_mix_init(PbPipMix *self) {
   gst_base_transform_set_in_place(GST_BASE_TRANSFORM(self), TRUE);
 }
 
-/* ------------------------------------------------------------------ pbtap und pbround */
-
-/* Gerundete kleine Bilder in der Compositor-Engine (pipbox_live.py). Der Compositor kennt im NV12-Ausgang keine Bildpunkt-Deckkraft;
- * die Rundung entsteht deshalb hinter ihm:
- *   - pbtap (am Ende jedes Kamerazweigs, nur beim Hauptbild "active") kopiert aus dem Hauptbild die vier Eckquadrate (Seite = Eckenradius)
- *     jedes gerundeten kleinen Bildes in einen kleinen Vorrat (Bilder im Speicher des Dekoders sind langsam lesbar, deshalb nur diese Ecken).
- *   - pbround (hinter dem Compositor, in place) holt die Ecken des Hauptbildes mit dem nächsten Zeitstempel zurück, rundet damit die Ecken und
- *     zeichnet den Rahmen (Rahmenfarbe über das Bild, Rundung innen wie im Plugin pbpipmix). Das Innere des Bildes bleibt unberührt.
- * Eigenschaft pip1..pip3 von pbround: "x,y,w,h,bw,bc,bo,br,op" (Lage im Ausgabebild, Rahmenbreite, Farbe rrggbb, Rahmendeckkraft %, Radius,
- * Deckkraft des Bildes %); "off" oder leer = dieses Bild nicht bearbeiten. Maße in Pixeln des 1920 Pixel breiten Ausgabebildes. */
 #define RD_PIPS 3
 #define RD_HIST 6
 #define RD_MAXR 200
@@ -930,7 +815,7 @@ typedef struct {
 } RdCopy;
 
 typedef struct {
-  guint64 rt;                   /* Laufzeit (running time) des Bildes: nur sie ist zwischen Zweig und Compositor-Ausgang vergleichbar (der Zweig hat einen Versatz auf dem Pad) */
+  guint64 rt;
   guint64 seq;
   gboolean valid;
   RdCopy c[RD_PIPS];
@@ -941,7 +826,7 @@ static RdPip rd_pip[RD_PIPS];
 static RdEntry rd_hist[RD_HIST];
 static gint rd_wr = 0;
 static guint64 rd_seq = 0;
-static gint rd_active = 0;      /* Zahl der Taps, die gerade das Hauptbild liefern */
+static gint rd_active = 0;
 
 static gint rd_radius(const RdPip *p) {
   PbShape s;
@@ -1017,7 +902,7 @@ static GstFlowReturn pb_tap_transform_ip(GstBaseTransform *t, GstBuffer *buf) {
   const gint fw = GST_VIDEO_FRAME_WIDTH(&fr), fh = GST_VIDEO_FRAME_HEIGHT(&fr);
   const guint8 *py = GST_VIDEO_FRAME_PLANE_DATA(&fr, 0), *puv = GST_VIDEO_FRAME_PLANE_DATA(&fr, 1);
   const gint sy = GST_VIDEO_FRAME_PLANE_STRIDE(&fr, 0), suv = GST_VIDEO_FRAME_PLANE_STRIDE(&fr, 1);
-  RdEntry *e = &rd_hist[slot];       /* nur dieser Zweig schreibt hier, solange valid FALSE ist */
+  RdEntry *e = &rd_hist[slot];
   for (gint i = 0; i < RD_PIPS; i++) {
     RdCopy *c = &e->c[i];
     const RdPip *p = &pips[i];
@@ -1071,13 +956,11 @@ static void pb_tap_init(PbTap *self) {
   gst_base_transform_set_passthrough(GST_BASE_TRANSFORM(self), TRUE);
 }
 
-/* ---- pbround */
-
 typedef struct { GstVideoFilter parent; } PbRound;
 typedef struct { GstVideoFilterClass parent_class; } PbRoundClass;
 G_DEFINE_TYPE(PbRound, pb_round, GST_TYPE_VIDEO_FILTER)
 
-enum { PROP_R0, PROP_RPIP1, PROP_RPIP2, PROP_RPIP3 };      /* lückenlos */
+enum { PROP_R0, PROP_RPIP1, PROP_RPIP2, PROP_RPIP3 };
 
 static GstStaticPadTemplate rnd_sink = GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw, format=(string)NV12"));
 static GstStaticPadTemplate rnd_src = GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw, format=(string)NV12"));
@@ -1121,7 +1004,6 @@ static void pb_round_get_property(GObject *o, guint id, GValue *v, GParamSpec *p
   g_value_set_string(v, buf);
 }
 
-/* Hauptbild-Punkt (lx, ly im kleinen Bild) aus den gesicherten Ecken; FALSE, wenn dort nichts gesichert ist */
 static gboolean rd_main_px(const RdCopy *c, gint lx, gint ly, gint *Y, gint *U, gint *V) {
   const gint r = c->r, q = (ly >= c->h / 2 ? 2 : 0) + (lx >= c->w / 2 ? 1 : 0);
   const gint x0 = (q & 1) ? c->w - r : 0, y0 = (q & 2) ? c->h - r : 0;
@@ -1143,7 +1025,7 @@ static const RdCopy *rd_find(gint pip, const RdPip *p, guint64 rt) {
     const RdCopy *c = &e->c[pip];
     if (!e->valid || !c->ok || c->x != p->x || c->y != p->y || c->w != p->w || c->h != p->h)
       continue;
-    if (rt == GST_CLOCK_TIME_NONE || e->rt == GST_CLOCK_TIME_NONE) {          /* ohne Zeit: das jüngste Bild */
+    if (rt == GST_CLOCK_TIME_NONE || e->rt == GST_CLOCK_TIME_NONE) {
       if (e->seq > bestseq && bestd == RD_STALE_NS) {
         bestseq = e->seq;
         best = c;
@@ -1162,14 +1044,13 @@ static const RdCopy *rd_find(gint pip, const RdPip *p, guint64 rt) {
 
 #define PB_RMIX(a, b, w) (((a) * (PB_ONE - (w)) + (b) * (w) + PB_ONE / 2) >> PB_SHIFT)
 
-/* Ein gerundetes kleines Bild im fertigen Ausgabebild bearbeiten (Rahmen und Ecken). Aufrufer hält rd_lock. */
 static void pb_round_pip(GstVideoFrame *f, gint idx, const RdPip *p, guint64 rt, gboolean black_ok) {
   const gint fw = GST_VIDEO_FRAME_WIDTH(f), fh = GST_VIDEO_FRAME_HEIGHT(f);
   if (p->x < 0 || p->y < 0 || p->x + p->w > fw || p->y + p->h > fh || p->st.op <= 0)
     return;
   PbStyle st = p->st;
   const gint opf = (st.op * PB_ONE + 50) / 100;
-  st.op = 100;                                       /* nur die Form; die Deckkraft des Bildes steckt schon im Compositor */
+  st.op = 100;
   PbShape s;
   pb_shape_init(&s, &st, 1920, p->w, p->h);
   if (s.ro <= 0 && s.bw <= 0)
@@ -1179,15 +1060,15 @@ static void pb_round_pip(GstVideoFrame *f, gint idx, const RdPip *p, guint64 rt,
   pb_rgb_to_nv12(st.bc, &yb, &ub, &vb);
   guint8 *dy = GST_VIDEO_FRAME_PLANE_DATA(f, 0), *duv = GST_VIDEO_FRAME_PLANE_DATA(f, 1);
   const gint sy = GST_VIDEO_FRAME_PLANE_STRIDE(f, 0), suv = GST_VIDEO_FRAME_PLANE_STRIDE(f, 1);
-  /* Luma */
+
   for (gint r = 0; r < s.ch; r++) {
     gint wb, a;
     const gint zone = pb_row_zone(&s, r, &wb, &a);
     if (zone == 0 && wb == 0)
-      continue;                                      /* reine Bildzeile ohne Rahmen und Rundung */
+      continue;
     guint8 *row = dy + (gsize) (p->y + r) * sy + p->x;
     const gint le = MIN(zone, s.cw), rs = MAX(s.cw - zone, le);
-    if (wb > 0 && rs > le) {                         /* Rahmenzeile: Mittelteil mit Rahmenfarbe */
+    if (wb > 0 && rs > le) {
       const gint wbe = (wb * opf + PB_ONE / 2) >> PB_SHIFT;
       for (gint m = le; m < rs; m++)
         row[m] = (guint8) PB_RMIX((gint) row[m], yb, wbe);
@@ -1213,7 +1094,7 @@ static void pb_round_pip(GstVideoFrame *f, gint idx, const RdPip *p, guint64 rt,
       }
     }
   }
-  /* Chroma: je UV-Paar das Mittel der vier Luma-Bildpunkte */
+
   for (gint mr = 0; mr < s.ch / 2; mr++) {
     gint wb0, a0, wb1, a1;
     const gint z0 = pb_row_zone(&s, 2 * mr, &wb0, &a0), z1 = pb_row_zone(&s, 2 * mr + 1, &wb1, &a1);
@@ -1301,55 +1182,45 @@ static void pb_round_init(PbRound *self) {
   gst_base_transform_set_in_place(GST_BASE_TRANSFORM(self), TRUE);
 }
 
-/* ------------------------------------------------------------------ pbpipsel */
-
 #define SEL_PADS 4
 #define STATE_MARK G_GUINT64_CONSTANT(0x9000000000000000)
 
-/* Wählt eines von bis zu vier Eingängen (Anfragen-Pads sink_0 bis sink_3, Nummer = Kamera). Alles, was nicht vom gewählten
- * Eingang kommt, wird sofort verworfen. Die Eigenschaft "state" ist eine Zahl: untere 4 Bit = gewählter Eingang, die
- * nächsten drei Viertelbytes = Kamera an Stelle 1 bis 3 des Bild-in-Bilds (15 = keine). Mit tag-offset schreibt das Element
- * den Zustand in GST_BUFFER_OFFSET jedes Bildes (Markierung 9 in den obersten 4 Bit), damit pbpipmix ihn zum Bild bekommt.
- *
- * Zeitstempel: beim Umschalten wird der Aufschlag so gewählt, dass das erste Bild des neuen Eingangs genau dort anschließt,
- * wo das letzte des alten endete. Segment und Datenstrom-Anfang sendet das Element selbst (einmal); die der Eingänge
- * werden verworfen. So sieht alles dahinter (Encoder, Muxer) einen einzigen, ununterbrochenen Strom. */
 typedef struct {
   GstElement parent;
   GstPad *src;
   GstPad *sinks[SEL_PADS];
   GstCaps *caps[SEL_PADS];
   GMutex lock;
-  guint state;                   /* atomar lesen/schreiben */
+  guint state;
   gboolean tag_offset, force_key;
-  gint sent_pad;                 /* Eingang, der zuletzt Daten durchgelassen hat (-1: noch keiner) */
+  gint sent_pad;
   GstCaps *sent_caps;
   gboolean sent_start, sent_seg, resync;
-  gint64 offset;                 /* wird auf die Zeitstempel des gewählten Eingangs aufgeschlagen */
+  gint64 offset;
   gboolean have_next;
   GstClockTime next_out, prev_pts;
   guint64 switches;
-  GMutex plock;                  /* schützt p_valid, p_avg, p_rt (jeder Eingang schreibt seine, beim Umschalten liest ein anderer) */
+  GMutex plock;
   gboolean p_valid[SEL_PADS];
-  gint64 p_avg[SEL_PADS];        /* je Eingang: gleitender Mittelwert von (Zeitstempel - Laufzeit der Pipeline) = der "typische" Abstand */
-  gint64 p_rt[SEL_PADS];         /* Laufzeit der letzten Probe (für den Abfall) */
-  gint64 dropped_ns;             /* beim Umschalten verworfene Dauer des neuen Eingangs (Ton) */
-  gint drop_idx;                 /* für welchen Eingang dropped_ns gilt */
-  gboolean first_after_switch;   /* der nächste Puffer ist der erste nach dem Umschalten (Ton) */
-  gboolean fade_in;              /* der nächste Puffer bekommt eine kurze Einblendung (Ton, nach dem Umschalten) */
-  gboolean c_valid;              /* Ton: c_ref gültig */
-  gint64 c_ref;                  /* Ton: fester Bezug (Aufschlag + p_avg des Eingangs): die Ausgangszeit liegt auf Laufzeit + c_ref (Echtzeit) */
-  gint pend_idx;                 /* Ton: Eingang, auf den gerade gewartet wird (-1: keiner) */
-  gint64 pend_since;             /* Laufzeit, seit der auf pend_idx gewartet wird */
-  GstBuffer *held;               /* Ton: der letzte Puffer wird einen Schritt zurückgehalten, damit er beim Umschalten ausgeblendet werden kann */
-  /* Ausgang am Leben halten ("immer bereit"): liefert der gewählte Eingang nichts, schickt ein Faden schwarze Bilder / Stille im Takt */
-  GstCaps *fill_caps;            /* Format, bevor ein Eingang eines geliefert hat (leer: kein Füllen) */
+  gint64 p_avg[SEL_PADS];
+  gint64 p_rt[SEL_PADS];
+  gint64 dropped_ns;
+  gint drop_idx;
+  gboolean first_after_switch;
+  gboolean fade_in;
+  gboolean c_valid;
+  gint64 c_ref;
+  gint pend_idx;
+  gint64 pend_since;
+  GstBuffer *held;
+
+  GstCaps *fill_caps;
   GThread *fill_thread;
   volatile gint fill_run;
-  gint64 last_push_rt;           /* Laufzeit, zu der zuletzt ECHTE Daten weitergegeben wurden (-1: noch keine) */
-  gboolean after_fill;           /* zuletzt wurde gefüllt: der nächste echte Puffer darf nicht vor das Ende des Gefüllten */
-  gboolean filling;              /* es wird gerade gefüllt */
-  gint64 fill_rt0;               /* Ton: Laufzeit und Ausgangszeit bei Beginn des Füllens (die Stille läuft in Echtzeit) */
+  gint64 last_push_rt;
+  gboolean after_fill;
+  gboolean filling;
+  gint64 fill_rt0;
   GstClockTime fill_out0;
 } PbPipSel;
 typedef struct { GstElementClass parent_class; } PbPipSelClass;
@@ -1357,16 +1228,13 @@ G_DEFINE_TYPE(PbPipSel, pb_pip_sel, GST_TYPE_ELEMENT)
 
 enum { SEL_0, SEL_STATE, SEL_TAG, SEL_KEY, SEL_FILL };
 
-/* Wann zuletzt ein Bild je Kamera (Nummer des Eingangs) am Bild-Umschalter ankam, in Laufzeit der Pipeline (-1: noch keins). Der Ton-Umschalter
- * liest es, um zu wissen, ob die Kamera da ist (der DJI-Ton kommt stoßweise, darum zählt das Bild); pbctl meldet es der Oberfläche. Es gibt
- * höchstens eine Sendekette je Prozess. */
 static GMutex pb_live_lock;
 static gint64 pb_live_rt[SEL_PADS] = { -1, -1, -1, -1 };
-#define LIVE_DEAD_NS (1500 * GST_MSECOND)       /* so lange ohne Bild gilt eine Kamera als nicht da (Anzeige und Wechsel der Hauptkamera) */
-#define FILL_VIDEO_AFTER (500 * GST_MSECOND)    /* Bild: so lange ohne Bild vom gewählten Eingang, dann schwarze Bilder */
-#define FILL_AUDIO_AFTER (150 * GST_MSECOND)    /* Ton: so lange ohne Ton, wenn das Bild der Kamera fehlt, dann Stille */
-#define FILL_DEAD (700 * GST_MSECOND)           /* Ton: so lange fehlt das Bild einer Kamera, dann gilt ihr Ton als weg */
-#define FILL_AUDIO_LONG (3 * GST_SECOND)        /* Ton: so lange ohne Ton, auch wenn das Bild da ist (Kamera ohne Mikrofon), dann Stille */
+#define LIVE_DEAD_NS (1500 * GST_MSECOND)
+#define FILL_VIDEO_AFTER (500 * GST_MSECOND)
+#define FILL_AUDIO_AFTER (150 * GST_MSECOND)
+#define FILL_DEAD (700 * GST_MSECOND)
+#define FILL_AUDIO_LONG (3 * GST_SECOND)
 
 static void pb_live_touch(gint idx, gint64 rt) {
   if (idx < 0 || idx >= SEL_PADS)
@@ -1420,7 +1288,6 @@ static void pb_sel_reset(PbPipSel *self) {
   g_mutex_unlock(&self->plock);
 }
 
-/* Datenstrom-Anfang, Format und Segment vor dem ersten Puffer (und bei geändertem Format) nach hinten schicken. Aufrufer hält lock. */
 static gboolean pb_sel_push_sticky_locked(PbPipSel *self, gint idx) {
   if (!self->sent_start) {
     gchar *sid = g_strdup_printf("pbpipsel/%p", (void *) self);
@@ -1446,7 +1313,6 @@ static gboolean pb_sel_push_sticky_locked(PbPipSel *self, gint idx) {
   return TRUE;
 }
 
-/* Laufzeit der Pipeline (Uhr minus Basiszeit), -1 solange es keine Uhr gibt. */
 static gint64 pb_sel_running_time(GstElement *el) {
   GstClock *c = gst_element_get_clock(el);
   if (!c)
@@ -1456,15 +1322,13 @@ static gint64 pb_sel_running_time(GstElement *el) {
   return r;
 }
 
-#define SEL_P_TAU (10 * GST_SECOND)      /* Zeitkonstante des gleitenden Mittelwerts von (Zeitstempel - Laufzeit) je Eingang */
-#define SEL_MAX_AHEAD (5 * GST_SECOND)   /* weiter als so viel darf der neue Eingang nicht vor dem Ende des alten liegen (sonst nahtlos anschließen) */
-#define SEL_MAX_DROP (3 * GST_SECOND)    /* so viel vom neuen Eingang wird höchstens verworfen, bis er passt (sonst nahtlos anschließen) */
-#define SEL_TOLERANCE (400 * GST_MSECOND) /* Ton: so weit darf der neue Eingang beim Umschalten von der Echtzeit abweichen (Versatz zum Bild) */
-#define SEL_HOLE (50 * GST_MSECOND)       /* Ton: so weit darf der neue Eingang beim Umschalten nach dem Ende des alten liegen (sonst wird gewartet) */
-#define SEL_MAX_WAIT (2500 * GST_MSECOND) /* Ton: so lange wartet der Umschalter auf einen passenden Puffer des neuen Eingangs (der alte spielt weiter) */
+#define SEL_P_TAU (10 * GST_SECOND)
+#define SEL_MAX_AHEAD (5 * GST_SECOND)
+#define SEL_MAX_DROP (3 * GST_SECOND)
+#define SEL_TOLERANCE (400 * GST_MSECOND)
+#define SEL_HOLE (50 * GST_MSECOND)
+#define SEL_MAX_WAIT (2500 * GST_MSECOND)
 
-/* Je Eingang den "typischen" Abstand Zeitstempel zu Laufzeit nachführen (auch für nicht gewählte Eingänge). Puffer kommen stoßweise (die
- * Warteschlange davor gibt gestaut frei): der späteste Puffer eines Stoßes ist der typische, deshalb der höchste Wert, langsam abfallend. */
 static void pb_sel_sample(PbPipSel *self, gint idx, GstClockTime pts) {
   if (!GST_CLOCK_TIME_IS_VALID(pts))
     return;
@@ -1477,8 +1341,7 @@ static void pb_sel_sample(PbPipSel *self, gint idx, GstClockTime pts) {
     self->p_valid[idx] = TRUE;
     self->p_avg[idx] = sample;
   } else {
-    /* gleitender Mittelwert (Zeitkonstante SEL_P_TAU): der "typische" Abstand. Der höchste Wert (früheste Ankunft) war ein Ausreißer nach oben und
-     * machte den Eingang mit stärker stoßweisem Ton dauerhaft um bis zu 1,8 s "zu spät" (gemessen, Stille beim Wechsel). */
+
     const gint64 dt = rt > self->p_rt[idx] ? rt - self->p_rt[idx] : 0;
     gdouble alpha = (gdouble) dt / (gdouble) SEL_P_TAU;
     if (alpha > 0.2)
@@ -1489,7 +1352,6 @@ static void pb_sel_sample(PbPipSel *self, gint idx, GstClockTime pts) {
   g_mutex_unlock(&self->plock);
 }
 
-/* Ton: Format des Eingangs, wenn es 16-Bit-Ganzzahlen verschachtelt sind (so macht es die Pipeline vor dem Umschalter). Sonst keine Blenden/Stille. */
 static gboolean pb_sel_audio_fmt(PbPipSel *self, gint idx, gint *rate, gint *ch) {
   if (!self->caps[idx] || gst_caps_get_size(self->caps[idx]) < 1)
     return FALSE;
@@ -1502,7 +1364,6 @@ static gboolean pb_sel_audio_fmt(PbPipSel *self, gint idx, gint *rate, gint *ch)
   return TRUE;
 }
 
-/* Lineare Blende über den ganzen Puffer (Ein- oder Ausblendung), Puffer wird beschreibbar gemacht. */
 static GstBuffer *pb_sel_fade(GstBuffer *buf, gboolean fade_in, gint ch) {
   buf = gst_buffer_make_writable(buf);
   GstMapInfo m;
@@ -1520,12 +1381,9 @@ static GstBuffer *pb_sel_fade(GstBuffer *buf, gboolean fade_in, gint ch) {
   return buf;
 }
 
-#define SEL_SILENCE_MAX (12 * GST_SECOND)    /* so viel Stille wird beim Umschalten höchstens eingefügt (steht der alte Eingang, ist das die Zeit, die er fehlte) */
-#define SEL_SILENCE_MIN (5 * GST_MSECOND)    /* kürzere Lücken bleiben (Zeitstempel schließen dort einfach an) */
+#define SEL_SILENCE_MAX (12 * GST_SECOND)
+#define SEL_SILENCE_MIN (5 * GST_MSECOND)
 
-/* Beim Umschalten (Aufrufer hält lock): den zurückgehaltenen letzten Puffer des alten Eingangs ausblenden und weitergeben, danach Stille von
- * next_out bis to einfügen. Der Ausgang bleibt so ohne Lücke (der Muxer wartet sonst auf den Ton und hält das Bild zurück, gemessen: 1,6 s
- * Bildstillstand je Wechsel) und der Wechsel knackt nicht. */
 static GstFlowReturn pb_sel_gap_locked(PbPipSel *self, gint rate, gint ch, GstClockTime to) {
   GstFlowReturn ret = GST_FLOW_OK;
   if (self->held) {
@@ -1566,11 +1424,6 @@ static GstFlowReturn pb_sel_gap_locked(PbPipSel *self, gint rate, gint ch, GstCl
   return ret;
 }
 
-/* ---- Füllen ("immer bereit"): Liefert der gewählte Eingang nichts (Kamera weg, noch nicht da), hält ein Faden den Ausgang am Leben, damit Encoder
- * und Muxer nie auf einen Eingang warten und die Sendung nicht neu startet. Bild: schwarze Bilder im Takt der Bildrate; Ton: Stille in Echtzeit.
- * Kommt der Eingang zurück, schließen die echten Puffer ohne Rückwärtssprung an (after_fill). Nur mit der Eigenschaft fill-caps. */
-
-/* Datenstrom-Anfang, Format und Segment für das Füllen (Aufrufer hält lock). caps: das zu sendende Format. */
 static gboolean pb_sel_push_sticky_fill_locked(PbPipSel *self, GstCaps *caps) {
   if (!self->sent_start) {
     gchar *sid = g_strdup_printf("pbpipsel/%p", (void *) self);
@@ -1604,7 +1457,7 @@ static void pb_sel_fill_video(PbPipSel *self, gint64 rt) {
     g_mutex_unlock(&self->lock);
     return;
   }
-  if (self->last_push_rt < 0 && !self->filling) {                    /* die Frist beginnt erst, wenn die Sendekette läuft */
+  if (self->last_push_rt < 0 && !self->filling) {
     self->last_push_rt = rt;
     g_mutex_unlock(&self->lock);
     return;
@@ -1628,7 +1481,7 @@ static void pb_sel_fill_video(PbPipSel *self, gint64 rt) {
     self->next_out = (GstClockTime) rt;
     self->have_next = TRUE;
   }
-  const gint64 target = rt + self->offset;                           /* dahin gehörten die echten Bilder jetzt */
+  const gint64 target = rt + self->offset;
   for (guint n = 0; n < 30 && (gint64) self->next_out <= target; n++) {
     GstBuffer *b = gst_buffer_new_and_alloc(GST_VIDEO_INFO_SIZE(&vi));
     GstMapInfo m;
@@ -1637,7 +1490,7 @@ static void pb_sel_fill_video(PbPipSel *self, gint64 rt) {
       break;
     }
     const gsize y_off = GST_VIDEO_INFO_PLANE_OFFSET(&vi, 0), uv_off = GST_VIDEO_INFO_PLANE_OFFSET(&vi, 1);
-    memset(m.data + y_off, 16, uv_off - y_off);                      /* schwarz (Y 16, U/V 128) */
+    memset(m.data + y_off, 16, uv_off - y_off);
     memset(m.data + uv_off, 128, m.size - uv_off);
     gst_buffer_unmap(b, &m);
     GST_BUFFER_PTS(b) = self->next_out;
@@ -1675,7 +1528,7 @@ static void pb_sel_fill_audio(PbPipSel *self, gint64 rt) {
   }
   const gint target = (gint) (g_atomic_int_get(&self->state) & 0xF);
   const gint64 vl = pb_live_get(target);
-  const gboolean cam_dead = vl >= 0 && (GstClockTime) (rt - vl) > FILL_DEAD;       /* das Bild der Kamera fehlt: ihr Ton ist weg */
+  const gboolean cam_dead = vl >= 0 && (GstClockTime) (rt - vl) > FILL_DEAD;
   const GstClockTime quiet = (GstClockTime) (rt - self->last_push_rt);
   if (!self->filling && !((cam_dead && quiet >= FILL_AUDIO_AFTER) || quiet >= FILL_AUDIO_LONG)) {
     g_mutex_unlock(&self->lock);
@@ -1685,7 +1538,7 @@ static void pb_sel_fill_audio(PbPipSel *self, gint64 rt) {
     g_mutex_unlock(&self->lock);
     return;
   }
-  if (!self->filling) {                                              /* Beginn: ab dem Ende des letzten Puffers in Echtzeit weiter */
+  if (!self->filling) {
     self->filling = TRUE;
     self->fill_rt0 = rt;
     if (!self->have_next) {
@@ -1718,16 +1571,16 @@ static gpointer pb_sel_fill_thread(gpointer data) {
 static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf) {
   PbPipSel *self = (PbPipSel *) parent;
   const gint idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(pad), "pbsel-idx"));
-  if (self->tag_offset) {                                          /* Bild: vermerken, dass diese Kamera da ist (auch wenn sie nicht gewählt ist) */
+  if (self->tag_offset) {
     const gint64 rt0 = pb_sel_running_time((GstElement *) self);
     if (rt0 >= 0)
       pb_live_touch(idx, rt0);
   }
-  if (!self->tag_offset)                                           /* Ton: je Eingang den typischen Zeitabstand führen (Bild nicht) */
+  if (!self->tag_offset)
     pb_sel_sample(self, idx, GST_BUFFER_PTS(buf));
-  /* Ton: Wurde ein anderer Eingang gewählt, spielt der bisherige weiter, bis ein passender Puffer des neuen kommt (kein Loch, keine Stille). */
+
   const gboolean old_playing = !self->tag_offset && g_atomic_int_get(&self->sent_pad) == idx;
-  if ((gint) (g_atomic_int_get(&self->state) & 0xF) != idx && !old_playing) {      /* nicht gewählt: sofort verwerfen, ohne zu warten */
+  if ((gint) (g_atomic_int_get(&self->state) & 0xF) != idx && !old_playing) {
     gst_buffer_unref(buf);
     return GST_FLOW_OK;
   }
@@ -1741,9 +1594,9 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
     gst_buffer_unref(buf);
     return GST_FLOW_OK;
   }
-  if (target == self->sent_pad)                                      /* zurückgewechselt oder kein Wechsel: es wird auf nichts gewartet */
+  if (target == self->sent_pad)
     self->pend_idx = -1;
-  if (self->sent_pad != idx) {                                       /* Umschalten (oder erster Puffer) */
+  if (self->sent_pad != idx) {
     if (!pb_sel_push_sticky_locked(self, idx)) {
       g_mutex_unlock(&self->lock);
       gst_buffer_unref(buf);
@@ -1751,20 +1604,16 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
     }
     const GstClockTime pts = GST_BUFFER_PTS(buf);
     if (self->sent_pad >= 0) {
-      gint64 offset = self->have_next && GST_CLOCK_TIME_IS_VALID(pts) ? (gint64) self->next_out - (gint64) pts : self->offset;   /* nahtlos an das Ende des alten Eingangs */
+      gint64 offset = self->have_next && GST_CLOCK_TIME_IS_VALID(pts) ? (gint64) self->next_out - (gint64) pts : self->offset;
       if (self->have_next && GST_CLOCK_TIME_IS_VALID(pts) && audio_fx) {
-        /* Ton: Der DJI-Ton kommt stoßweise (Stücke von bis zu 1,7 s); zwischen dem letzten Stück des alten und dem ersten des neuen Eingangs
-         * klafft sonst eine Lücke (gemessen 0,9 bis 1,7 s Stille je Wechsel). Darum spielt der alte Eingang weiter, bis ein Puffer des neuen
-         * "passt": seine Echtzeit-Lage (Aufschlag aus dem festen Bezug c_ref und p_avg des neuen Eingangs) weicht höchstens SEL_TOLERANCE vom Ende
-         * des alten ab. Dann wird nahtlos angeschlossen (Zeit läuft nie rückwärts, es gibt kein Loch), der Versatz zum Bild bleibt unter der
-         * Toleranz und summiert sich nicht auf, weil der Bezug fest ist. Kommt in SEL_MAX_WAIT keiner, wird trotzdem angeschlossen. */
+
         const gint64 rt = pb_sel_running_time((GstElement *) self);
         g_mutex_lock(&self->plock);
         const gboolean ok = self->p_valid[self->sent_pad] && self->p_valid[idx];
         const gint64 p_old = self->p_avg[self->sent_pad], p_new = self->p_avg[idx];
         g_mutex_unlock(&self->plock);
         if (ok && rt >= 0) {
-          if (!self->c_valid) {                                       /* fester Bezug beim ersten Wechsel: so liegt der laufende Ton jetzt */
+          if (!self->c_valid) {
             self->c_ref = self->offset + p_old;
             self->c_valid = TRUE;
           }
@@ -1773,23 +1622,21 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
             self->pend_since = rt;
           }
           const gint64 out_ideal = (gint64) pts + self->c_ref - p_new;
-          const gint64 diff = out_ideal - (gint64) self->next_out;      /* > 0: neuer liegt später als das Ende des alten */
+          const gint64 diff = out_ideal - (gint64) self->next_out;
           const gboolean waited_long = rt - self->pend_since > (gint64) SEL_MAX_WAIT;
-          /* Passend: der neue Puffer liegt höchstens SEL_TOLERANCE vor und höchstens SEL_HOLE nach dem Ende des alten. Zu spät wäre die Zeit des Tons
-           * hinter der Echtzeit (gemessen: schon 0,4 s lassen den Muxer das Bild stoßweise freigeben, bis zum Stillstand); zu früh (der neue Puffer ist
-           * verspätet ausgeliefert) ist unkritisch, der Ton läuft dann bis zur Toleranz später als das Bild. */
+
           if ((diff > (gint64) SEL_HOLE || diff < -(gint64) SEL_TOLERANCE) && !waited_long) {
-            g_mutex_unlock(&self->lock);                                /* noch nicht passend: verwerfen, der alte spielt weiter */
+            g_mutex_unlock(&self->lock);
             gst_buffer_unref(buf);
             return GST_FLOW_OK;
           }
           if (waited_long) {
-            if (diff > (gint64) SEL_HOLE)                               /* nichts Passendes gekommen, neuer liegt später: auf die Echtzeit-Lage springen, Lücke mit Stille füllen */
+            if (diff > (gint64) SEL_HOLE)
               offset = self->c_ref - p_new;
             else
-              self->c_valid = FALSE;                                    /* neuer liegt weit früher: nahtlos anschließen, neuen Bezug nehmen */
+              self->c_valid = FALSE;
           }
-          const GstFlowReturn fr = pb_sel_gap_locked(self, a_rate, a_ch, offset == self->c_ref - p_new && diff > (gint64) SEL_HOLE ? (GstClockTime) MAX(out_ideal, 0) : GST_CLOCK_TIME_NONE);   /* letzten Puffer des alten ausblenden, ggf. Stille bis zum neuen */
+          const GstFlowReturn fr = pb_sel_gap_locked(self, a_rate, a_ch, offset == self->c_ref - p_new && diff > (gint64) SEL_HOLE ? (GstClockTime) MAX(out_ideal, 0) : GST_CLOCK_TIME_NONE);
           if (fr != GST_FLOW_OK) {
             g_mutex_unlock(&self->lock);
             gst_buffer_unref(buf);
@@ -1801,7 +1648,7 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
       }
       self->offset = offset;
       self->resync = TRUE;
-      if (self->force_key)                                           /* Schnitt: der Encoder soll einen vollständigen Bildanfang setzen */
+      if (self->force_key)
         gst_pad_push_event(self->src, gst_video_event_new_downstream_force_key_unit(
             GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE, GST_CLOCK_TIME_NONE, TRUE, 0));
       self->switches++;
@@ -1810,7 +1657,7 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
     self->dropped_ns = 0;
     self->prev_pts = GST_CLOCK_TIME_NONE;
   } else if (!self->sent_caps || (self->caps[idx] && !gst_caps_is_equal(self->sent_caps, self->caps[idx]))) {
-    pb_sel_push_sticky_locked(self, idx);                            /* Format hat sich beim gewählten Eingang geändert */
+    pb_sel_push_sticky_locked(self, idx);
   }
   buf = gst_buffer_make_writable(buf);
   const GstClockTime pts = GST_BUFFER_PTS(buf), dts = GST_BUFFER_DTS(buf);
@@ -1818,16 +1665,16 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
     gint64 o = (gint64) pts + self->offset;
     if (o < 0)
       o = 0;
-    if (self->first_after_switch) {                                  /* erster Puffer nach dem Umschalten (Ton): nicht vor das Ende des alten */
+    if (self->first_after_switch) {
       if (self->have_next && o < (gint64) self->next_out)
         o = (gint64) self->next_out;
       self->first_after_switch = FALSE;
     }
-    if (self->after_fill) {                                          /* der Eingang ist nach dem Füllen zurück: nahtlos an das Gefüllte anschließen */
+    if (self->after_fill) {
       if (self->have_next && o < (gint64) self->next_out)
         o = (gint64) self->next_out;
       else if (audio_fx && self->have_next && o > (gint64) self->next_out + SEL_SILENCE_MIN) {
-        const GstFlowReturn gr = pb_sel_gap_locked(self, a_rate, a_ch, (GstClockTime) o);    /* Ton: Lücke bis zum ersten echten Puffer mit Stille füllen */
+        const GstFlowReturn gr = pb_sel_gap_locked(self, a_rate, a_ch, (GstClockTime) o);
         if (gr != GST_FLOW_OK) {
           g_mutex_unlock(&self->lock);
           gst_buffer_unref(buf);
@@ -1857,9 +1704,9 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
   if (self->tag_offset)
     GST_BUFFER_OFFSET(buf) = STATE_MARK | (guint64) (state & 0xFFFF);
   GstFlowReturn ret;
-  self->filling = FALSE;                                             /* echte Daten: es wird nicht mehr gefüllt, die Frist beginnt neu */
+  self->filling = FALSE;
   self->last_push_rt = pb_sel_running_time((GstElement *) self);
-  if (audio_fx) {                                                    /* Ton: einen Puffer zurückhalten (Ausblendung beim nächsten Umschalten) */
+  if (audio_fx) {
     if (self->fade_in) {
       buf = pb_sel_fade(buf, TRUE, a_ch);
       self->fade_in = FALSE;
@@ -1868,7 +1715,7 @@ static GstFlowReturn pb_sel_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
     self->held = buf;
     ret = prev ? gst_pad_push(self->src, prev) : GST_FLOW_OK;
   } else {
-    if (self->held) {                                                /* Format hat gewechselt: zurückgehaltenen Puffer zuerst weitergeben */
+    if (self->held) {
       GstBuffer *prev = self->held;
       self->held = NULL;
       gst_pad_push(self->src, prev);
@@ -1890,12 +1737,12 @@ static gboolean pb_sel_event(GstPad *pad, GstObject *parent, GstEvent *event) {
       gst_event_parse_caps(event, &c);
       g_mutex_lock(&self->lock);
       gst_caps_replace(&self->caps[idx], c);
-      g_mutex_unlock(&self->lock);                                   /* nach hinten geht es mit dem nächsten Puffer */
+      g_mutex_unlock(&self->lock);
       gst_event_unref(event);
       break;
     }
     case GST_EVENT_EOS:
-      if (act) {                                                     /* der gewählte Eingang ist zu Ende: Ende weiterreichen */
+      if (act) {
         g_mutex_lock(&self->lock);
         if (self->sent_pad < 0 && self->caps[idx])
           pb_sel_push_sticky_locked(self, idx);
@@ -1907,12 +1754,12 @@ static gboolean pb_sel_event(GstPad *pad, GstObject *parent, GstEvent *event) {
         ret = gst_pad_push_event(self->src, event);
         g_mutex_unlock(&self->lock);
       } else {
-        gst_event_unref(event);                                      /* wartende Kamera weg: stört die Sendung nicht */
+        gst_event_unref(event);
       }
       break;
     case GST_EVENT_FLUSH_START:
       if (act) {
-        ret = gst_pad_push_event(self->src, event);                  /* zuerst weitergeben (entsperrt einen hängenden Push), dann den Rest verwerfen */
+        ret = gst_pad_push_event(self->src, event);
         g_mutex_lock(&self->lock);
         gst_clear_buffer(&self->held);
         g_mutex_unlock(&self->lock);
@@ -1930,7 +1777,7 @@ static gboolean pb_sel_event(GstPad *pad, GstObject *parent, GstEvent *event) {
         gst_event_unref(event);
       }
       break;
-    default:                                                         /* Datenstrom-Anfang, Segment, Tags, Lücken usw. der Eingänge: eigene Regie */
+    default:
       gst_event_unref(event);
       break;
   }
@@ -2069,22 +1916,20 @@ static void pb_pip_sel_init(PbPipSel *self) {
   gst_element_add_pad(GST_ELEMENT(self), self->src);
 }
 
-/* ------------------------------------------------------------------ pbctl */
-
 typedef struct {
   GstElement parent;
   gchar *file, *video_queue, *audio_queue, *pip_queue, *pip2_queue, *pip3_queue;
-  gchar *cam[4];                  /* Tausch ohne Unterbrechung: je Kamera eine Liste "queue:art,..." (v = Bild groß, s = Bild klein, a = Ton) */
+  gchar *cam[4];
   gchar *selector, *audio_selector, *select_file, *state_file;
-  gint audio_pos;                 /* -1: Ton der Hauptkamera, 0 bis 2: Ton der Kamera an dieser Stelle */
-  gchar *view_file, *view_state_file, *mixer_name, *volume_name;   /* Ansicht im Betrieb: Sichtbarkeit, Tonquelle, Stumm (siehe pb_ctl_poll_view) */
-  gchar *live_file;               /* Hier meldet pbctl, welche Kameras gerade Bilder liefern: vier Zahlen 0/1 (Kamera 0 bis 3) */
+  gint audio_pos;
+  gchar *view_file, *view_state_file, *mixer_name, *volume_name;
+  gchar *live_file;
   gchar live_last[16];
   gint64 live_written_rt;
-  gchar *style_base[3];           /* Stil der Stellen 1 bis 3, wie die Pipeline ihn gebaut hat (beim ersten Durchlauf gemerkt) */
+  gchar *style_base[3];
   gboolean view_inited;
-  gint view_hide;                 /* zuletzt gestellt: Bit 0 bis 2 = kleines Bild an Stelle 1 bis 3 ausgeblendet */
-  gint last_v[4];                 /* zuletzt gestellter Zustand des Umschalters (für den Ton), gültig wenn have_v */
+  gint view_hide;
+  gint last_v[4];
   gboolean have_v;
   GThread *thread;
   volatile gint run;
@@ -2096,16 +1941,13 @@ G_DEFINE_TYPE(PbCtl, pb_ctl, GST_TYPE_ELEMENT)
 enum { CTL_0, CTL_FILE, CTL_VQ, CTL_AQ, CTL_PQ, CTL_P2Q, CTL_P3Q, CTL_CAM0, CTL_CAM1, CTL_CAM2, CTL_CAM3,
        CTL_SEL, CTL_ASEL, CTL_SELFILE, CTL_STATEFILE, CTL_VIEWFILE, CTL_VIEWSTATE, CTL_MIXER, CTL_VOLUME, CTL_APOS, CTL_LIVE };
 
-/* Wartezeit einer benannten queue setzen. Hauptbild/Ton: Zeitlimit großzügig. Kleine Bilder: die queue hat
- * leaky=downstream und ein Zeitlimit; bei Verzögerung wird das Limit entsprechend angehoben. */
 static void pb_ctl_set_queue(PbCtl *self, GstObject *par, const gchar *name, gint ms, gboolean small, gint extra) {
   if (!name || !*name || ms < 0 || ms > 3000)
     return;
   GstElement *q = gst_bin_get_by_name(GST_BIN(par), name);
   if (!q)
     return;
-  /* Die queue gibt erst frei, wenn der Füllstand die Schwelle überschreitet: gemessen fehlt dabei ein Bild.
-   * Beim Bild gleichen wir das mit extra (ein Bild = 33 ms) aus, beim Ton nicht (extra = 0). */
+
   gint th = ms ? ms + extra : 0;
   if (small)
     g_object_set(q, "max-size-time", (guint64) (th + 500) * GST_MSECOND, "max-size-buffers", (guint) (ms ? 0 : 30),
@@ -2117,7 +1959,6 @@ static void pb_ctl_set_queue(PbCtl *self, GstObject *par, const gchar *name, gin
   GST_INFO_OBJECT(self, "%s: %d ms", name, ms);
 }
 
-/* Liste "queue:art,queue:art" einer Kamera abarbeiten */
 static void pb_ctl_set_cam(PbCtl *self, GstObject *par, const gchar *spec, gint ms) {
   if (!spec || !*spec)
     return;
@@ -2149,7 +1990,6 @@ static void pb_ctl_apply(PbCtl *self, gint main_ms, gint pip_ms, gint pip2_ms, g
   gst_object_unref(par);
 }
 
-/* Zustand in die Datei für die Oberfläche schreiben: "Hauptkamera Kamera-an-Stelle-1 -2 -3" */
 static void pb_ctl_publish(PbCtl *self, const int v[4]) {
   if (!self->state_file || !*self->state_file)
     return;
@@ -2159,7 +1999,6 @@ static void pb_ctl_publish(PbCtl *self, const int v[4]) {
   g_free(txt);
 }
 
-/* Umschalten: Bild-Umschalter (und, falls vorhanden, Ton-Umschalter) auf den neuen Zustand stellen */
 static void pb_ctl_apply_select(PbCtl *self, const int v[4]) {
   GstObject *par = gst_object_get_parent(GST_OBJECT(self));
   if (!par)
@@ -2185,7 +2024,6 @@ static void pb_ctl_apply_select(PbCtl *self, const int v[4]) {
   gst_object_unref(par);
 }
 
-/* Zustand aus der Datei übernehmen, sobald sie sich ändert; beim ersten Durchlauf ohne Datei den eingebauten Zustand melden */
 static void pb_ctl_poll_select(PbCtl *self, gboolean first) {
   if (!self->selector || !*self->selector)
     return;
@@ -2210,7 +2048,7 @@ static void pb_ctl_poll_select(PbCtl *self, gboolean first) {
       }
     }
   }
-  if (first) {                                                     /* keine (brauchbare) Datei: Zustand des Umschalters melden */
+  if (first) {
     GstObject *par = gst_object_get_parent(GST_OBJECT(self));
     GstElement *sel = par ? gst_bin_get_by_name(GST_BIN(par), self->selector) : NULL;
     if (sel) {
@@ -2228,15 +2066,6 @@ static void pb_ctl_poll_select(PbCtl *self, gboolean first) {
   }
 }
 
-/* ---- Ansicht im Betrieb: kleine Bilder ein-/ausblenden, Tonquelle, Stumm -------------------------------------------------
- * Steuerdatei view-file mit drei Zahlen "ausgeblendet Tonquelle stumm":
- *   ausgeblendet: Bit 0 bis 2 = kleines Bild an Stelle 1 bis 3 nicht zeichnen (0 = alle sichtbar)
- *   Tonquelle:    -1 Ton der Hauptkamera, 0 bis 2 Ton der Kamera an Stelle 1 bis 3 (nur mit Ton-Umschalter; sonst bleibt es wie gebaut)
- *   stumm:        0 oder 1 (Element "volume" mit dem Namen aus der Eigenschaft volume)
- * Nach dem Übernehmen schreibt pbctl denselben Zustand, wie er jetzt WIRKLICH gilt, in view-state-file. Was sich nicht stellen lässt
- * (kein Mischer, kein Ton-Umschalter, kein volume), bleibt dort wie es ist: die Oberfläche merkt es und startet dann neu. */
-
-/* Text ohne "op=..."-Teile (Schlüssel wird ohne Leerzeichen verglichen) */
 static gchar *pb_style_strip_op(const gchar *text) {
   GString *out = g_string_new(NULL);
   gchar **parts = g_strsplit(text ? text : "", ",", 0);
@@ -2261,7 +2090,6 @@ static gchar *pb_style_strip_op(const gchar *text) {
   return g_string_free(out, FALSE);
 }
 
-/* Gilt im Text am Ende Deckkraft 0 (Bild nicht zeichnen)? Bei doppeltem Schlüssel gilt der letzte (wie im Stil-Parser). */
 static gboolean pb_style_is_hidden(const gchar *text) {
   PbStyle st;
   pb_style_parse(text, &st);
@@ -2277,7 +2105,6 @@ static void pb_ctl_publish_view(PbCtl *self, gint hide, gint audio, gint mute) {
   g_free(txt);
 }
 
-/* Stil der Stellen 1 bis 3 beim ersten Durchlauf merken (so, wie die Pipeline ihn gebaut hat) */
 static void pb_ctl_remember_styles(PbCtl *self, GstElement *mix) {
   if (self->view_inited)
     return;
@@ -2289,7 +2116,7 @@ static void pb_ctl_remember_styles(PbCtl *self, GstElement *mix) {
       g_object_get(mix, names[i], &txt, NULL);
     self->style_base[i] = txt ? txt : g_strdup("");
     if (txt && pb_style_is_hidden(txt))
-      self->view_hide |= 1 << i;                                    /* schon ausgeblendet gebaut */
+      self->view_hide |= 1 << i;
   }
 }
 
@@ -2364,7 +2191,7 @@ static void pb_ctl_poll_view(PbCtl *self, gboolean first) {
       }
     }
   }
-  if (first) {                                                       /* keine (brauchbare) Datei: Zustand melden, nichts ändern */
+  if (first) {
     GstObject *par = gst_object_get_parent(GST_OBJECT(self));
     if (par) {
       GstElement *mix = self->mixer_name && *self->mixer_name ? gst_bin_get_by_name(GST_BIN(par), self->mixer_name) : NULL;
@@ -2386,7 +2213,7 @@ static void pb_ctl_poll_delay(PbCtl *self) {
     gint64 mt = (gint64) st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
     if (mt != self->last_mtime) {
       self->last_mtime = mt;
-      int v[4] = { -1, 0, 0, 0 };         /* Hauptbild, kleine Bilder 1 bis 3 (alte Datei: weniger Werte) */
+      int v[4] = { -1, 0, 0, 0 };
       FILE *f = fopen(self->file, "r");
       if (f) {
         if (fscanf(f, "%d %d %d %d", &v[0], &v[1], &v[2], &v[3]) < 1)
@@ -2399,7 +2226,6 @@ static void pb_ctl_poll_delay(PbCtl *self) {
   }
 }
 
-/* Welche Kameras liefern gerade Bilder? Vier Zahlen "1 0 1 0" in live-file, nur bei Änderung und alle 2 s (damit man sieht, dass pbctl lebt). */
 static void pb_ctl_publish_live(PbCtl *self) {
   if (!self->live_file || !*self->live_file)
     return;
@@ -2429,11 +2255,11 @@ static gpointer pb_ctl_thread(gpointer data) {
   PbCtl *self = data;
   guint tick = 0;
   while (g_atomic_int_get(&self->run)) {
-    pb_ctl_publish_live(self);                                     /* Kameras mit Bild: alle 0,1 s prüfen */
-    if (tick % 3 == 0)                                             /* Verzögerung: alle 0,3 s */
+    pb_ctl_publish_live(self);
+    if (tick % 3 == 0)
       pb_ctl_poll_delay(self);
-    pb_ctl_poll_select(self, tick == 0);                           /* Umschalten: alle 0,1 s */
-    pb_ctl_poll_view(self, tick == 0);                             /* Ansicht (ein-/ausblenden, Ton, stumm): alle 0,1 s, nach dem Umschalten */
+    pb_ctl_poll_select(self, tick == 0);
+    pb_ctl_poll_view(self, tick == 0);
     tick++;
     g_usleep(100000);
   }
@@ -2602,8 +2428,6 @@ static void pb_ctl_init(PbCtl *self) {
   self->live_last[0] = 0;
   self->live_written_rt = 0;
 }
-
-/* ------------------------------------------------------------------ Plugin */
 
 static gboolean plugin_init(GstPlugin *plugin) {
   GST_DEBUG_CATEGORY_INIT(pbpip_debug, "pbpip", 0, "IRL4YOU PiP");
