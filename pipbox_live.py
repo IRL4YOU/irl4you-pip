@@ -1,15 +1,3 @@
-"""Modus "alle Kameras immer bereit" mit der Technik von streamingbox: Compositor statt Umschalter, Kameras als Zweige derselben Pipeline.
-
-Die Pipeline wird **einmal** gebaut und ändert sich bis zum Stopp der Sendung nie. Sie enthält immer alle Plätze (4 Kamerazweige sbf0..sbf3,
-3 Rahmen, Compositor, Ton-Umschalter). Ob eine Kamera sendet, wer groß ist, wo die kleinen Bilder liegen, Ton und Stumm: alles Eigenschaften, die
-dieses Modul per Steuerkanal (`belacoder -C`) im laufenden Betrieb setzt. Der Encoder sieht nur ein Format: `video/x-raw,NV12,1920x1080,30/1` hinter
-dem Compositor (Systemspeicher). Ohne Kamera zeigt der Compositor Schwarz (Rahmen-Streifen aus `videotestsrc is-live=true` geben den Takt), der Ton
-ist Stille (`audiotestsrc`).
-
-Dieses Modul enthält die reine Rechnung (Geometrie, Pipeline-Text, Befehle) und den Regler `LiveController`, der die Rolle von
-`pipbox_always.Controller` + `Feeders` übernimmt: gleiche Schnittstelle (`start`, `tick`, `stop`, `binder`), gleiche Rückmeldedateien
-(`view-state`), so bleibt die Oberfläche unverändert. Nur Standardbibliothek.
-"""
 import json
 import os
 import re
@@ -22,16 +10,16 @@ import pipbox_always as pa
 
 CANVAS_W, CANVAS_H, FPS = 1920, 1080, 30
 SLOTS = 4
-RINGS = 3                                   # je kleines Bild (Stelle 1..3) ein Rahmen aus 4 Streifen
-PLACEHOLDER = "pipbox_unused_%d"            # Schlüssel eines Platzes ohne Kamera: sendet nie
+RINGS = 3
+PLACEHOLDER = "pipbox_unused_%d"
 RTMP_BASE = "rtmp://127.0.0.1:1935/publish"
 RUN = "/run/pipbox-send"
 CTL_FIFO = f"{RUN}/belacoder.ctl"
 LIVE_STATS = f"{RUN}/belacoder-live.txt"
 BIN = "/opt/pipbox/bin/belacoder"
-BUFFER_NEED_MIN_MS = 600                    # Untergrenze dessen, was Verzögerungen brauchen (buffer_need_ms)
-BUFFER_MIN_COPY_MS = 1350                   # dasselbe mit einem belacoder, der das Hauptbild kopiert (Version -sb13 oder neuer): das Hauptbild darf dann ebenso früh ankommen wie die kleinen Bilder, der Spielraum für Schübe wächst auf rund 870 ms
-BUFFER_MIN_MS = 1050                        # Ausrichtungspuffer (belacoder -A), mindestens: Reserve für Kameras, die ihre Bilder in Schüben senden (Pocket 3: Ankunft schwankt um 0,7 s, bei 600 ms kamen 4 bis 10 % der Sekunden unter 26 Bilder; Testbox, 13. Oktober 2026)
+BUFFER_NEED_MIN_MS = 600
+BUFFER_MIN_COPY_MS = 1350
+BUFFER_MIN_MS = 1050
 FEED_COOLDOWN_S = 3.0
 STATS_MAX_AGE_S = 4.0
 Z_BIG = 1
@@ -39,13 +27,10 @@ COLOR_CAPS = "video/x-raw,format=NV12,colorimetry=bt709"
 AUDIO_CAPS = "audio/x-raw,format=S16LE,rate=48000,channels=2"
 
 
-# ------------------------------------------------------------------------------------------------ Unterstützung
-
 _SUP = {"mtime": None, "ok": False}
 
 
 def supported():
-    """Kann der installierte belacoder die dynamischen Zweige sbf0..sbf7 (Version "sb10" oder neuer)? PIPBOX_LIVE=0/1 erzwingt die Antwort (Tests)."""
     force = os.environ.get("PIPBOX_LIVE")
     if force in ("0", "1"):
         return force == "1"
@@ -62,12 +47,10 @@ def supported():
 
 PLUGIN_SO = os.environ.get("PIPBOX_PLUGIN", "/opt/pipbox/gst/libgstpbpip.so")
 _FRM = {"mtime": None, "ok": False}
-FRAME_BUILT = False        # hat die zuletzt gebaute Pipeline pbtap/pbround? (build() setzt es; der Regler sendet danach nur dann Befehle für sie)
+FRAME_BUILT = False
 
 
 def frame_ok():
-    """Kennt der installierte Baustein pbtap und pbround (gerundete kleine Bilder in dieser Engine)? Ein älterer Baustein kennt sie nicht: die Pipeline bliebe beim Start stehen,
-    darum entfällt die Rundung dann ganz. PIPBOX_FRAME=0/1 erzwingt die Antwort (Tests)."""
     force = os.environ.get("PIPBOX_FRAME")
     if force in ("0", "1"):
         return force == "1"
@@ -83,11 +66,10 @@ def frame_ok():
 
 
 _ENG = {"mtime": None, "level": 0, "shift": False}
-COPY_LEVEL = 13            # ab belacoder "-sb13" kopiert die Engine das ganzflächige Hauptbild aus dem Speicher des Dekoders (belacoder-frame-copy.patch)
+COPY_LEVEL = 13
 
 
 def engine_level():
-    """Die Nummer hinter "-sb" in der Version des installierten belacoder (0, wenn unbekannt). PIPBOX_ENGINE=<Zahl> erzwingt sie (Tests)."""
     force = os.environ.get("PIPBOX_ENGINE")
     if force is not None:
         try:
@@ -106,8 +88,6 @@ def engine_level():
 
 
 def shift_ok():
-    """Kennt der installierte belacoder den Befehl "shift <Zweig> <ms>" (Kennung "-sh", belacoder-feed-shift.patch)? Nur dann verschiebt die Verzögerung das Bild wirklich und darf bis
-    SHIFT_MAX_MS gehen; sonst (nur Haltezeit) gilt MAX_DELAY_MS und die Verzögerung ändert die Anzeigezeit nicht. PIPBOX_SHIFT=0/1 erzwingt die Antwort (Tests)."""
     force = os.environ.get("PIPBOX_SHIFT")
     if force in ("0", "1"):
         return force == "1"
@@ -116,22 +96,16 @@ def shift_ok():
 
 
 def enabled(cfg):
-    """Gilt für diese (geprüfte) Einstellung die Engine "Compositor"? Nur bei Bild-in-Bild mit gesetztem Schalter und passendem belacoder."""
     return bool(cfg.get("type") == "pip" and cfg.get("always_ready") is True and cfg.get("main") and supported())
 
 
-# ------------------------------------------------------------------------------------------------ Geometrie (wie der Baustein pbpipmix)
-
 def pip_size(pct):
-    """Breite/Höhe des kleinen Bildes vor dem Beschnitt (gerade, Breite durch 16 teilbar), 16:9 (wie server.pip_size)."""
     w = max(16, int(round(CANVAS_W * pct / 100.0 / 16.0)) * 16)
     h = int(round(w * 9 / 16.0 / 2.0)) * 2
     return w, h
 
 
 def crop_px(st, sw, sh):
-    """Beschnitt (links, rechts, oben, unten) in Pixeln des kleinen Bildes sw x sh. Die Werte der Einstellung gelten für 1920x1080, gerundet auf gerade
-    Werte; bleiben weniger als 16x16 Pixel, gilt kein Beschnitt (wie pb_style_crop)."""
     c = st["crop"]
     cl, cr, ct, cb = c["l"], c["r"], c["t"], c["b"]
     if cl <= 0 and cr <= 0 and ct <= 0 and cb <= 0:
@@ -149,7 +123,6 @@ def crop_px(st, sw, sh):
 
 
 def place(corner, mw, mh, pw, ph, margin, fx, fy):
-    """Position des kleinen Bildes (wie pb_pos): 0 oben links, 1 oben rechts, 2 unten links, 3 unten rechts, 4 unten Mitte, 5 frei (Promille)."""
     if corner == 5:
         fx, fy = max(0, min(1000, fx)), max(0, min(1000, fy))
         x, y = (mw - pw) * fx // 1000, (mh - ph) * fy // 1000
@@ -163,13 +136,9 @@ def place(corner, mw, mh, pw, ph, margin, fx, fy):
 
 
 def small_geometry(c, k):
-    """Alles über das kleine Bild an Stelle k (1..3): Größe nach dem Skalieren (sw, sh), Beschnitt, Ausschnitt (cw, ch) und Platz (x, y) im Ausgabebild,
-    Deckkraft in Prozent, Rahmen. c ist eine geprüfte Einstellung (PipelineStore._safe_cfg)."""
     sfx = "" if k == 1 else str(k)
     pw, ph = pip_size(c["size_pct" + sfx])
     st = c["styles"][str(k)]
-    # Beschnitt VOR dem Skalieren, in Bildpunkten der Quelle (Bezug 1920x1080; Quellen anderer Größe rechnet commands() um): ein Beschnitt nach dem
-    # Skalieren ließ den Ausgang zeitweise sekundenlang stehen (gemessen), davor nie
     l, r, t, b = crop_px(st, 1920, 1080)
     cw, ch = ((1920 - l - r) * pw // 1920) & ~1, ((1080 - t - b) * ph // 1080) & ~1
     margin = (CANVAS_W // 60) & ~1
@@ -185,8 +154,6 @@ def small_geometry(c, k):
 
 
 def portrait_geometry(c, k, g, dims):
-    """Hochkantes Bild (Quelle höher als breit) als kleines Bild: der Rahmen behält das Seitenverhältnis der Quelle bei der Höhe des 16:9-Rahmens,
-    kein Beschnitt (der gilt für Querformat). Gleiche Ecke bzw. Lage, nur mit der anderen Breite."""
     sfx = "" if k == 1 else str(k)
     h = g["sh"]
     w = (h * dims[0] // dims[1]) & ~1
@@ -200,13 +167,11 @@ def portrait_geometry(c, k, g, dims):
 
 
 def ring_rects(g):
-    """Die vier Streifen des Rahmens liegen innen im Ausschnitt (wie im Baustein): oben, unten, links, rechts (x, y, w, h)."""
     x, y, w, h, bw = g["x"], g["y"], g["w"], g["h"], g["bw"]
     return [(x, y, w, bw), (x, y + h - bw, w, bw), (x, y + bw, bw, h - 2 * bw), (x + w - bw, y + bw, bw, h - 2 * bw)]
 
 
 def fit_big(dims):
-    """Das große Bild füllt das Ausgabebild; hat die Quelle ein anderes Seitenverhältnis, bleibt es erhalten (schwarze Balken). dims = (Breite, Höhe) oder None."""
     if not dims or not dims[0] or not dims[1]:
         return 0, 0, CANVAS_W, CANVAS_H
     aspect = dims[1] / float(dims[0])
@@ -221,33 +186,24 @@ def fit_big(dims):
 
 
 def slot_keys(c):
-    """Die Schlüssel der vier Plätze beim Aufbau (leer = Platz ohne Kamera): Hauptbild, kleine Bilder 1 bis 3. Ein Schlüssel bleibt auf seinem Platz,
-    solange er gewünscht ist (pa.Binder); der Aufbau und der Regler müssen dieselbe Zuordnung benutzen."""
     b = pa.Binder()
     b.update([k for k in (c.get("main", ""), c.get("pip", ""), c.get("pip2", ""), c.get("pip3", "")) if k])
     return list(b.slot_key)
 
 
 MAX_DELAY_MS = 750
-SHIFT_MAX_MS = 3000        # größte Verzögerung mit dem Befehl "shift" (die Oberfläche erlaubt bis 3000)
-# Verzugs-Schutz (12. Oktober 2026, Testbox): Liefert ein Kamerabild dauerhaft zu spät oder zu früh (in_f<N>_lag in der Statistik von belacoder), nimmt der Regler diesen Zweig kurz aus der Sendekette
-# und startet ihn neu (neue Ausrichtung). Gesunde Werte lagen zwischen -742 und +108 ms. Ein Bild über +1500 ms im Rückstand ließ 10 s später den Encoder stehen (Neustart der
-# Sendekette), ein Bild über 2,5 s zu früh blieb bei 3 Bildern/s hängen (Ausrichtung auf einen alten ersten Frame).
+SHIFT_MAX_MS = 3000
 LAG_LATE_MS = 1500
 LAG_EARLY_MS = -2500
-LAG_SUSTAIN_S = 6.0       # so lange muss es dauern
-LAG_GRACE_S = 8.0         # nach dem Start eines Zweigs (Zustand 3) wird so lange nichts bewertet
-LAG_HOLD_S = 15.0         # so lange bleibt der Zweig draußen
-LAG_MAX_TRIES = 3         # je Kamera höchstens so oft ...
-LAG_WINDOW_S = 180.0      # ... in dieser Zeit; danach lässt der Regler das Bild in Ruhe (der Wächter greift bei einem echten Hänger)
-HOLD_FILE = "feed-hold.json"       # {"keys": {Schlüssel: Ablaufzeit (Unix-Sekunden)}}: der Kamera-Dienst bittet, den Zweig dieser Kamera zu stoppen, bevor er ihren Stream beendet                         # größte Verzögerung, die diese Engine verarbeitet (Einstellung bis 3000 ms bleibt für die älteren Engines gültig)
+LAG_SUSTAIN_S = 6.0
+LAG_GRACE_S = 8.0
+LAG_HOLD_S = 15.0
+LAG_MAX_TRIES = 3
+LAG_WINDOW_S = 180.0
+HOLD_FILE = "feed-hold.json"
 
 
 def delays_by_key(c):
-    """Verzögerung in ms je Kamera (sie gehört zur Kamera, nicht zum Platz), höchstens MAX_DELAY_MS. Die Haltezeit auf der komprimierten Seite (queue min-threshold-time) gibt ihre Bilder
-    erst frei, wenn sie die Haltezeit gefüllt ist; bricht der Zulauf kurz ab (WLAN-Kamera), steht die Ausgabe bis zur nächsten Füllung still (gemessen: Pausen bis 1,3 s). Hinter dem
-    Zweig fängt das nur ein Vorlauf auf: 1 s bei kleinen Bildern, beim ganzflächigen Hauptbild weniger als 0,6 s. Bei großen Verzögerungen und dem daraus folgenden großen Puffer reicht
-    das nicht (Testbox, 12. Oktober 2026: Hauptbild 3 bis 9 Bilder/s, später mit angehobener Haltezeit weiter Aussetzer bis auf 1 Bild/s). Größere Werte werden deshalb begrenzt."""
     out = {}
     for pos, dk in (("main", "main_delay_ms"), ("pip", "pip_delay_ms"), ("pip2", "pip2_delay_ms"), ("pip3", "pip3_delay_ms")):
         if c.get(pos):
@@ -256,31 +212,26 @@ def delays_by_key(c):
 
 
 def buffer_ms(c):
-    """Ausrichtungspuffer: mindestens BUFFER_MIN_MS und 300 ms mehr als die größte Verzögerung (sonst kommen verzögerte Bilder 'zu spät')."""
     return max(BUFFER_MIN_COPY_MS if engine_level() >= COPY_LEVEL else BUFFER_MIN_MS, buffer_need_ms(c))
 
 
 def buffer_need_ms(c):
-    """Was die gespeicherten Verzögerungen mindestens brauchen: 600 ms und 300 ms mehr als die größte Verzögerung. Damit (nicht mit buffer_ms) wird verglichen, ob der Puffer einer
-    laufenden Sendekette noch passt: Eine Kette, die vor dem Mindestpuffer von 1050 ms gestartet wurde, ist mit unveränderten Verzögerungen nicht "veraltet"."""
     if shift_ok():
-        return BUFFER_NEED_MIN_MS                # die Verzögerung verschiebt die Termine selbst, der Puffer bleibt wie er ist
+        return BUFFER_NEED_MIN_MS
     return max(BUFFER_NEED_MIN_MS, max(delays_by_key(c).values() or [0]) + 300)
 
 
-LEAD_MAX_MS = 1000                         # so früh vor seinem Termin darf ein Bild höchstens am Mischer ankommen: früher wartet es roh in Warteschlangen von zusammen etwa 2,5 s (45 Bilder + 1 s) und läuft sie über
-LEAD_MAX_BIG_MS = 600                      # dasselbe für das ganzflächige Hauptbild: es wird ohne Kopie durchgereicht, seine Bilder bleiben im Speicher des Dekoders hängen (begrenzte Zahl Puffer); bei 1000 ms Vorlauf setzte es aus (Testbox, 12. Oktober 2026), mit 600 ms (Puffer 600, alle Verzögerungen 0) lief es fehlerfrei
-HOLD_UNIFORM = True                        # dieselbe Mindesthaltezeit für alle Zweige, nicht nur für das Hauptbild: Sonst ändert jeder Tausch des Hauptbilds die Haltezeit zweier Zweige (50 gegen 450 ms): Der Zweig mit der längeren Haltezeit liefert dann rund eine halbe Sekunde keine Bilder, der Mischer wartet darauf (Testbox, 14. Oktober 2026)
-BRANCH_QUEUE_BUFFERS = 3                   # Warteschlange hinter dem Skalierer: klein, damit beim Tausch der Größe nur wenige Bilder in der alten Größe vor dem Mischer warten (vorher die Voreinstellung: bis zu 1 s oder 10 MB)
-SWAP_SETTLE_S = 0.2                        # beim Tausch: so lange bleibt ein schrumpfender Zweig ausgeblendet, bis die Bilder in der alten (großen) Größe den Mischer passiert haben
-WAIT_MARK = "#wait"                        # Trennzeile in der Liste der Befehle: Davor senden, SWAP_SETTLE_S warten, danach senden
-BUFFER_LATE_MS = 150                       # nötiger Puffer größer als der laufende um mehr als das: verzögerte Bilder kämen zu spät
-BUFFER_EARLY_MS = 800                      # laufender Puffer größer als der nötige um mehr als das: die Bilder aller Kameras mit kürzerer Verzögerung kommen zu früh am Mischer an, sie werden verworfen (12. Oktober 2026: Hauptbild 3 bis 9 statt 30 Bilder/s)
+LEAD_MAX_MS = 1000
+LEAD_MAX_BIG_MS = 600
+HOLD_UNIFORM = True
+BRANCH_QUEUE_BUFFERS = 3
+SWAP_SETTLE_S = 0.2
+WAIT_MARK = "#wait"
+BUFFER_LATE_MS = 150
+BUFFER_EARLY_MS = 800
 
 
 def buffer_mismatch(running, need):
-    """Passt der Puffer der laufenden Sendekette (running, beim Start aus den Verzögerungen berechnet) nicht mehr zu dem, den die gespeicherten Verzögerungen jetzt brauchen (need)?
-    Dann hilft nur ein Neustart der Sendekette: Der Puffer wirkt beim Start, die Verzögerung selbst lässt sich live ändern."""
     try:
         running, need = int(running), int(need)
     except (TypeError, ValueError):
@@ -289,44 +240,25 @@ def buffer_mismatch(running, need):
 
 
 def hold_delays(delays, buffer, big_key=None, big_lead=None, uniform=False, shifted=False):
-    """Haltezeit je Kamera auf der komprimierten Seite des Zweigs (set sbf<N>_vq min-threshold-time). Jedes Bild ist beim Verlassen des Dekoders um (Puffer - Haltezeit - Dekodierzeit) früher
-    als sein Termin und wartet bis dahin roh in Warteschlangen; die fassen zusammen nur etwa 2,5 s. Ist der Unterschied der Verzögerungen größer (Puffer = größte Verzögerung + 300 ms),
-    läuft der Zweig mit der kleinsten Verzögerung über, und fast alle seine Bilder werden verworfen (Testbox, 12. Oktober 2026: 2560 ms gegen 450 und 0). Darum wird die Haltezeit
-    mindestens auf (Puffer - LEAD_MAX_MS) angehoben: Das Bild kommt dann höchstens LEAD_MAX_MS vor seinem Termin an. Für das Hauptbild (big_key, ganzflächig, nicht kopiert) gilt die strengere
-    Grenze LEAD_MAX_BIG_MS. Das ändert nichts daran, wann ein Bild gezeigt wird (der Termin steht fest, die Haltezeit bleibt höchstens Puffer - 300 ms), und bei Puffern bis
-    LEAD_MAX_BIG_MS nichts an der Einstellung."""
     floor = max(0, int(buffer) - LEAD_MAX_MS)
     floor_big = max(0, int(buffer) - (LEAD_MAX_BIG_MS if big_lead is None else int(big_lead)))
     if shifted:
-        # Mit "shift" rückt der Termin der Bilder um die Verzögerung nach hinten; die Haltezeit steigt um dieselbe Zeit, dann kommt jedes Bild so früh vor seinem Termin an wie ohne
-        # Verzögerung (nichts staut sich roh in den Warteschlangen, nichts kommt zu spät).
         return {k: max(0, int(v)) + (floor_big if (uniform or k == big_key) else floor) for k, v in delays.items()}
     if uniform and delays:
-        # Alle Kameras bekommen dieselbe Mindesthaltezeit, aber die EINGESTELLTEN Unterschiede bleiben: Statt jede Verzögerung auf die Untergrenze anzuheben (0, 100 und 300 ms
-        # würden alle zu 450 ms, die Einstellung unter 450 ms wäre wirkungslos), wird allen derselbe Betrag aufgeschlagen. Höchstens so viel, dass die größte Haltezeit unter
-        # Puffer - 300 ms bleibt; reicht das nicht (sehr große Unterschiede), gilt für die kleinsten die Untergrenze wie bisher.
         lo, hi = min(int(v) for v in delays.values()), max(int(v) for v in delays.values())
         shift = max(0, min(floor_big - lo, int(buffer) - 300 - hi))
         return {k: max(int(v) + shift, floor_big) for k, v in delays.items()}
     return {k: max(int(v), floor_big if k == big_key else floor) for k, v in delays.items()}
 
 
-# ------------------------------------------------------------------------------------------------ Pipeline-Text
-
 def build(c, base=RTMP_BASE, frame=None):
-    """Pipeline-Text für belacoder. c ist eine geprüfte Einstellung. Die Schlüssel sind geprüft (a-z, 0-9, -, _).
-
-    Alle Zweige starten gestoppt (`#sb-absent`): die Sendung beginnt sofort mit Schwarz und Stille, jede Kamera legt sich dann darauf, sobald ihr
-    Stream da ist (Regler: `feed sbf<N> on`)."""
     global FRAME_BUILT
     frame = frame_ok() if frame is None else bool(frame)
     FRAME_BUILT = frame
     q = "queue max-size-time=10000000000 max-size-buffers=1000 max-size-bytes=41943040"
     keys = slot_keys(c)
-    # Ton wartet bis zum Termin (Puffer) in diesen Warteschlangen; der Ton ist klein (192 kB/s roh), die Grenzen wachsen darum mit dem Puffer (vorher fest 2 s und 1 s: bei Puffern über 2,5 s lief der Ton über und hielt das Bild an)
     abuf = max(2000, buffer_ms(c) + 1000 + (max(delays_by_key(c).values() or [0]) if shift_ok() else 0)) * 1000000
     out = []
-    # Ausgang: Compositor mit FESTEM Format, dann Encoder. Der Encoder sieht nie ein anderes Format.
     pads = []
     for s in range(SLOTS):
         pads.append(f"sink_{s}::alpha=0 sink_{s}::zorder={Z_BIG}")
@@ -337,16 +269,13 @@ def build(c, base=RTMP_BASE, frame=None):
             n += 1
     out.append("compositor name=pipcomp background=black " + " ".join(pads) + " !\n"
                f"video/x-raw,format=NV12,width={CANVAS_W},height={CANVAS_H},framerate={FPS}/1,colorimetry=bt709 !\n"
-               + ("pbround name=rnd !\n" if frame else "")      # rundet die kleinen Bilder und zeichnet ihren Rahmen (Ecken des Hauptbildes holt pbtap)
+               + ("pbround name=rnd !\n" if frame else "")
                + "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
                "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                f"h265parse config-interval=-1 ! {q} ! mux.\n")
-    # Ton-Umschalter VOR den Zweigen (GStreamer löst asel.sink_N nur auf, wenn asel schon im Text steht)
     out.append("input-selector name=asel ! identity name=a_delay signal-handoffs=TRUE ! volume name=avol ! "
                f"opusenc bitrate=128000 ! opusparse ! {q} ! mux.\n")
-    # Ton: Stille ist immer da (Pad 0), die Kameras kommen dazu
     out.append(f"audiotestsrc is-live=true wave=silence ! capsfilter caps=\"{AUDIO_CAPS}\" ! queue ! asel.sink_0\n")
-    # Rahmen-Streifen: lebendige Quellen in genau der Streifengröße (der Compositor skaliert nie); sie sind auch der Takt des Compositors
     n = SLOTS
     for k in range(RINGS):
         for j in range(4):
@@ -355,7 +284,6 @@ def build(c, base=RTMP_BASE, frame=None):
                        f"capsfilter name=sbb{i}s caps=\"video/x-raw,format=NV12,width=2,height=2,framerate={FPS}/1,colorimetry=bt709\" !\n"
                        f"queue max-size-buffers=2 leaky=downstream ! pipcomp.sink_{n}\n")
             n += 1
-    # Kamerazweige: alle Elemente heißen sbf<N>_..., belacoder stoppt und startet sie mit `feed sbf<N> off|on`
     for s in range(SLOTS):
         key = keys[s] or PLACEHOLDER % s
         nm = f"sbf{s}"
@@ -366,11 +294,9 @@ def build(c, base=RTMP_BASE, frame=None):
             f"queue name={nm}_lq max-size-buffers=45 max-size-bytes=0 max-size-time=0 leaky=downstream ! "
             f"videorate name={nm}_vr max-duplication-time=100000000 ! capsfilter name={nm}_c1 caps=\"video/x-raw,framerate={FPS}/1\" ! "
             f"videocrop name={nm}_crop ! "
-            # Der Skalierer (nearest-neighbour, billig) bringt das Bild vor dem Compositor auf genau die Größe seines Pads; die Caps (scc) werden bei
-            # jedem Tausch live gesetzt. Skalieren im Compositor ist dagegen zu teuer (große Pads: Ausgang fällt auf 5 Bilder/s).
             f"videoscale name={nm}_sc method=nearest-neighbour ! "
             f"capsfilter name={nm}_scc caps=\"video/x-raw,format=NV12,width={CANVAS_W},height={CANVAS_H}\" ! "
-            f"capssetter name={nm}_c2 join=true replace=false caps=\"video/x-raw,colorimetry=bt709\" ! "   # nur beschriften, nie umrechnen (eine Umrechnung kostete zeitweise einen ganzen Kern)
+            f"capssetter name={nm}_c2 join=true replace=false caps=\"video/x-raw,colorimetry=bt709\" ! "
             + (f"pbtap name={nm}_tap ! " if frame else "") +
             f"queue name={nm}_q max-size-buffers={BRANCH_QUEUE_BUFFERS} max-size-bytes=0 max-size-time=0 ! pipcomp.sink_{s}\n"
             f"{nm}.audio ! queue name={nm}_aq max-size-time={abuf} max-size-buffers=0 max-size-bytes=0 ! aacparse name={nm}_ap ! avdec_aac name={nm}_ad ! "
@@ -380,8 +306,6 @@ def build(c, base=RTMP_BASE, frame=None):
     out.append("\n#sb-absent: " + " ".join(f"sbf{s}" for s in range(SLOTS)) + "\n")
     return "\n".join(out)
 
-
-# ------------------------------------------------------------------------------------------------ Layout und Befehle
 
 def scale_caps(w, h):
     return f"video/x-raw,format=NV12,width={w},height={h}"
@@ -404,11 +328,6 @@ def _area(line):
 
 
 def order_for_swap(lines, old_caps, alpha):
-    """Befehle beim Tausch von Größen so ordnen, dass der Mischer nie ein großes Bild in einem kleinen Feld skalieren muss (die Bilder des Hardware-Dekoders liegen in langsam lesbarem Speicher:
-    ein Bild in der falschen Größe kostet 100 bis 200 ms, die Ausgabe fiel beim Tausch des Hauptbilds auf 5 Bilder/s, Testbox 14. Oktober 2026).
-    Wächst ein Zweig (kleines Bild wird Hauptbild), kommt sein Feld vor seiner neuen Größe: Das Feld ist erst groß, dann kommen große Bilder, vorher höchstens kleine in einem großen Feld.
-    Schrumpft ein Zweig, bekommt er zuerst die kleine Größe und wird ausgeblendet; sein kleines Feld und die Anzeige folgen nach WAIT_MARK, wenn die großen Bilder vorbei sind.
-    Beim ersten Setzen (keine alte Größe) und bei kleinen Änderungen bleibt alles wie es war."""
     caps = {}
     for i, l in enumerate(lines):
         m = re.match(r"set sbf(\d+)_scc caps ", l)
@@ -443,7 +362,6 @@ def order_for_swap(lines, old_caps, alpha):
 
 
 class Layout:
-    """Rechnet aus Einstellung, Rollen und Zustand die Befehle für den Steuerkanal. Merkt sich, was schon gesendet ist, und gibt nur Änderungen aus."""
 
     def __init__(self):
         self.sent = {}
@@ -452,13 +370,10 @@ class Layout:
         self.sent = {}
 
     def commands(self, c, slot_key, roles, dims, audio_ok, hide, audio_pos, mute, delay_ms, shifts=None):
-        """roles: {Platz: Stelle} nur für Kameras, deren Bilder gerade da sind (Stelle 0 groß, 1..3 klein). dims: {Platz: (Breite, Höhe)}.
-        audio_ok: Plätze, deren Zweig Ton hat. hide: Bitmaske der ausgeblendeten Stellen (Bit 0 = Stelle 1). audio_pos: -1 Hauptbild, 0..2 kleines Bild.
-        Gibt (Zeilen, Zustand für die Statistik) zurück. Reihenfolge: Das Bild, das oben landet, wird zuletzt bewegt (nie ein Bild mit Loch)."""
-        want = []                                 # (Schlüssel, Zeile, z)
+        want = []
         geoms = {k: small_geometry(c, k) for k in (1, 2, 3)}
         by_pos = {v: s for s, v in roles.items()}
-        for k in (1, 2, 3):                       # hochkantes Bild: eigener Rahmen (Seitenverhältnis bleibt)
+        for k in (1, 2, 3):
             d = dims.get(by_pos.get(k)) if by_pos.get(k) is not None else None
             if d and d[0] and d[1] and d[1] > d[0]:
                 geoms[k] = portrait_geometry(c, k, geoms[k], d)
@@ -469,7 +384,7 @@ class Layout:
         for s in range(SLOTS):
             nm = f"sbf{s}"
             pos = roles.get(s)
-            if pos is None:                       # nicht im Bild: ausblenden, Geometrie bleibt stehen
+            if pos is None:
                 add(("a", s), f"pad pipcomp sink_{s} alpha 0", -1)
                 continue
             if pos == 0:
@@ -494,7 +409,6 @@ class Layout:
             add(("h", s), f"pad pipcomp sink_{s} height {h}", z)
             add(("z", s), f"pad pipcomp sink_{s} zorder {z}", z)
             add(("a", s), f"pad pipcomp sink_{s} alpha {alpha:.2f}", z)
-        # Gerundete kleine Bilder: Ecken und Rahmen zeichnet pbround hinter dem Compositor; die Ecken des Hauptbildes sichert pbtap des Hauptbild-Zweigs
         rounded = {}
         if FRAME_BUILT:
             for s in range(SLOTS):
@@ -507,7 +421,6 @@ class Layout:
                 rounded[k] = on
                 val = (f"{g['x']},{g['y']},{g['w']},{g['h']},{g['bw']},{g['bcolor']:06x},{g['bopacity']},{g['radius']},{g['opacity']}") if on else "off"
                 add(("rnd", k), f"set rnd pip{k} {val}", 2 * k + 1)
-        # Rahmen der kleinen Bilder
         for k in (1, 2, 3):
             g = geoms[k]
             s = by_pos.get(k)
@@ -527,22 +440,19 @@ class Layout:
                 add(("rw", i), f"pad pipcomp sink_{n} width {rw}", z)
                 add(("rh", i), f"pad pipcomp sink_{n} height {rh}", z)
                 add(("ra", i), f"pad pipcomp sink_{n} alpha {alpha:.2f}", z)
-        # Ton und Stumm
         asel = 0
         src = by_pos.get(0) if audio_pos < 0 else by_pos.get(audio_pos + 1)
         if src is None and audio_pos >= 0:
-            src = by_pos.get(0)                   # die Kamera dieses kleinen Bildes ist nicht im Bild (ausgefallen, oder als Ersatz selbst Hauptbild geworden): Ton des Hauptbildes statt Stille
+            src = by_pos.get(0)
         if src is not None and src in audio_ok:
             asel = src + 1
         add(("asel",), f"select asel sink_{asel}", 100)
         add(("mute",), f"set avol mute {'true' if mute else 'false'}", 100)
-        # Verzögerung je Kamera (komprimierte Seite des Zweigs)
         for s in range(SLOTS):
             d = delay_ms.get(slot_key[s] or "", 0)
             add(("delay", s), f"set sbf{s}_vq min-threshold-time {(d + 33) * 1000000 if d else 0}", 100)
             if shifts is not None:
-                add(("shift", s), f"shift sbf{s} {int(shifts.get(slot_key[s] or '', 0))}", 100)       # nach der Haltezeit: die Anzeige rückt um die Verzögerung
-        # nach z sortiert (ausgeblendete zuerst), die Reihenfolge innerhalb eines Bildes bleibt (stabil)
+                add(("shift", s), f"shift sbf{s} {int(shifts.get(slot_key[s] or '', 0))}", 100)
         want.sort(key=lambda t: t[2])
         lines, old_caps, alpha = [], {}, {}
         for key, line, _ in want:
@@ -557,9 +467,6 @@ class Layout:
 
 
     def pre_commands(self, c, pre_roles, dims):
-        """Größe und Beschnitt (scc caps, crop) für Zweige, deren Bild noch nicht da ist, nach ihrer gewünschten Stelle (pre_roles: {Platz: Stelle}), damit der Zweig beim ersten Bild schon
-        die richtige Größe hat. Ein Umsetzen der Größe im laufenden Betrieb stellte beim Anlauf die ganze Kette 4 bis 9 s lang still (Testbox, 14. Oktober 2026). Gleiche Schlüssel wie commands():
-        was schon gesendet ist, wird dort nicht noch einmal gesendet."""
         geoms = {k: small_geometry(c, k) for k in (1, 2, 3)}
         want = []
         for s, pos in pre_roles.items():
@@ -585,10 +492,7 @@ class Layout:
         return lines
 
 
-# ------------------------------------------------------------------------------------------------ Hilfen für den Regler
-
 def read_stats(path=LIVE_STATS, now=None):
-    """Zustand der Zweige aus der Statistik von belacoder: {Platz: 1 gestoppt | 2 läuft, kein Bild | 3 Bilder kommen}. Leer, wenn die Datei fehlt oder alt ist."""
     try:
         if (now if now is not None else time.time()) - os.stat(path).st_mtime > STATS_MAX_AGE_S:
             return {}
@@ -600,8 +504,6 @@ def read_stats(path=LIVE_STATS, now=None):
 
 
 def read_lags(path=LIVE_STATS, now=None):
-    """Mittlerer Zeitversatz jedes Zweigs am Mischer in ms aus der Statistik von belacoder (in_f<N>_lag=min/mittel/max): {Platz: ms}. Positiv = zu spät, negativ = zu früh.
-    Leer, wenn die Datei fehlt oder alt ist."""
     try:
         if (now if now is not None else time.time()) - os.stat(path).st_mtime > STATS_MAX_AGE_S:
             return {}
@@ -613,8 +515,6 @@ def read_lags(path=LIVE_STATS, now=None):
 
 
 def read_fps(path=LIVE_STATS, now=None):
-    """Bilder je Sekunde, die jeder Zweig am Mischer liefert, von belacoder gemessen (in_f<N>=fps/verworfen/..., Platz N): {Platz: fps}. Nur Zweige mit Bildern (fps > 0).
-    Leer, wenn die Datei fehlt oder alt ist. Das ist die Quelle für Kameras, die ihre Bildrate nicht melden (Handys: nginx kennt sie nur aus den Metadaten des Streams)."""
     try:
         if (now if now is not None else time.time()) - os.stat(path).st_mtime > STATS_MAX_AGE_S:
             return {}
@@ -631,7 +531,6 @@ def read_fps(path=LIVE_STATS, now=None):
 
 
 def parse_rtmp_stats(xml):
-    """Aus der nginx-Statistik: {Schlüssel: {"w":…, "h":…, "audio": bool}} der Kameras, die gerade senden."""
     out = {}
     for m in re.finditer(r"<stream>.*?</stream>", xml, re.S):
         s = m.group(0)
@@ -651,14 +550,13 @@ def fetch_publishing(url="http://127.0.0.1:1936/"):
 
 
 def send_control(lines, path=CTL_FIFO):
-    """Zeilen an belacoder. O_NONBLOCK: ohne laufenden belacoder scheitert das sofort (ENXIO) statt zu blockieren. Wahr bei Erfolg."""
     if not lines:
         return True
     fd = None
     try:
         fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
         data = ("\n".join(lines) + "\n").encode()
-        for i in range(0, len(data), 3000):          # die FIFO nimmt 4096 Byte je Schreibvorgang an
+        for i in range(0, len(data), 3000):
             os.write(fd, data[i:i + 3000])
         return True
     except OSError:
@@ -672,7 +570,6 @@ def send_control(lines, path=CTL_FIFO):
 
 
 def big_cpus(cpu_dir="/sys/devices/system/cpu"):
-    """Nummern der schnellen Kerne (big.LITTLE über cpu_capacity), [] wenn alle gleich schnell sind."""
     cap = {}
     try:
         for d in os.listdir(cpu_dir):
@@ -691,8 +588,6 @@ def big_cpus(cpu_dir="/sys/devices/system/cpu"):
 
 
 class CpuBoost:
-    """Governor `performance` für die schnellen Kerne, solange gemischt wird; danach zurück. Der Zustand liegt in einer Datei, damit ein
-    Absturz den Governor nicht "hängen lässt" (beim nächsten Start wird zurückgestellt)."""
 
     def __init__(self, cpu_dir="/sys/devices/system/cpu", state=f"{RUN}/cpugov.json", log=print):
         self.cpu_dir, self.state, self.log = cpu_dir, state, log
@@ -750,29 +645,20 @@ class CpuBoost:
             pass
 
 
-# ------------------------------------------------------------------------------------------------ Regler
-
 class LiveController:
-    """Hält im Betrieb die Zweige und das Bild auf dem Stand der Einstellung und der Kameras. Schnittstelle wie pipbox_always.Controller.
-
-    tick() etwa alle 0,5 s: (1) Einstellung lesen (bei Änderung; Plätze zuordnen, ein Platz mit neuem Schlüssel bekommt ihn ohne Neustart:
-    `feed off`, `set sbf<N>_src location …`), (2) nginx fragen, wer sendet, (3) Zweige starten/stoppen (`feed sbf<N> on|off`, 3 s Abkühlzeit),
-    (4) Zustand der Zweige aus der Statistik von belacoder lesen (3 = Bilder kommen), (5) Wahl von Hauptbild und kleinen Bildern (pa.Chooser),
-    (6) die geänderten Befehle für Bildflächen, Rahmen, Ton, Stumm und Verzögerung senden."""
 
     def __init__(self, load_json, put_state_file, state_dir, safe_cfg, view_values, log=print, clock=time.monotonic,
                  fetch=fetch_publishing, stats=read_stats, control=send_control, rtmp_base=RTMP_BASE, start_cfg=None, wall=time.time, lags=read_lags):
         self.load_json, self.put, self.state_dir = load_json, put_state_file, state_dir
-        self.wall = wall                           # Uhrzeit für die Ablaufzeiten in feed-hold.json (der Kamera-Dienst schreibt Unix-Sekunden)
+        self.wall = wall
         self.held = set()
         self.lags_fn = lags
-        self.lag_hold = {}                         # Schlüssel -> monotone Zeit, bis zu der der Verzugs-Schutz den Zweig draußen hält
+        self.lag_hold = {}
         self.lag_since, self.up_at, self.lag_tries = {}, {}, {}
         self.safe_cfg, self.view_values = safe_cfg, view_values
-        # Einstellung, mit der die Sendekette gestartet wurde: daraus stammt der Ausrichtungspuffer (belacoder -A) und die Verzögerungen, die dazu passen
         sc = safe_cfg(start_cfg) if start_cfg else None
         self.running_buffer = buffer_ms(sc) if sc else None
-        self.big_lead = LEAD_MAX_MS if engine_level() >= COPY_LEVEL else LEAD_MAX_BIG_MS     # Ausgangslage beim Start der Sendekette: kopiert der belacoder das Hauptbild, gilt für es dieselbe Grenze wie für die kleinen Bilder
+        self.big_lead = LEAD_MAX_MS if engine_level() >= COPY_LEVEL else LEAD_MAX_BIG_MS
         self.start_delays = delays_by_key(sc) if sc else {}
         self.delays_frozen = False
         self.log, self.clock, self.fetch, self.stats, self.control, self.base = log, clock, fetch, stats, control, rtmp_base
@@ -788,7 +674,7 @@ class LiveController:
         self.pub = {}
         self.pub_known = False
         self.pub_t = -10.0
-        self.view_sig = object()                  # erste Auswertung immer
+        self.view_sig = object()
         self.view = (0, -1, 0)
         self.main_key = None
         self.last_line = None
@@ -798,7 +684,6 @@ class LiveController:
         self.started = False
         self._view_pending = False
 
-    # -- Einstellung
     def reload(self):
         cfg = self.load_json("pipeline.json")
         sig = repr(sorted((k, repr(v)) for k, v in cfg.items()))
@@ -815,17 +700,12 @@ class LiveController:
         for s in range(SLOTS):
             if self.started and before[s] != self.binder.slot_key[s]:
                 key = self.binder.slot_key[s] or PLACEHOLDER % s
-                # anderer Schlüssel an diesem Platz: Zweig stoppen, Adresse setzen (nur im gestoppten Zustand möglich), danach startet der Regler ihn
                 self.reassign_lines += [f"feed sbf{s} off", f"set sbf{s}_src location {self.base}/{key}"]
                 self.cmd_at[s] = 0.0
                 self.log(f"send: Platz {s}: Kamera {before[s] or '-'} -> {self.binder.slot_key[s] or '-'} (ohne Neustart)")
         return True
 
     def effective_delays(self, big_key=None):
-        """Verzögerung je Kamera, die der Mischer gerade bekommt. Passen die gespeicherten Verzögerungen nicht mehr zum Ausrichtungspuffer, den die Sendekette beim Start
-        berechnet hat (buffer_mismatch), bleibt sie bei den Werten vom Start, bis sie neu gestartet wird: Sonst kämen die Bilder aller Kameras mit kürzerer Verzögerung
-        zu früh am Mischer an und würden verworfen (12. Oktober 2026: Hauptbild 3 bis 9 statt 30 Bilder/s, Durchsatz halbiert). Eine Kamera, die beim Start nicht dabei war,
-        bekommt höchstens, was der laufende Puffer verträgt. Die Oberfläche meldet die Änderung als "noch nicht übernommen" (Verzögerung)."""
         want = delays_by_key(self.cfg)
         frozen = self.running_buffer is not None and buffer_mismatch(self.running_buffer, buffer_need_ms(self.cfg))
         if frozen != self.delays_frozen:
@@ -835,11 +715,10 @@ class LiveController:
         if frozen:
             cap = max(0, self.running_buffer - 300)
             want = {k: (self.start_delays[k] if k in self.start_delays else min(v, cap)) for k, v in want.items()}
-        self.shift_ms = dict(want) if shift_ok() else None       # die Verschiebung der Anzeige je Kamera (nur mit "shift"), die Haltezeit kommt zusätzlich
+        self.shift_ms = dict(want) if shift_ok() else None
         return hold_delays(want, self.running_buffer if self.running_buffer is not None else buffer_ms(self.cfg), big_key, self.big_lead, uniform=HOLD_UNIFORM, shifted=shift_ok())
 
     def read_view(self):
-        """Ansicht im Betrieb: Datei main-view ("ausgeblendet Ton stumm", schreibt die Oberfläche); fehlt sie, gilt die Einstellung."""
         path = os.path.join(self.state_dir, "main-view")
         try:
             mt = os.stat(path).st_mtime_ns
@@ -857,7 +736,6 @@ class LiveController:
             return True
         return False
 
-    # -- Ablauf
     def start(self):
         self.reload()
         self.read_view()
@@ -868,8 +746,6 @@ class LiveController:
         pass
 
     def on_restart(self):
-        """belacoder wurde neu gestartet (z. B. Stall-Wächter): der neue Prozess kennt nichts von dem, was vorher live gesendet wurde (alle Bilder
-        ausgeblendet, Adressen wie beim Aufbau). Alles noch einmal senden, sonst bliebe das Bild schwarz, obwohl die Kameras da sind."""
         self.layout.reset()
         self.cmd_at.clear()
         self.view_sig = object()
@@ -878,20 +754,15 @@ class LiveController:
         self.reassign_lines = [f"set sbf{s}_src location {self.base}/{self.binder.slot_key[s] or PLACEHOLDER % s}" for s in range(SLOTS)]
 
     def read_hold(self):
-        """Kameras, deren Zweig gerade gestoppt bleiben soll (Datei feed-hold.json, vom Kamera-Dienst geschrieben): Bevor eine Kamera beim Wechsel ihres Netzes oder beim
-        Trennen ihren Stream beendet, nimmt der Regler ihren Zweig aus der Sendekette. Ein Zweig, dessen Quelle mitten im Bild abbricht, hielt sonst (12. Oktober 2026,
-        Testbox) alle Eingänge der Sendekette bis zu 25 s an und endete mit einem Neustart. Abgelaufene Einträge zählen nicht."""
         d = self.load_json(HOLD_FILE)
         keys = d.get("keys") if isinstance(d, dict) else None
         now = self.wall()
         self.held = {k for k, t in keys.items() if isinstance(k, str) and isinstance(t, (int, float)) and not isinstance(t, bool) and t > now} if isinstance(keys, dict) else set()
         mono = self.clock()
         self.lag_hold = {k: t for k, t in self.lag_hold.items() if t > mono}
-        self.held |= set(self.lag_hold)            # auch der Verzugs-Schutz hält Zweige draußen
+        self.held |= set(self.lag_hold)
 
     def check_lag(self, now, slot_key):
-        """Verzugs-Schutz: ein Bild, das länger als LAG_SUSTAIN_S zu spät (über LAG_LATE_MS) oder zu früh (unter LAG_EARLY_MS) am Mischer ankommt, wird für LAG_HOLD_S aus der
-        Sendekette genommen und dann neu gestartet. Der Zweig bekommt dabei eine neue Ausrichtung; die anderen Bilder und der Ausgang laufen weiter."""
         lags = self.lags_fn() or {}
         for s in range(SLOTS):
             key = slot_key[s]
@@ -911,7 +782,7 @@ class LiveController:
             tries = [t for t in self.lag_tries.get(key, []) if now - t < LAG_WINDOW_S]
             self.lag_tries[key] = tries
             if len(tries) >= LAG_MAX_TRIES:
-                continue                                   # es hilft nicht: das Bild bleibt, wie es ist
+                continue
             tries.append(now)
             self.lag_hold[key] = now + LAG_HOLD_S
             self.held.add(key)
@@ -937,7 +808,7 @@ class LiveController:
         self.states = self.stats()
         slot_key = self.binder.slot_key
         self.check_lag(now, slot_key)
-        pre = {}                                      # gewünschte Stelle der Zweige, deren Bild noch nicht da ist: ihre Größe wird gesetzt, bevor der Zweig läuft
+        pre = {}
         for pos in range(4):
             k = self.desired[pos]
             s0 = slot_key.index(k) if k and k in slot_key else None
@@ -950,7 +821,6 @@ class LiveController:
             key, st = slot_key[s], self.states.get(s)
             if st is None or not self.pub_known:
                 continue
-            # eine deaktivierte Kamera (Doppelklick) ist nicht im Stream: ihr Zweig läuft gar nicht (Hauptbild ist nie deaktiviert)
             want_on = bool(key) and key in self.pub and key not in self.held and not (key in self.inactive and key != self.desired[0])
             cmd = None
             if want_on and st == 1:
@@ -980,30 +850,27 @@ class LiveController:
         audio_ok = {s for s in range(SLOTS) if slot_key[s] and self.pub.get(slot_key[s], {}).get("audio")}
         hide, apos, mute = self.view
         if apos >= 0 and self.desired[apos + 1] in self.inactive:
-            apos = -1                                 # deaktivierte Kamera: nie die Tonquelle, es gilt der Ton des Hauptbildes
+            apos = -1
         if self.cfg:
             cl = self.layout.commands(self.cfg, slot_key, roles, dims, audio_ok, hide, apos, mute, self.effective_delays(main), getattr(self, "shift_ms", None))
             sel = [x for x in cl if x.startswith("select asel ")]
-            lines = sel + lines + [x for x in cl if not x.startswith("select asel ")]       # der Ton wechselt vor dem Stopp des Zweigs, der ihn eben noch lieferte
+            lines = sel + lines + [x for x in cl if not x.startswith("select asel ")]
         eff_changed = apos != getattr(self, "_eff_apos", None)
         self._eff_apos = apos
         if lines and os.environ.get("PIPBOX_LIVE_DEBUG"):
             self.log("live: " + " | ".join(lines)[:1500])
         ok = self.send_lines(lines)
         if not ok:
-            self.layout.reset()                       # belacoder noch nicht bereit: beim nächsten Durchgang alles neu senden
+            self.layout.reset()
             self.reassign_lines = reassign + self.reassign_lines
             self._view_pending = self._view_pending or view_changed
         else:
             self._confirm_view(view_changed or self._view_pending or eff_changed)
             self._view_pending = False
-        # Anzeige (Fußleiste am Handy): auch deaktivierte Kameras, die senden, behalten ihren Knopf; im Stream sind sie nicht (self.alive)
-        # (jede Kamera, die an die Box sendet, behält ihren Knopf, auch während ihr Zweig gerade startet oder deaktiviert ist)
         shown = set(self.alive) | {k for k in slot_key if k and k in self.pub}
         return {"slots": list(slot_key), "alive": sorted(shown), "main": self.main_key, "line": self.last_line}
 
     def send_lines(self, lines):
-        """Befehle an den Steuerkanal. Die Trennzeile WAIT_MARK teilt sie in zwei Stücke mit SWAP_SETTLE_S Pause dazwischen (Tausch von Größen). Wahr, wenn alle Stücke ankamen."""
         parts = [[]]
         for l in lines:
             if l == WAIT_MARK:
@@ -1019,10 +886,8 @@ class LiveController:
         return ok
 
     def _confirm_view(self, force):
-        """Rückmeldung wie früher pbctl: /run/pipbox-send/view-state = was gerade gilt. Die Oberfläche wartet auf eine neue Änderungszeit der Datei
-        (auch bei gleichem Inhalt), darum wird bei jeder Änderung von main-view neu geschrieben."""
         hide, apos, mute = self.view
-        apos = getattr(self, "_eff_apos", apos)             # was wirklich gilt: eine deaktivierte Kamera ist nie die Tonquelle
+        apos = getattr(self, "_eff_apos", apos)
         text = f"{hide} {apos} {mute}\n"
         if not force and getattr(self, "_conf_text", None) == text:
             return

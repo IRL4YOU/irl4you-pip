@@ -1,6 +1,6 @@
 # IRL4YOU PIP / IRL4YOU BOX
 
-Zusatzpaket für eine BELABOX: mehrere Kameras zu einem Bild mischen (Bild-in-Bild) und über mehrere Leitungen senden. Eigene Weboberfläche auf Port 8780, getrennt von der Original-Oberfläche. Beta.
+Bild-in-Bild (PIP, Picture-in-Picture) für eine BELABOX: mehrere Kameras zu einem Bild mischen und über mehrere Leitungen senden. Eigene Weboberfläche auf Port 8780, getrennt von der Original-Oberfläche. Beta.
 
 ## Einrichtung
 

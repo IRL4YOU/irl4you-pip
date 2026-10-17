@@ -560,7 +560,7 @@ class Camera:
     def network_for_unreadable(self, o):
         """WLAN-Name und Passwort für eine Verbindung der Box, deren Passwort der Dienst nicht aus NetworkManager lesen kann (Client-WLAN der Box).
         Die Kamera muss dem Netz beitreten, in dem die Adresse der Box gilt. Beim Wechsel der Verbindung (zum Beispiel wlan1 -> wlan0) blieb früher der
-        zuletzt eingetragene Name stehen: die Kamera trat dem alten Netz bei und bekam die Adresse des neuen (12. Oktober 2026, Testbox: "wifi S23" mit Ziel 192.168.80.135).
+        zuletzt eingetragene Name stehen: die Kamera trat dem alten Netz bei und bekam die Adresse des neuen.
         Reihenfolge: 1. der eingetragene Name ist der des Netzes dieser Verbindung, 2. er wurde für diese Verbindung gewählt (zum Beispiel ein 2,4-GHz-Name des
         Routers), 3. das gespeicherte Netz der Kamera mit dem Namen dieser Verbindung, 4. das zuletzt dort eingegebene Netz, 5. ältere Einstellung ohne Merker:
         wie bisher der eingetragene Name, 6. sonst klare Meldung."""
@@ -844,7 +844,7 @@ class Camera:
 
                 # 4. den RTMP-Stream starten
                 # Der alte Stream mit demselben Namen (die Kamera hat ihn beim Wechsel des Netzes nie geschlossen) bleibt bei nginx bis zu 15 s als "idle publisher" stehen; ein neuer
-                # Start in dieser Zeit wird mit "already publishing" abgelehnt und die Kamera kommt nicht zurück (12. Oktober 2026, Testbox). Darum erst starten, wenn er weg ist.
+                # Start in dieser Zeit wird mit "already publishing" abgelehnt und die Kamera kommt nicht zurück. Darum erst starten, wenn er weg ist.
                 end = time.monotonic() + self.OLD_STREAM_WAIT_S
                 while time.monotonic() < end and not self.stop_requested:
                     if (await loop.run_in_executor(None, rtmp_publishing, key, self.daemon.stat_url)) is not True:
@@ -1050,7 +1050,7 @@ class Camera:
 
     async def release_feed(self):
         """Vor dem Beenden des Streams (Trennen, Neu verbinden, Wechsel des Netzes): den Zweig der Kamera aus der Sendekette nehmen lassen und kurz warten. Ein Zweig, dessen
-        Quelle mitten im Bild abbricht, hielt sonst alle Eingänge der Sendekette an (12. Oktober 2026, Testbox: 13 bis 25 s Stillstand, dann Neustart der Sendekette)."""
+        Quelle mitten im Bild abbricht, hielt sonst alle Eingänge der Sendekette an."""
         key = self.cfg.get("rtmp_key")
         if not key or not (self.publishing or self.state in ("starting", "configuring", "streaming")):
             return
@@ -1087,7 +1087,7 @@ class Camera:
 
 FEED_HOLD_FILE = "feed-hold.json"      # {"keys": {Schlüssel: Ablaufzeit}}: der Regler der Sendekette (pipbox_live) nimmt den Zweig dieser Kamera aus der Sendekette
 FEED_HOLD_S = 45                        # so lange gilt die Bitte höchstens (die Kamera meldet sich vorher mit "streaming" wieder und gibt sie frei)
-SWITCH_LOCK_S = 120                     # nach einem Wechsel (Neu verbinden einer laufenden Kamera) ist für diese Kamera zwei Minuten lang kein weiterer Wechsel möglich (Nutzerwunsch, 12. Oktober 2026)
+SWITCH_LOCK_S = 120                     # nach einem Wechsel (Neu verbinden einer laufenden Kamera) ist für diese Kamera zwei Minuten lang kein weiterer Wechsel möglich
 FEED_HOLD_WAIT_S = 4.5                  # Zeit für den Regler (Takt 1 s, 3 s Abkühlzeit je Zweig), den Zweig zu stoppen, bevor die Kamera ihren Stream beendet
 
 SETTINGS_ALLOWED = {"name": str, "wifi_ifname": str, "ssid": str, "password": str, "ip": str,

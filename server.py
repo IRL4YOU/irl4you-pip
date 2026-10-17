@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""IRL4YOU BOX: eigene Oberfläche, Sendesteuerung und Auslastungsanzeige, getrennt von belaUI.
-
-Nur Python-Standardbibliothek. Läuft auf der Box (liest /proc und /sys) und
-mit --demo auch auf dem Mac (erzeugte Beispielwerte) zur Ansicht.
-
-Der Dienst lauscht auf dem Port 8780 (install/pipbox.service: --host 0.0.0.0, erreichbar im lokalen Netz);
-Fernzugriff von unterwegs läuft über `tailscale serve`.
-"""
 import argparse
 import base64
 import binascii
@@ -36,33 +28,28 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import controller_keys            # Tasten gekoppelter Bluetooth-Controller und ihre Funktionen
-import dji                         # Namen von USB-Sticks (WLAN, Bluetooth) aus /sys, liegt neben dieser Datei
-import hdmi_daemon                 # Prüfung der HDMI-Einstellungen (dieselbe wie im HDMI-Dienst), liegt neben dieser Datei
-import pipbox_live                 # Engine "alle Kameras immer bereit" mit Compositor und dynamischen Zweigen (Technik von streamingbox), liegt neben dieser Datei
-from twitch import (ChatPaths, HelixChat, ModSessions, SysAlerts, ThirdPartyEmotes, TwitchAccounts, TwitchBotLogin, TwitchChat, TwitchEvents,   # noqa: E402,F401
+import controller_keys
+import dji
+import hdmi_daemon
+import pipbox_live
+from twitch import (ChatPaths, HelixChat, ModSessions, SysAlerts, ThirdPartyEmotes, TwitchAccounts, TwitchBotLogin, TwitchChat, TwitchEvents,
                     TwitchLogin, TwitchMod, TwitchModLogin, TwitchNotifier, TwitchReader, TwitchSender, TwitchStore, WebSocketLite, _IrcLines, _ascii_digits)
 try:
-    import pipbox_preview          # Vorschau des Sendebilds (Issue #52), liegt neben dieser Datei; fehlt sie (halb eingespieltes Update), gibt es nur keine Vorschau
+    import pipbox_preview
 except ImportError:
     pipbox_preview = None
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-# Echte Netzwerkkarten für die Upload-Anzeige (Ethernet, WLAN, USB-/Mobilfunk-Modems). Virtuelles (Tailscale, Docker,
-# Brücken) bleibt draußen, sonst würde der Verkehr doppelt gezählt. Angezeigt wird, was gerade verbunden ist.
 NET_PREFIXES = ("eth", "en", "wlan", "wl", "usb", "wwan", "ppp", "rndis")
 NET_SKIP = ("docker", "veth", "br-", "virbr", "tailscale", "tun", "tap", "lo")
 
-# Ampelgrenzen (Rohwerte, später anhand echter Messungen festlegen)
-ARP_STATUS = "/run/pipbox-arp/status.json"       # schreibt der Adress-Wächter (install/pipbox-arp.py): welche Karten denselben Adressbereich bei verschiedenen Geräten haben
-ARP_STATUS_MAX_AGE = 60                           # ein älterer Stand gilt nicht (der Wächter läuft nicht mehr)
+ARP_STATUS = "/run/pipbox-arp/status.json"
+ARP_STATUS_MAX_AGE = 60
 IFACE_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,15}$")
 NET_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
 
 
 def net_conflict(path=None):
-    """Karten, die denselben Adressbereich bei verschiedenen Geräten benutzen (Stand des Adress-Wächters: die Router haben verschiedene Hardware-Adressen), sonst None.
-    LAN und WLAN am selben Router ist keiner. Streng geprüft: nur Kartennamen und Netze, höchstens 8 und 4, nicht älter als eine Minute."""
     try:
         with open(path or ARP_STATUS, "rb") as f:
             d = json.loads(f.read(4096).decode("utf-8", "replace"))
@@ -91,13 +78,12 @@ def read(path, default=None):
         return default
 
 
-BC_STATS_FILE = "/run/pipbox-send/belacoder-stats.json"        # vom Sender (belacoder-stats.patch), einmal je Sekunde
+BC_STATS_FILE = "/run/pipbox-send/belacoder-stats.json"
 THERMAL_NAMES = {"soc-thermal": "SoC", "bigcore0-thermal": "Große Kerne 4–5", "bigcore1-thermal": "Große Kerne 6–7",
                  "littlecore-thermal": "Kleine Kerne 0–3", "center-thermal": "Mitte", "gpu-thermal": "GPU", "npu-thermal": "NPU"}
 
 
 def devfreq_loads():
-    """Auslastung der GPU aus /sys/class/devfreq/*/load ("12@300000000Hz"): {"gpu": {...}}."""
     out = {}
     try:
         names = sorted(os.listdir("/sys/class/devfreq"))
@@ -124,8 +110,6 @@ def disk_usage(path="/"):
 
 
 def send_stats():
-    """Kennzahlen der Sendung aus der Datei von belacoder (Bitrate, Laufzeit, Sendepuffer, Verlust, Encoder-Bilder je Sekunde; Neuübertragungen nur für die Nutzdatenrate).
-    None, wenn keine frische Datei da ist (Sendung aus oder ältere belacoder-Fassung)."""
     try:
         mtime = os.stat(BC_STATS_FILE).st_mtime
         if time.time() - mtime > 6:
@@ -137,21 +121,13 @@ def send_stats():
         return None
     sent = d.get("sent_total")
     out = {k: d.get(k) for k in ("fps", "bitrate_kbps", "rtt_ms", "send_mbps", "snd_buf_pkts", "snd_buf_ms", "retrans_total", "loss_total", "drop_total", "sent_total")}
-    out["mtime"] = mtime                    # Zeit der Datei in Sekunden mit Bruchteil (belacoders eigenes Feld "time" ist auf ganze Sekunden abgeschnitten)
+    out["mtime"] = mtime
     t = d.get("loss_total")
     out["loss_pct"] = round(100.0 * t / sent, 2) if isinstance(t, (int, float)) and isinstance(sent, (int, float)) and sent > 0 and t >= 0 else None
     return out
 
 
 class UsbWatch:
-    """Merkt sich, wenn ein USB-Gerät ausfällt oder abgezogen wird (zum Beispiel der USB-WLAN-Adapter als Sendeweg, ein Router, ein Bluetooth-Stick).
-    Quelle ist das Kernel-Protokoll (dmesg, ohne Rechte lesbar): "usb 2-1: USB disconnect", "usb usb2-port1: disabled by hub (EMI?)" und "over-current".
-    Die Ereignisse stehen mit Zeit in <state>/usb-events.json (überstehen einen Neustart des Dienstes; ein Ausfall, bei dem die ganze Box stehen bleibt, ist
-    für den Kernel nicht zu sehen). Die Oberfläche zeigt sie als Meldung: Art des Geräts (aus dem Produktnamen) und Uhrzeit. Kommt das Gerät wieder (der Kernel
-    erkennt am selben Anschluss ein neues Gerät), steht „wieder da“ dabei und die Meldung verschwindet nach BACK_SHOW (5 Minuten ohne neue Trennung); kommt es nicht
-    wieder, bleibt sie bis WINDOW (24 Stunden) oder bis der Nutzer sie mit dem × schließt (dismiss).
-    Issue #58: In den ersten GRACE Sekunden nach dem Start der Box zählen Trennungen nicht (manche Sticks melden sich beim Hochfahren mehrmals neu an, zum
-    Beispiel beim Wechsel des Betriebsmodus); Meldungen aus der Zeit vor dem Neustart erscheinen danach nicht mehr. Die Meldung nennt Namen und Anschluss."""
     WINDOW = 24 * 3600.0
     BACK_SHOW = 300.0
     GRACE = 120.0
@@ -170,10 +146,10 @@ class UsbWatch:
 
     def __init__(self, path, runner=None, clock=time.time, demo=False, uptime=None):
         self.path, self.runner, self.clock, self.demo = path, runner or self._dmesg, clock, demo
-        self.uptime = uptime or (self._uptime if clock is time.time else (lambda: None))              # mit eigener Uhr (Tests) gibt es keine Startzeit
+        self.uptime = uptime or (self._uptime if clock is time.time else (lambda: None))
         self.lock = threading.Lock()
         self.events, self.last = [], 0.0
-        self.demo_t, self.demo_closed = clock() - 2100, False              # Vorschau: eine feste Beispielmeldung, die sich schließen lässt
+        self.demo_t, self.demo_closed = clock() - 2100, False
         try:
             with open(path) as f:
                 saved = json.load(f)
@@ -183,7 +159,7 @@ class UsbWatch:
             pass
         boot = self._boot()
         if boot is not None:
-            self.events = [e for e in self.events if e["t"] >= boot]                                 # aus der Zeit vor dem Neustart: das Gerät kam mit dem Neustart neu
+            self.events = [e for e in self.events if e["t"] >= boot]
 
     @staticmethod
     def _uptime():
@@ -193,7 +169,6 @@ class UsbWatch:
             return None
 
     def _boot(self):
-        """Zeitpunkt des Starts der Box (Uhr minus Betriebszeit) oder None."""
         up = self.uptime()
         return self.clock() - up if isinstance(up, (int, float)) and up >= 0 else None
 
@@ -238,7 +213,7 @@ class UsbWatch:
                 continue
             g = self.RE_GONE.match(msg)
             if g:
-                if boot is None or t >= boot + self.GRACE:                                  # in den ersten Sekunden nach dem Start melden sich Geräte oft mehrmals neu an
+                if boot is None or t >= boot + self.GRACE:
                     out.append({"t": round(t, 1), "port": g.group(1), "cat": self.category(prod.get(g.group(1), "")), "why": "gone",
                                 "name": prod.get(g.group(1), ""), "ids": ids.get(g.group(1), "")})
                 continue
@@ -249,13 +224,13 @@ class UsbWatch:
                     out.append({"t": round(t, 1), "port": port, "cat": self.category(prod.get(port, "")), "why": "emi" if h.group(3).startswith("disabled") else "over",
                                 "name": prod.get(port, ""), "ids": ids.get(port, "")})
         merged = []
-        for e in sorted(out, key=lambda x: x["t"]):                       # Trennung und abgeschalteter Anschluss kurz hintereinander am selben Anschluss: ein Ereignis
+        for e in sorted(out, key=lambda x: x["t"]):
             if merged and merged[-1]["port"] == e["port"] and e["t"] - merged[-1]["t"] < 5:
                 if e["why"] != "gone":
                     merged[-1]["why"] = e["why"]
                 continue
             merged.append(e)
-        for e in merged:                                                    # am selben Anschluss wurde danach ein Gerät neu erkannt: wieder da
+        for e in merged:
             for bt, bport in backs:
                 if bport == e["port"] and 0 < bt - e["t"] < 3600:
                     e["back"] = round(bt, 1)
@@ -263,7 +238,6 @@ class UsbWatch:
         return merged
 
     def scan(self):
-        """Kernel-Protokoll lesen und neue Ereignisse aufnehmen (höchstens alle EVERY Sekunden)."""
         with self.lock:
             now = self.clock()
             if now - self.last < self.EVERY:
@@ -277,7 +251,7 @@ class UsbWatch:
             have = {(round(e["t"]), e.get("port")): e for e in self.events}
             new = [e for e in found if (round(e["t"]), e["port"]) not in have]
             changed = False
-            for f in found:                                                 # ein schon gemerktes Ereignis bekommt nachträglich "wieder da"
+            for f in found:
                 old = have.get((round(f["t"]), f["port"]))
                 if old is not None and f.get("back") and not old.get("back"):
                     old["back"] = f["back"]
@@ -296,8 +270,6 @@ class UsbWatch:
             pass
 
     def alerts(self):
-        """Meldungen für die Oberfläche: die jüngsten Ereignisse der letzten 24 Stunden (höchstens zwei), je ein Eintrag mit Art und Zeit. Weg sind Meldungen,
-        die der Nutzer geschlossen hat, und solche, deren Gerät seit mehr als BACK_SHOW Sekunden wieder da ist."""
         if self.demo:
             return [] if self.demo_closed else [{"level": "warn", "kind": "usb", "cat": "wlan", "why": "emi", "t": int(self.demo_t), "back": False}]
         self.scan()
@@ -309,7 +281,6 @@ class UsbWatch:
                 for e in sorted(fresh, key=lambda x: -x["t"])[:2]]
 
     def dismiss(self, t):
-        """Die Meldung mit dieser Zeit (ganze Sekunden, wie in alerts()) schließen. Gibt zurück, ob eine gefunden wurde."""
         if isinstance(t, bool) or not isinstance(t, (int, float)):
             raise ValueError("Ungültige Anfrage")
         if self.demo:
@@ -334,23 +305,18 @@ class UsbWatch:
 
 
 class OutageWatch:
-    """Merkt sich, wenn eine Kamera ausfällt (sie hat gesendet und sendet nicht mehr) oder der HDMI-Eingang kein Signal hat, und liefert kurze Meldungen für die
-    Oberfläche: {"kind": "cam"|"hdmi", ...}. Eine Kamera gilt als ausgefallen, wenn sie seit dem Start des Dienstes einmal gesendet hat und jetzt länger als DOWN
-    Sekunden nicht mehr; die Meldung verschwindet, sobald sie wieder sendet (oder nach MAX Stunden). Ohne Zustand auf der Platte: nach einem Neustart des Dienstes
-    beginnt die Beobachtung neu."""
     DOWN = 20.0
     MAX = 6 * 3600.0
 
     def __init__(self, clock=time.time):
         self.clock = clock
         self.lock = threading.Lock()
-        self.seen = {}                 # Kamera-Schlüssel -> hat gesendet
-        self.since = {}                # Kamera-Schlüssel -> seit wann nicht mehr (Zeit) oder fehlt
+        self.seen = {}
+        self.since = {}
         self.hdmi_since = None
-        self.closed = set()            # vom Nutzer mit dem × geschlossene Meldungen: (Art, Zeit des Ausfalls); kommt die Kamera wieder, gilt ein neuer Ausfall wieder
+        self.closed = set()
 
     def dismiss(self, kind, t):
-        """Eine Meldung "Kamera ausgefallen" oder "HDMI: kein Signal" schließen (zum Beispiel nach einem bewussten Abziehen). Gibt zurück, ob die Art bekannt ist."""
         if kind not in ("cam", "hdmi") or isinstance(t, bool) or not isinstance(t, (int, float)):
             raise ValueError("Ungültige Anfrage")
         with self.lock:
@@ -358,11 +324,10 @@ class OutageWatch:
         return True
 
     def alerts(self, cameras, hdmi=None, parked=()):
-        """parked: Schlüssel von Kameras, die der Nutzer bewusst ausgeschaltet hat (im Bildaufbau deaktiviert, DJI getrennt oder ohne automatisches Verbinden): keine Ausfall-Meldung."""
         now = self.clock()
         out = []
         with self.lock:
-            self.closed = {c for c in self.closed if now - c[1] <= self.MAX}                 # alte Einträge fallen weg
+            self.closed = {c for c in self.closed if now - c[1] <= self.MAX}
             keys = set()
             for c in cameras or []:
                 key = c.get("key")
@@ -371,7 +336,7 @@ class OutageWatch:
                 keys.add(key)
                 state = c.get("state")
                 if key in parked:
-                    self.since.pop(key, None)                       # gewollt aus: kein Ausfall; kommt sie zurück und fällt später aus, beginnt die Zeit neu
+                    self.since.pop(key, None)
                     continue
                 if state == "live":
                     self.seen[key] = True
@@ -386,7 +351,6 @@ class OutageWatch:
                 if k not in keys:
                     self.seen.pop(k, None)
                     self.since.pop(k, None)
-            # HDMI-Eingang: Dienst meldet einen Fehler oder (eingeschaltet) kein Signal
             bad = False
             if isinstance(hdmi, dict) and hdmi.get("service") is not False and hdmi.get("available") is not False:
                 en = bool((hdmi.get("settings") or {}).get("enabled"))
@@ -403,12 +367,7 @@ class OutageWatch:
 
 
 class Sampler:
-    """Berechnet Raten aus Zählerdifferenzen zwischen zwei Abfragen."""
 
-    # Meldung "n Prozess(e) blockiert (D-State)" (Issue #51): Gezählt wird nicht jede kurze Wartezeit. Beim Start schreibt die Box viel auf die Speicherkarte
-    # (apt-get, Journal), dann warten kurz Threads des Dateisystems; das hat mit der Sendung nichts zu tun. Darum: (1) erst GRACE Sekunden nach dem Start, (2) erst
-    # wenn SUSTAIN Sekunden am Stück etwas blockiert ist (Messungen mit mehr als GAP Sekunden Abstand zählen nicht als am Stück), (3) ohne Threads, die auf die
-    # Speicherkarte oder den CPU-Regler warten. Unbekanntes (zum Beispiel usb-storage, ein Decoder-Treiber) meldet weiter; das Zustandsprotokoll behält alle Namen.
     D_GRACE, D_SUSTAIN, D_GAP = 120.0, 15.0, 6.0
     D_BENIGN_NAME = re.compile(r"^(kworker|jbd2|sugov|apt-get|apt|dpkg|mmcqd|kswapd\d*|flush-|ext4|systemd-journal)")
     D_BENIGN_WCHAN = re.compile(r"(__wait_on_buffer|wait_on_page|io_schedule|mmc_blk|jbd2|generic_file_buffered_read|bit_wait|blk_)")
@@ -418,20 +377,16 @@ class Sampler:
         self.prev_cpu = None
         self.prev_net = None
         self.prev_t = None
-        self.sm_net, self.sm_zero = {}, {}     # geglättete Raten je Netzkarte und Zähler der Messungen ohne Verkehr (smooth_rates)
-        self.pay_prev, self.pay_sm, self.pay_zero = None, None, 0   # Nutzdatenrate der Sendung: letzter Stand (Zeit der Datei, Pakete), geglätteter Wert, Messungen ohne Verkehr (payload_rate)
+        self.sm_net, self.sm_zero = {}, {}
+        self.pay_prev, self.pay_sm, self.pay_zero = None, None, 0
         self._lock = threading.Lock()
         self._d_since, self._d_last = None, 0.0
 
-    # Angezeigte Raten der Netzkarten: gleitender Mittelwert statt Rohwert. Der Sender schickt Bilder in Schüben (SRT-Pacing, WLAN), darum zeigte jede einzelne Messung über 1,5 bis 2 s mal 10 und mal 20 Mbit/s,
-    # im Mittel über 10 s waren es 14,5 (Testbox, 13. Oktober 2026).
-    NET_SMOOTH_S = 4.0          # Zeitkonstante: nach einem Sprung der Rate ist die Anzeige nach 4 s noch bei 37 % des Unterschieds, nach 8 s bei 14 %
-    NET_SMOOTH_GAP_S = 15.0     # war die letzte Messung länger her (Seite nicht geöffnet), beginnt die Glättung neu mit dem Rohwert
-    NET_ZERO_MBIT, NET_ZERO_N = 0.1, 2   # Kommt zweimal hintereinander (rund 3 s) fast nichts, ist es ein Ausfall: die Anzeige springt sofort auf den Rohwert, statt 10 bis 20 s auszulaufen
+    NET_SMOOTH_S = 4.0
+    NET_SMOOTH_GAP_S = 15.0
+    NET_ZERO_MBIT, NET_ZERO_N = 0.1, 2
 
     def smooth_rates(self, raw, dt_s):
-        """Rohe Raten (je Netzkarte rx_mbit/tx_mbit über die Zeit dt_s seit der letzten Messung) glätten; Zeitkonstante NET_SMOOTH_S, unabhängig davon, wie oft abgefragt wird. Ein Ausfall (NET_ZERO_N
-        Messungen hintereinander unter NET_ZERO_MBIT) wird nicht geglättet."""
         fresh = dt_s is None or dt_s > self.NET_SMOOTH_GAP_S
         a = 1.0 - math.exp(-max(dt_s or 0.0, 0.0) / self.NET_SMOOTH_S)
         out, new, zeros = {}, {}, {}
@@ -447,13 +402,9 @@ class Sampler:
         self.sm_net, self.sm_zero = new, zeros
         return out
 
-    SRT_PAYLOAD_BYTES = 1316    # Nutzdaten je SRT-Paket (7 TS-Pakete zu 188 Byte; belacoder ohne Option -r)
+    SRT_PAYLOAD_BYTES = 1316
 
     def payload_rate(self, send):
-        """Nutzdatenrate der Sendung in Mbit/s (Video und Ton, ohne Kopfdaten (IP, UDP, SRT, SRTLA) und ohne Neuübertragungen): Zuwachs von sent_total - retrans_total aus der Kennzahlen-Datei von belacoder
-        (SRT zählt in sent_total auch die Neuübertragungen, pktSentTotal), mal 1316 Byte je Paket, geteilt durch die Zeit zwischen zwei Ständen der Datei (mtime mit Bruchteil; belacoder schreibt einmal je
-        Sekunde, die Zeit der Abfrage wäre ungenau), danach wie die Netzraten geglättet. Das ist, was belacoder an srtla_send übergibt; die Anzeige nimmt nie mehr als auf der Leitung gesendet wird.
-        Die Summe der Netzkarten (Leitung) lag auf der Testbox bei 14,5 Mbit/s, der Server bekam 11 bis 12 (13. Oktober 2026). None ohne laufende Sendung und bis zum zweiten Stand."""
         def num(k):
             v = send.get(k) if isinstance(send, dict) else None
             return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
@@ -464,16 +415,16 @@ class Sampler:
         unique = sent - (retr if retr is not None and 0 <= retr <= sent else 0.0)
         cur, prev = (t, unique), self.pay_prev
         if prev is not None and t <= prev[0]:
-            return None if self.pay_sm is None else round(self.pay_sm, 2)              # Datei noch nicht erneuert (oder Uhr zurück): der letzte Wert gilt weiter
+            return None if self.pay_sm is None else round(self.pay_sm, 2)
         self.pay_prev = cur
         dt = None if prev is None else t - prev[0]
-        if dt is None or dt > self.NET_SMOOTH_GAP_S or unique < prev[1]:               # erster Wert, lange Pause (Uhrsprung, Sendung lange aus) oder Zähler zurückgesetzt (belacoder neu gestartet)
+        if dt is None or dt > self.NET_SMOOTH_GAP_S or unique < prev[1]:
             self.pay_sm, self.pay_zero = None, 0
             return None
         raw = (unique - prev[1]) * self.SRT_PAYLOAD_BYTES * 8 / dt / 1e6
         if self.pay_sm is None:
             self.pay_sm = raw
-        elif raw < self.NET_ZERO_MBIT and self.pay_zero + 1 >= self.NET_ZERO_N:       # zweimal fast nichts: Ausfall, nicht glätten
+        elif raw < self.NET_ZERO_MBIT and self.pay_zero + 1 >= self.NET_ZERO_N:
             self.pay_sm = raw
         else:
             self.pay_sm += (raw - self.pay_sm) * (1.0 - math.exp(-dt / self.NET_SMOOTH_S))
@@ -482,11 +433,9 @@ class Sampler:
 
     @classmethod
     def d_relevant(cls, names):
-        """Aus den Namen blockierter Threads ("Name@Wartestelle") die, die nicht nur auf Speicherkarte oder CPU-Regler warten."""
         return [n for n in (names or []) if not (cls.D_BENIGN_NAME.match(n) or cls.D_BENIGN_WCHAN.search(n.partition("@")[2]))]
 
     def _d_alert(self, rel, now, uptime):
-        """Anzahl der Threads für die Meldung: 0 in der Schonzeit nach dem Start und solange nichts lange genug am Stück blockiert war."""
         if not rel:
             self._d_since = None
             return 0
@@ -508,8 +457,6 @@ class Sampler:
 
     @staticmethod
     def fan_pwm():
-        """Ansteuerung des Lüfters (PWM 0..255) oder None. Das ist der Sollwert, keine gemessene Drehzahl:
-        die Box hat keinen Drehzahlanschluss am Lüfter."""
         try:
             for d in sorted(os.listdir("/sys/class/hwmon")):
                 base = f"/sys/class/hwmon/{d}"
@@ -522,8 +469,6 @@ class Sampler:
 
     @staticmethod
     def blocked_threads(proc="/proc", limit=20):
-        """Threads im Kernel-Zustand D (nicht unterbrechbar) mit Wartestelle im Kernel: ["usb-storage@usb_sg_wait", ...]. Zeigt, WER hinter der Meldung
-        "n Prozess(e) blockiert" steckt (oft ein USB-Modem, das sich zusätzlich als CD-Laufwerk meldet, oder der Treiber eines Geräts)."""
         out = []
         for d in sorted(glob.glob(proc + "/[0-9]*/task/[0-9]*")):
             t = read(d + "/stat", "") or ""
@@ -547,18 +492,16 @@ class Sampler:
                 f = rest.split()
                 res[name] = (int(f[0]), int(f[8]))
         if pipbox_preview:
-            res = pipbox_preview.TRAFFIC.adjust(res)            # der Verkehr der Vorschau zum Browser zählt nicht zum Upload der Sendung
+            res = pipbox_preview.TRAFFIC.adjust(res)
         return res
 
     def sample(self):
-        """Messwerte. Liegt die letzte Messung keine 1,5 s zurück (zweiter Tab, mehrere Abfragen), gilt sie weiter:
-        sonst würden die Raten über sehr kurze Zeiträume berechnet und die Arbeit doppelt gemacht."""
         if self.demo:
             return self.sample_demo()
         with self._lock:
             hit = getattr(self, "_last", None)
             if hit is not None and time.monotonic() - hit[0] < 1.5:
-                return dict(hit[1])                      # flache Kopie: der Abrufer ergänzt Schlüssel und Meldungen, das darf den Zwischenspeicher nicht verändern (zweiter Tab: Meldungen doppelt)
+                return dict(hit[1])
             val = self.sample_real()
             self._last = (time.monotonic(), val)
             return dict(val)
@@ -666,22 +609,18 @@ class Sampler:
         return {"time": int(time.time()), "demo": self.demo,
                 "cpu": {"cores": cores, "avg": cpu_avg, "max": cpu_max, "freq_mhz": freqs},
                 "temp_c": None if temp is None else round(temp, 1),
-                "fan_pct": None if fan_pwm is None else round(100.0 * fan_pwm / 255),   # Ansteuerung, keine Drehzahl
+                "fan_pct": None if fan_pwm is None else round(100.0 * fan_pwm / 255),
                 "mem": {"used_pct": mem_used, "avail_mb": avail_kb // 1024,
                         "total_mb": total_kb // 1024},
                 "net": rates, "procs_blocked": blocked, "alerts": alerts,
-                # Platzhalter bis die Pipeline echte Werte liefert
                 "encoder": {"fps": 29.9, "bitrate_mbit": 9.8, "max_mbit": 12}
                 if self.demo else None}
 
 
-
-
 def lan_ip():
-    """IPv4-Adresse des Standard-Netzwerkwegs (für Adressen, die Kameras nutzen)."""
     try:
         sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sk.connect(("203.0.113.1", 9))  # sendet nichts, wählt nur den Weg
+        sk.connect(("203.0.113.1", 9))
         ip = sk.getsockname()[0]
         sk.close()
         return ip
@@ -689,11 +628,10 @@ def lan_ip():
         return "127.0.0.1"
 
 
-NET_LABELS = {}   # Namen ergeben sich aus der Art der Karte (siehe net_label), nicht aus festen Annahmen über die Box
+NET_LABELS = {}
 
 
 def net_label(name):
-    """Anzeigename einer Netzwerkkarte: WLAN, USB-Router oder Ethernet."""
     if name.startswith(("wl",)):
         return f"WLAN ({name})"
     try:
@@ -704,11 +642,10 @@ def net_label(name):
     return f"Ethernet ({name})"
 
 
-FIXED_ALIAS = {"eth1": "192.168.80.50"}   # feste Zweitadressen (setzt pipbox-net.service)
+FIXED_ALIAS = {"eth1": "192.168.80.50"}
 
 
 def fixed_ip(name):
-    """Feste Zweitadresse einer Schnittstelle, wenn sie dort gerade gesetzt ist."""
     want = FIXED_ALIAS.get(name)
     if not want:
         return None
@@ -724,7 +661,6 @@ _TTL = {}
 
 
 def ttl_cached(key, ttl, fn):
-    """Ergebnis von fn() für ttl Sekunden merken. Spart Programmstarts und Dateilesen bei den vielen Abfragen der Oberfläche."""
     now = time.monotonic()
     hit = _TTL.get(key)
     if hit is not None and now - hit[0] < ttl:
@@ -739,12 +675,10 @@ def ttl_cached_drop(key):
 
 
 def iface_ips():
-    """IPv4-Adressen der Netzwerkschnittstellen, 3 s zwischengespeichert (jede Abfrage startete sonst `ip`)."""
     return [dict(x) for x in ttl_cached("iface_ips", 3.0, _iface_ips_raw)]
 
 
 def _iface_ips_raw():
-    """IPv4-Adressen der Netzwerkschnittstellen (nur Linux), ohne lo/Container."""
     try:
         import fcntl
         import struct
@@ -754,7 +688,7 @@ def _iface_ips_raw():
     out = []
     for name in names:
         if name == "lo" or name.startswith(("docker", "veth", "br-", "virbr", "p2p", "tailscale", "tun", "tap", "wg", "zt")):
-            continue          # virtuelle Netze (Tailscale, Container, VPN) sind keine Sendewege und keine Kameranetze
+            continue
         try:
             sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             ip = socket.inet_ntoa(fcntl.ioctl(sk.fileno(), 0x8915,
@@ -763,7 +697,7 @@ def _iface_ips_raw():
         except OSError:
             continue
         out.append({"iface": name, "ip": ip, "cam_ip": fixed_ip(name) or ip, "label": NET_LABELS.get(name) or net_label(name),
-                    "wifi": os.path.isdir(f"/sys/class/net/{name}/wireless")})     # eine DJI-Kamera verbindet sich nur per WLAN (Kameraliste zeigt nur diese)
+                    "wifi": os.path.isdir(f"/sys/class/net/{name}/wireless")})
     return out
 
 
@@ -771,9 +705,6 @@ LINKS_FILE = "/run/pipbox-send/srtla-links.txt"
 
 
 def uplink_states(selected):
-    """Ampel je Sendeweg aus der Datei des Senders (alle paar Sekunden eine Zeile je Weg): {Schnittstelle: {"state", "srtt"}}.
-    "an" = der Weg trägt Pakete, "reserve" = verbunden, wird aber nicht genutzt (Laufzeit zu hoch oder zu unruhig), "aus" = nicht
-    verbunden oder ohne Netz. Leeres Ergebnis, wenn keine frischen Daten da sind (Sendung aus)."""
     try:
         if time.time() - os.stat(LINKS_FILE).st_mtime > 20:
             return {}
@@ -799,7 +730,6 @@ def uplink_states(selected):
 
 
 class NetChoice:
-    """Welches Netzwerk die Kameras zur Box nutzen (bestimmt die RTMP-Adresse)."""
 
     def __init__(self, path):
         self.path = path
@@ -816,7 +746,7 @@ class NetChoice:
         for o in self.options():
             if o["iface"] == self.iface:
                 return o.get("cam_ip") or o["ip"]
-        return lan_ip()   # Standardweg, wenn nichts gewählt oder Schnittstelle weg
+        return lan_ip()
 
     def select(self, iface):
         if iface not in [o["iface"] for o in self.options()]:
@@ -832,12 +762,6 @@ class NetChoice:
 
 
 class IfaceMemory:
-    """Netzwerkkarten folgen der MAC-Adresse, nicht dem Namen (Wunsch des Nutzers, 10. Oktober 2026).
-
-    Der Kernel zählt eth0, eth1, usb0 … in der Reihenfolge, in der die Karten starten; nach dem Neu-Flashen oder einem Neustart können die Namen vertauscht sein.
-    Sendewege, das Netzwerk der Kameras und der Anschluss je Kamera sind aber unter dem Namen gespeichert. Diese Klasse merkt sich, welche MAC zuletzt hinter
-    welchem Namen stand. Steht eine MAC jetzt unter einem anderen Namen, wandern die gespeicherten Verweise mit (die Einstellung gilt dann weiter für dieselbe Karte).
-    Fehlt die alte MAC (Karte abgezogen), geschieht nichts. Verändert nur eigene Einstellungen, nie das System."""
 
     def __init__(self, path):
         self.path = path
@@ -857,14 +781,13 @@ class IfaceMemory:
         os.replace(tmp, self.path)
 
     def reconcile(self, srtla, netchoice, cams, wifi=None, names=None):
-        """Einmal abgleichen. Gibt {alter Name: neuer Name} zurück (leer, wenn nichts zu tun war)."""
         cur = SettingsTransfer.local_macs()
         last = self._last()
         by_mac = {m: n for n, m in cur.items()}
         mapping = {name: by_mac[mac] for name, mac in last.items() if cur.get(name) != mac and by_mac.get(mac) not in (None, name)}
         if mapping:
             self._apply(mapping, srtla, netchoice, cams, wifi, names)
-            print("iface_macs:", ", ".join("%s->%s" % kv for kv in sorted(mapping.items())), flush=True)           # Journal: welche Namen getauscht waren
+            print("iface_macs:", ", ".join("%s->%s" % kv for kv in sorted(mapping.items())), flush=True)
         if cur != last:
             try:
                 self._save(cur)
@@ -896,7 +819,7 @@ class IfaceMemory:
                     changed = True
             if changed:
                 cams.save()
-        if wifi is not None and not getattr(wifi, "demo", False):                  # Hotspot-Einstellungen je WLAN-Karte (hotspot.json)
+        if wifi is not None and not getattr(wifi, "demo", False):
             hs = wifi.hotspots()
             if any(k in m for k in hs):
                 out = {r(k): v for k, v in hs.items()}
@@ -905,7 +828,7 @@ class IfaceMemory:
                 with os.fdopen(fd, "w") as f:
                     json.dump(out, f)
                 os.replace(tmp, wifi.hs_file)
-        if names is not None:                                                       # eigene Namen der Verbindungen und Sticks, die an einem Kartennamen hängen
+        if names is not None:
             with names.lock:
                 d = names._all()
                 out = {}
@@ -922,7 +845,7 @@ class IfaceMemory:
         while True:
             try:
                 self.reconcile(srtla, netchoice, cams, wifi, names)
-            except Exception as e:                                        # nie die Oberfläche mitnehmen
+            except Exception as e:
                 print("iface_macs:", type(e).__name__, flush=True)
             time.sleep(every)
 
@@ -931,12 +854,6 @@ HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 
 class SrtlaStore:
-    """SRTLA-Server (Name, Adresse, Port, Stream-ID), Auswahl und Sendeeinstellungen.
-
-    Gespeichert in <state>/srtla.json. Eine Liste mit Dropdown ist das, was die
-    Original-BELABOX nicht kann. Die Werte werden hier streng geprüft, denn der
-    spätere Sende-Dienst läuft mit Root-Rechten und liest dieselbe Datei.
-    """
     DEFAULT_SETTINGS = {"min_kbps": 300, "max_kbps": 12000, "latency_ms": 4000, "uplinks": ["eth0", "eth1"],
                         "spread": "best"}
 
@@ -980,7 +897,6 @@ class SrtlaStore:
         return {"name": name, "host": host, "port": port, "streamid": sid}
 
     def public(self):
-        """Ohne Stream-ID: sie ist ein Zugangsschlüssel und bleibt auf der Box."""
         with self.lock:
             return {"servers": [{"id": s["id"], "name": s["name"], "host": s["host"], "port": s["port"],
                                  "has_streamid": bool(s.get("streamid"))} for s in self.data["servers"]],
@@ -1029,8 +945,6 @@ class SrtlaStore:
     def set_settings(self, req, valid_ifaces):
         with self.lock:
             cur = dict(self.data["settings"])
-        # Fehlende Felder behalten ihren gespeicherten Wert (z. B. beim Anhaken eines Netzes wird nur die Netzliste geschickt),
-        # sonst überschreibt ein veralteter Stand der Seite andere Einstellungen.
         try:
             mn = int(req.get("min_kbps", cur.get("min_kbps")))
             mx = int(req.get("max_kbps", cur.get("max_kbps")))
@@ -1046,8 +960,6 @@ class SrtlaStore:
             raise ValueError("Ungültiger Name eines Netzwerks")
         with self.lock:
             before = set(self.data["settings"].get("uplinks", []))
-        # Neu angehakte Netze müssen es geben. Schon gespeicherte, die gerade fehlen (Router abgezogen), bleiben stehen,
-        # sonst ließe sich nichts mehr ändern, solange ein altes Netz in der Liste hängt.
         if any(u not in valid_ifaces and u not in before for u in ups) or not any(u in valid_ifaces for u in ups):
             raise ValueError("Mindestens ein vorhandenes Netzwerk als Sendeweg wählen")
         spread = req.get("spread", cur.get("spread", "best"))
@@ -1060,18 +972,17 @@ class SrtlaStore:
 
 
 PIP_CORNERS = ("oben links", "oben rechts", "unten links", "unten rechts", "unten Mitte", "frei (verschiebbar)")
-FREE = 5                      # Nummer von "frei": Position aus x/y (Promille)
+FREE = 5
 PLUGIN_SO = "/opt/pipbox/gst/libgstpbpip.so"
 SEND_STATUS = "/run/pipbox-send/status.json"
-VIEW_FILE = "main-view"                 # Datei im Zustandsordner: "ausgeblendet Tonquelle stumm" (liest der Baustein pbctl, siehe gst/gstpbpip.c)
-VIEW_STATE = "/run/pipbox-send/view-state"   # hier meldet pbctl zurück, was wirklich gilt
-SWAP_SELECT = "main-select"            # Datei im Zustandsordner: welche Kamera ist Hauptbild (liest der Baustein pbctl)
-SWAP_STATE = "/run/pipbox-send/swap-state"   # hier meldet pbctl zurück, was er eingestellt hat
+VIEW_FILE = "main-view"
+VIEW_STATE = "/run/pipbox-send/view-state"
+SWAP_SELECT = "main-select"
+SWAP_STATE = "/run/pipbox-send/swap-state"
 _CENTER = {"mtime": None, "ok": True, "free": True}
 
 
 def pip_corners():
-    """Wählbare Positionen. "unten Mitte" und "frei" nur, wenn der installierte Baustein sie kennt (sonst landet das Bild oben links)."""
     try:
         mt = os.stat(PLUGIN_SO).st_mtime
         if _CENTER["mtime"] != mt:
@@ -1079,7 +990,7 @@ def pip_corners():
                 data = f.read()
             _CENTER.update(mtime=mt, ok=b"4 unten Mitte" in data, free=b"5 frei" in data)
     except OSError:
-        return PIP_CORNERS          # kein Baustein (Entwicklungsrechner, Demo): alle anzeigen
+        return PIP_CORNERS
     if not _CENTER["ok"]:
         return PIP_CORNERS[:4]
     return PIP_CORNERS if _CENTER["free"] else PIP_CORNERS[:5]
@@ -1089,8 +1000,6 @@ _MULTI = {"mtime": None, "ok": True}
 
 
 def plugin_multi():
-    """Kennt der installierte Baustein den gemeinsamen Mischer für bis zu drei kleine Bilder (Eigenschaft "slot3")?
-    Ein alter Baustein (z. B. wenn der Neubau beim Update scheiterte) bekommt die alte Form mit zwei Mischern."""
     try:
         mt = os.stat(PLUGIN_SO).st_mtime
         if _MULTI["mtime"] != mt:
@@ -1105,7 +1014,6 @@ _SWAP = {"mtime": None, "ok": True}
 
 
 def plugin_swap():
-    """Kennt der installierte Baustein den Umschalter für den Tausch ohne Unterbrechung (pbpipsel)? Ohne Baustein (Entwicklungsrechner) ja."""
     try:
         mt = os.stat(PLUGIN_SO).st_mtime
         if _SWAP["mtime"] != mt:
@@ -1118,15 +1026,14 @@ def plugin_swap():
 
 
 _FILL = {"mtime": None, "ok": True}
-FEED_PORT = 9410            # "alle Kameras immer bereit": Zubringer je Platz (0 bis 3) geben Bild an Port FEED_PORT + 2*Platz und Ton an +1 weiter (nur Loopback)
+FEED_PORT = 9410
 FEED_VIDEO_CAPS = "application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000"
 FEED_AUDIO_CAPS = "audio/x-raw,format=S16LE,rate=48000,channels=2,layout=interleaved"
 FEED_FILL_VIDEO = "video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1"
-CAM_LIVE = "/run/pipbox-send/cam-live"       # pbctl meldet hier, welche Plätze gerade Bilder liefern ("1 0 1 0")
+CAM_LIVE = "/run/pipbox-send/cam-live"
 
 
 def plugin_fill():
-    """Kann der installierte Baustein den Ausgang bei fehlendem Eingang füllen (Eigenschaft fill-caps von pbpipsel)? Ohne Baustein (Entwicklungsrechner) ja."""
     try:
         mt = os.stat(PLUGIN_SO).st_mtime
         if _FILL["mtime"] != mt:
@@ -1139,17 +1046,14 @@ def plugin_fill():
 
 
 def feeder_tool():
-    """Pfad von gst-launch-1.0 (Paket gstreamer1.0-tools) oder None: Die Zubringer von "alle Kameras immer bereit" brauchen es. Ein frisches BELABOX-Image bringt es nicht mit."""
     return shutil.which("gst-launch-1.0")
 
 
 _VIEW = {"mtime": None, "ok": True}
-VIEW_ENABLED = True          # Ansicht im Betrieb (Issue #19): Fußleiste am Handy; ohne passenden Baustein (plugin_view) bleibt es beim Neustart
+VIEW_ENABLED = True
 
 
 def plugin_view():
-    """Kennt der installierte Baustein die Ansicht im Betrieb (Eigenschaften "view-file" und "view-state-file" von pbctl: kleine Bilder
-    ein-/ausblenden, Tonquelle, stumm ohne Neustart), und ist sie eingeschaltet (VIEW_ENABLED)? Ohne Baustein (Entwicklungsrechner) ja."""
     if not VIEW_ENABLED:
         return False
     try:
@@ -1167,9 +1071,6 @@ _STYLE = {"mtime": None, "ok": True}
 
 
 def plugin_style():
-    """Kennt der installierte Baustein Beschnitt, Deckkraft und Rahmen je kleinem Bild (Eigenschaften "style1" bis "style3")?
-    Ein alter Baustein (z. B. wenn der Neubau beim Update scheiterte) würde die Eigenschaft nicht kennen und die Sendekette
-    nicht starten: dann bleibt sie aus dem Pipeline-Text weg. Ohne Baustein (Entwicklungsrechner) ja."""
     try:
         mt = os.stat(PLUGIN_SO).st_mtime
         if _STYLE["mtime"] != mt:
@@ -1181,11 +1082,8 @@ def plugin_style():
     return _STYLE["ok"]
 
 
-# Aussehen der kleinen Bilder (Deckkraft, Beschnitt, Rahmen), je Stelle 1 bis 3 im Bild-in-Bild. Beschnitt in Pixeln eines Bildes von
-# 1920 x 1080 (so groß ist die Bezugsgröße jeder Kamera; der Baustein rechnet auf die verkleinerte Größe um), Rahmenbreite und Rundung
-# in Pixeln eines 1920 Pixel breiten Hauptbildes.
 STYLE_SLOTS = ("1", "2", "3")
-CROP_REF_W, CROP_REF_H, CROP_KEEP = 1920, 1080, 32          # Bezugsgröße des Beschnitts, so viele Pixel bleiben mindestens stehen
+CROP_REF_W, CROP_REF_H, CROP_KEEP = 1920, 1080, 32
 STYLE_DEFAULT = {"visible": True, "opacity": 100, "crop": {"l": 0, "r": 0, "t": 0, "b": 0}, "radius": 0,
                  "border": {"enabled": False, "width": 6, "color": "#ffffff", "opacity": 100}}
 STYLE_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -1193,16 +1091,13 @@ STYLE_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 def _style_copy(st):
     out = {"visible": st["visible"], "opacity": st["opacity"], "crop": dict(st["crop"]), "radius": st.get("radius", 0), "border": dict(st["border"])}
-    if "radius" not in st:                      # ältere Einstellung: Die Rundung gehörte zum Rahmen und wirkte nur mit ihm
+    if "radius" not in st:
         out["radius"] = int(out["border"].get("radius", 0)) if out["border"].get("enabled") else 0
     out["border"].pop("radius", None)
     return out
 
 
 def clean_style(src, old=None, strict=False):
-    """Eine Stileinstellung prüfen und ergänzen. strict (Anfrage der Oberfläche): Fehler werden gemeldet. Sonst (gespeicherte Datei,
-    pipeline.json gehört dem Benutzer pipbox, build() läuft auch als root): alles wird in feste Bereiche gezwungen, es gelangt nie
-    ein Text in den Pipeline-Text. old: bisherige Werte für fehlende Felder."""
     st = _style_copy(old if isinstance(old, dict) and "crop" in old and "border" in old else STYLE_DEFAULT)
     if src is None:
         src = {}
@@ -1231,7 +1126,7 @@ def clean_style(src, old=None, strict=False):
     if isinstance(crop, dict):
         for k, lbl in (("l", "links"), ("r", "rechts"), ("t", "oben"), ("b", "unten")):
             if k in crop:
-                st["crop"][k] = num(crop[k], 0, 1900, st["crop"][k], f"Beschnitt {lbl}") // 2 * 2     # gerade: Chroma ist halb so groß
+                st["crop"][k] = num(crop[k], 0, 1900, st["crop"][k], f"Beschnitt {lbl}") // 2 * 2
     elif crop is not None and strict:
         raise ValueError("Beschnitt: ungültige Angabe")
     c = st["crop"]
@@ -1262,7 +1157,7 @@ def clean_style(src, old=None, strict=False):
                 raise ValueError("Rahmenfarbe: Farbe wie #ffffff")
         if "opacity" in border:
             b["opacity"] = num(border["opacity"], 10, 100, b["opacity"], "Rahmendeckkraft")
-        if "radius" in border:                                                  # ältere Anfrage: die Rundung stand im Rahmen
+        if "radius" in border:
             legacy = num(border["radius"], 0, 60, st["radius"], "Eckenrundung")
             if "radius" not in src and b["enabled"]:
                 st["radius"] = legacy
@@ -1272,7 +1167,6 @@ def clean_style(src, old=None, strict=False):
 
 
 def clean_styles(src, old=None, strict=False):
-    """Die Stile der Stellen 1 bis 3 (Schlüssel "1", "2", "3")."""
     if src is not None and not isinstance(src, dict):
         if strict:
             raise ValueError("Aussehen der kleinen Bilder: ungültige Angabe")
@@ -1282,8 +1176,6 @@ def clean_styles(src, old=None, strict=False):
 
 
 def style_text(st):
-    """Eigenschaft style<N> des Bausteins (Format siehe gst/gstpbpip.c), nur mit Werten, die vom Standard abweichen; leer, wenn alles
-    Standard ist. st ist eine geprüfte Stileinstellung (clean_style): nur Zahlen und eine Hex-Farbe gelangen in den Text."""
     parts = []
     op = st["opacity"] if st["visible"] else 0
     if op != 100:
@@ -1297,42 +1189,37 @@ def style_text(st):
         parts.append(f"bc={b['color'][1:]}")
         if b["opacity"] != 100:
             parts.append(f"bo={int(b['opacity'])}")
-    if st["radius"]:                                                     # die Rundung gilt für das Bild selbst, mit oder ohne Rahmen
+    if st["radius"]:
         parts.append(f"br={int(st['radius'])}")
     return ",".join(parts)
 
 
-SIZE_MIN, SIZE_MAX = 1, 100       # Skalierung eines kleinen Bildes in Prozent des Hauptbildes (100 = so groß wie das Hauptbild)
-HW_MIN_W, HW_MIN_H = 128, 72     # kleinste Größe, auf die der Hardware-Decoder verkleinert: auf der Box gemessen geht es ab 120 Pixeln Breite (Verhältnis 1:16), darunter nicht
+SIZE_MIN, SIZE_MAX = 1, 100
+HW_MIN_W, HW_MIN_H = 128, 72
 
 
 def pip_size(pct):
-    """Breite/Höhe des kleinen Bildes in Pixel (gerade, durch 16 teilbar in der Breite)."""
     w = max(16, int(round(1920 * pct / 100.0 / 16.0)) * 16)
     h = int(round(w * 9 / 16.0 / 2.0)) * 2
     return w, h
 
 
 def small_decode(w, h):
-    """Der Teil der Pipeline, der ein kleines Bild auf w x h bringt: Der Hardware-Decoder verkleinert selbst. Reicht seine Verkleinerung nicht (unter
-    128 Pixel Breite), verkleinert er auf 128 x 72 und eine Software-Stufe (videoscale) macht den Rest; bei dieser Größe kostet sie fast nichts."""
     if w >= HW_MIN_W:
         return f"mppvideodec width={w} height={h} !\nvideo/x-raw,format=NV12 !\n"
     return (f"mppvideodec width={HW_MIN_W} height={HW_MIN_H} !\nvideoscale !\nvideo/x-raw,format=NV12,width={w},height={h} !\n")
 
 
-DEFAULT_MAIN_DELAY_MS = 450   # Ausgangswert (Schätzung, per Regler anpassbar): das Hauptbild wartet so lange, damit die kleinen Bilder zeitlich passen
-DEFAULT_PIP_DELAY_MS = 0      # kleine Bilder: zusätzliche Wartezeit je Bild (Feinabgleich, wenn eine Kamera mehr hinterherhinkt)
+DEFAULT_MAIN_DELAY_MS = 450
+DEFAULT_PIP_DELAY_MS = 0
 DELAY_KEYS = ("main_delay_ms", "pip_delay_ms", "pip2_delay_ms", "pip3_delay_ms")
-FRAME_MS = 33                 # eine Warteschlange gibt erst nach der Schwelle frei: beim Bild ein Bild zugeben
+FRAME_MS = 33
 
 
 PENDING_LABELS = (("server", "SRTLA-Server"), ("bitrate", "Bitrate"), ("latency", "Latenz"), ("spread", "Verteilung"))
 
 
 def srtla_signature(data):
-    """Kurze Prüfsummen der Einstellungen, die erst beim Start der Sendekette wirken (ohne die Stream-ID preiszugeben).
-    Die Sendekette merkt sich ihre Werte beim Start; weichen die gespeicherten davon ab, ist ein Neustart nötig."""
     cur = next((x for x in data.get("servers", []) if x.get("id") == data.get("selected")), None) or {}
     st = {**SrtlaStore.DEFAULT_SETTINGS, **data.get("settings", {})}
 
@@ -1347,14 +1234,6 @@ def srtla_signature(data):
 
 
 class PipelineStore:
-    """Welche Pipeline gesendet wird und welche Kameras sie nutzt.
-
-    Typ "single": eine Kamera. Typ "pip": Hauptbild plus kleines Bild. Die Pipeline
-    ist ein Text für belacoder, abgeleitet von BELABOX' Standard-Pipeline für RTMP
-    (h265_rtmp_localhost_publish_live_30fps). Das kleine Bild verkleinert der
-    Hardware-Decoder selbst; unser Baustein schreibt es nur in das Hauptbild
-    (lesen wäre auf diesem Chip zu langsam).
-    """
     DEFAULT = {"type": "single", "main": "", "pip": "", "corner": 3, "size_pct": 25, "size_pct2": 25, "size_pct3": 25, "audio": "main",
                "pip2": "", "corner2": 2, "pip3": "", "corner3": 0, "x": 500, "y": 500, "x2": 500, "y2": 500, "x3": 500, "y3": 500, "main_delay_ms": DEFAULT_MAIN_DELAY_MS,
                "pip_delay_ms": DEFAULT_PIP_DELAY_MS, "pip2_delay_ms": DEFAULT_PIP_DELAY_MS,
@@ -1371,7 +1250,7 @@ class PipelineStore:
                 self.cfg.update(json.load(f))
         except (OSError, ValueError):
             pass
-        self.cfg["styles"] = clean_styles(self.cfg.get("styles"))        # ältere Dateien kennen sie noch nicht
+        self.cfg["styles"] = clean_styles(self.cfg.get("styles"))
 
     def save(self):
         tmp = self.path + ".tmp"
@@ -1382,8 +1261,6 @@ class PipelineStore:
         self.write_delay_file()
 
     def write_delay_file(self):
-        """Wert für die laufende Sendekette (liest unser Baustein pbctl alle 0,3 s). Atomar ersetzen. Läuft die Sendekette im Tausch-Betrieb,
-        gilt die Reihenfolge der Kameras beim Aufbau (die Verzögerung gehört zur Kamera, nicht zum Platz)."""
         if self.path == os.devnull:
             return
         d = os.path.join(os.path.dirname(os.path.abspath(self.path)), "main-delay-ms")
@@ -1406,7 +1283,6 @@ class PipelineStore:
 
     @classmethod
     def facecam_slot(cls, c):
-        """Platz der Facecam-Kamera in dieser Einstellung ("main", "pip", "pip2", "pip3") oder None (keine Facecam oder nicht im Bild)."""
         k = c.get("facecam")
         if not k or c.get("type") != "pip":
             return None
@@ -1414,22 +1290,17 @@ class PipelineStore:
 
     @classmethod
     def _facecam_keeps_the_sound(cls, c):
-        """Mit einer Facecam bleibt der Ton bei ihrer Kamera, auch wenn sie durch einen Tausch an einen anderen Platz wandert (Hauptbild oder ein anderes
-        kleines Bild). Eine manuell gewählte Tonquelle gilt bis zum nächsten Tausch. Ohne Facecam ändert sich nichts: der Ton bleibt am Platz, bei
-        "Hauptbild" folgt er dem wechselnden Hauptbild. Eine deaktivierte Kamera ist nie die Tonquelle."""
         if not c.get("facecam"):
             return
         slot = cls.facecam_slot(c)
         if slot is None:
-            c["facecam"] = ""                                                                  # die Kamera ist nicht mehr im Bild
+            c["facecam"] = ""
         elif slot != "main" and c.get(slot) in (c.get("inactive") or []):
             c["audio"] = "main"
         else:
             c["audio"] = slot
 
     def set_facecam(self, slot):
-        """Das kleine Bild wählen, dessen Kamera die Facecam ist ("" = keine). Gespeichert wird die Kamera, nicht der Platz: Sie behält den Ton auch nach einem
-        Tausch. Gibt die Tonquelle zurück, die jetzt gilt ("main" ohne Facecam, sonst der Platz der Kamera)."""
         if slot not in ("", "pip", "pip2", "pip3"):
             raise ValueError("Facecam: eines der kleinen Bilder oder keine")
         with self.lock:
@@ -1449,8 +1320,6 @@ class PipelineStore:
             return slot or "main"
 
     def _carry_facecam(self, new):
-        """Die Facecam einer neu gespeicherten Einstellung: Sie folgt ihrem Platz (wer das kleine Bild mit einer anderen Kamera belegt, bekommt dort die neue
-        Facecam); steht ihre Kamera gerade im Hauptbild (nach einem Tausch), bleibt sie, solange sie im Bild ist."""
         old = self.cfg.get("facecam")
         if not old or new.get("type") != "pip":
             return ""
@@ -1461,10 +1330,6 @@ class PipelineStore:
         return old if slot == "main" and old in here else ""
 
     def swap_main_pip(self, with_key=None):
-        """Hauptbild gegen eine Kamera tauschen, die gerade als kleines Bild im Bild ist (Szenenwechsel, Stufe 1). Ohne Angabe
-        das erste kleine Bild. Kamera und Verzögerung bleiben beisammen (die Verzögerung gehört zur Kamera); Ecke, Größe,
-        Position und die Wahl des Tons (Hauptbild oder kleines Bild) bleiben am Platz. Wahr, wenn dabei ein ausgeblendetes
-        kleines Bild eingeblendet wurde."""
         with self.lock:
             c = self.cfg
             if c.get("type") != "pip" or not c.get("pip") or not c.get("main"):
@@ -1477,14 +1342,13 @@ class PipelineStore:
             dk = self.SLOT_DELAY[slot]
             c["main"], c[slot] = c[slot], c["main"]
             c["main_delay_ms"], c[dk] = c.get(dk, 0), c.get("main_delay_ms", 0)
-            if c.get("inactive"):                                                    # die Hauptkamera ist nie deaktiviert
+            if c.get("inactive"):
                 rest = [k for k in c["inactive"] if k != c["main"]]
                 if rest:
                     c["inactive"] = rest
                 else:
                     c.pop("inactive")
             self._facecam_keeps_the_sound(c)
-            # "Ausgeblendet" gehört zur Kamera: die bisherige Hauptkamera war sichtbar, also ist ihr kleines Bild nach dem Tausch sichtbar
             styles = clean_styles(c.get("styles"))
             idx = STYLE_SLOTS[list(self.SLOT_DELAY).index(slot)]
             shown = not styles[idx]["visible"]
@@ -1506,7 +1370,7 @@ class PipelineStore:
                "pip_delay_ms": DEFAULT_PIP_DELAY_MS, "pip2_delay_ms": DEFAULT_PIP_DELAY_MS,
                "pip3_delay_ms": DEFAULT_PIP_DELAY_MS, "auto_failover": req.get("auto_failover", True) is not False, "swap_cams": 0,
                "always_ready": t == "pip" and req.get("always_ready") is True}
-        cfg["styles"] = clean_styles(req.get("styles"), self.cfg.get("styles"), strict=True)       # Deckkraft, Beschnitt, Rahmen je kleinem Bild
+        cfg["styles"] = clean_styles(req.get("styles"), self.cfg.get("styles"), strict=True)
         if t == "pip":
             try:
                 swap = int(req.get("swap_cams", 0) or 0)
@@ -1520,7 +1384,6 @@ class PipelineStore:
                 raise ValueError("Kleines Bild: eine andere vorhandene Kamera wählen")
             try:
                 corner, pct = int(req.get("corner", 3)), int(req.get("size_pct", 25))
-                # Größe je kleinem Bild; eine Anfrage ohne die Werte für Bild 2 und 3 (älterer Client) gibt allen die Größe von Bild 1
                 pct2, pct3 = int(req.get("size_pct2", pct)), int(req.get("size_pct3", pct))
             except (TypeError, ValueError):
                 raise ValueError("Ecke und Größe müssen Zahlen sein")
@@ -1576,7 +1439,7 @@ class PipelineStore:
         pips = {cfg.get(k) for k in ("pip", "pip2", "pip3")} - {""}
         old = req.get("inactive") if "inactive" in req else self.cfg.get("inactive", [])
         inactive = list(dict.fromkeys(k for k in (old if isinstance(old, list) else []) if isinstance(k, str) and k in pips))[:3]
-        if t == "pip" and inactive:                                                 # deaktivierte Kameras (Issue #19); ohne sie fehlt der Schlüssel
+        if t == "pip" and inactive:
             cfg["inactive"] = inactive
         fc = self._carry_facecam(cfg)
         if fc:
@@ -1586,7 +1449,6 @@ class PipelineStore:
             self.save()
 
     def set_active(self, key, active):
-        """Eine Kamera deaktivieren (sie springt bei Ausfall des Hauptbildes nicht als Ersatz ein) oder wieder aktivieren. Nur kleine Bilder."""
         if not isinstance(active, bool) or not isinstance(key, str) or not KEY_RE.match(key):
             raise ValueError("Kamera oder Zustand ungültig")
         with self.lock:
@@ -1608,8 +1470,6 @@ class PipelineStore:
 
     @classmethod
     def _safe_cfg(cls, c):
-        """Zahlenfelder zu Zahlen in festen Bereichen zwingen. build() läuft über pipbox_send auch als root, und die
-        Datei pipeline.json gehört dem Benutzer pipbox: ein eingeschleuster Text darf nie in den Pipeline-Text gelangen."""
         out = dict(c)
 
         def num(k, lo, hi):
@@ -1621,7 +1481,7 @@ class PipelineStore:
         for k in ("corner", "corner2", "corner3"):
             num(k, 0, len(PIP_CORNERS) - 1)
         num("size_pct", SIZE_MIN, SIZE_MAX)
-        for k in ("size_pct2", "size_pct3"):                  # ältere Dateien kennen sie nicht: dann gilt die Größe von Bild 1
+        for k in ("size_pct2", "size_pct3"):
             if k not in out:
                 out[k] = out["size_pct"]
             num(k, SIZE_MIN, SIZE_MAX)
@@ -1644,7 +1504,6 @@ class PipelineStore:
 
     @classmethod
     def _layout(cls, c):
-        """Welche kleinen Bilder wirklich dabei sind: (pip, pip2, pip3, multi). c ist eine geprüfte Einstellung (_safe_cfg)."""
         pip = c["type"] == "pip" and bool(KEY_RE.match(c.get("pip", "")))
         pip2 = bool(pip and c.get("pip2") and KEY_RE.match(c["pip2"]) and c.get("corner2") in range(len(PIP_CORNERS))
                     and (c["corner2"] != c["corner"] or c["corner"] == FREE))
@@ -1655,11 +1514,6 @@ class PipelineStore:
 
     @classmethod
     def swap_plan(cls, cfg):
-        """Tausch ohne Unterbrechung (Hauptbild gegen eine Kamera tauschen, ohne den Encoder neu zu starten): Plan oder None.
-        Jede Kamera der Tauschgruppe bekommt zwei Zweige (groß und klein), ein Umschalter wählt das Hauptbild. Gruppe: Hauptbild und
-        erstes kleines Bild (swap_cams = 2) oder alle (4). cams: Kameras in der Reihenfolge des Aufbaus (Hauptbild, kleine Bilder 1 bis 3);
-        state/line: Anfangszustand (Hauptkamera, dann Kamera an Stelle 1 bis 3, 15 = keine), audio_pos: -1 Ton folgt dem Hauptbild,
-        0 bis 2 Ton der Kamera an dieser Stelle; asel: Ton läuft ebenfalls über einen Umschalter."""
         c = cls._safe_cfg(cfg)
         if c["type"] != "pip" or c["swap_cams"] not in (2, 4) or not KEY_RE.match(c.get("main", "")) or not plugin_swap():
             return None
@@ -1680,13 +1534,8 @@ class PipelineStore:
 
     @classmethod
     def always_plan(cls, cfg):
-        """Plan für "alle Kameras immer bereit" (Issue #19) oder None. Jede Kamera hat einen Platz (0 = Hauptbild beim Aufbau, 1 bis 3 = kleine Bilder), an
-        dem ein Zubringer (pipbox_always.py) ihren Stream aus dem RTMP-Server weiterreicht; die Sendekette selbst hat nie eine Quelle, die ausfällt. Alle Kameras
-        sind in der Tauschgruppe und alle Töne laufen über den Ton-Umschalter. cams: die Kameras beim Aufbau; ein Kamerawechsel an einem Platz braucht keinen
-        Neustart (der Zubringer holt dann den Stream der neuen Kamera)."""
         c = cls._safe_cfg(cfg)
         if pipbox_live.enabled(c) and KEY_RE.match(c.get("main", "")) and cls._layout(c)[0]:
-            # Engine Compositor: keine Zubringer, kein pbpipsel; alle Änderungen gehen im Betrieb über den Steuerkanal von belacoder
             cams = [k for k in (c["main"], c.get("pip", ""), c.get("pip2", ""), c.get("pip3", "")) if k]
             if len(set(cams)) != len(cams):
                 return None
@@ -1711,7 +1560,6 @@ class PipelineStore:
 
     @classmethod
     def always_blocker(cls, cfg):
-        """Warum "alle Kameras immer bereit" trotz Schalter nicht gilt (Text für die Anzeige), sonst None. Die Sendung läuft dann im normalen Modus weiter."""
         c = cls._safe_cfg(cfg)
         if c["type"] != "pip" or c.get("always_ready") is not True or cls.always_plan(cfg):
             return None
@@ -1725,8 +1573,6 @@ class PipelineStore:
 
     @classmethod
     def view_values(cls, cfg):
-        """Ansicht im Betrieb aus der Einstellung: (ausgeblendet, Tonquelle). ausgeblendet: Bit 0 bis 2 = kleines Bild an Stelle 1 bis 3 ist
-        ausgeblendet; Tonquelle: -1 Hauptbild, 0 bis 2 das kleine Bild an dieser Stelle (so, wie der Baustein es versteht)."""
         c = cls._safe_cfg(cfg)
         hide = 0
         for i, k in enumerate(STYLE_SLOTS):
@@ -1742,8 +1588,6 @@ class PipelineStore:
         return f"{hide} {audio} {1 if mute else 0}"
 
     def set_view(self, visible=None, audio=None):
-        """Sichtbarkeit der kleinen Bilder (visible: {"1": bool, ...}) und Tonquelle (audio: main, pip, pip2, pip3) ändern und speichern.
-        Gibt (ausgeblendet, Tonquelle) der neuen Einstellung zurück. Nur bei Bild-in-Bild."""
         with self.lock:
             c = self.cfg
             if c.get("type") != "pip":
@@ -1772,8 +1616,6 @@ class PipelineStore:
 
     @staticmethod
     def swap_line(slots, cams, group):
-        """Umschaltzeile für die laufende Sendekette aus der Belegung (Hauptbild, kleine Bilder 1 bis 3; "" = leer) und den Kameras
-        beim Aufbau. Der Tausch geht nur innerhalb der Gruppe; alles andere bleibt am Platz. None, wenn das nicht passt."""
         slots = [(s or "") for s in slots] + [""] * (4 - len(slots))
         if len(cams) < 2 or group < 2 or group > len(cams) or slots[len(cams):] != [""] * (4 - len(cams)):
             return None
@@ -1785,8 +1627,6 @@ class PipelineStore:
 
     @staticmethod
     def delay_values(cfg, base=None):
-        """Verzögerungen in ms für die Steuerdatei, in der Reihenfolge der Kameras beim Aufbau der Sendekette (base: deren Schlüssel;
-        sonst die Reihenfolge der Einstellung). Die Verzögerung gehört zur Kamera, nicht zum Platz."""
         if cfg.get("type") != "pip":
             return [0, 0, 0, 0]
         slots = ("main", "pip", "pip2", "pip3")
@@ -1801,7 +1641,6 @@ class PipelineStore:
         return vals
 
     def build(self, cfg=None, rtmp_port=1935, rtmp_app="publish"):
-        """Pipeline-Text für belacoder. Die Schlüssel sind geprüft (a-z, 0-9, -, _)."""
         c = self._safe_cfg(cfg or self.cfg)
         if not KEY_RE.match(c.get("main", "")):
             return ""
@@ -1817,9 +1656,6 @@ class PipelineStore:
             return f" {kx}={int(cfg_.get(kx, 500))} {ky}={int(cfg_.get(ky, 500))}"
         sty = self._style_props(c)
         out = []
-        # Hauptbild (samt Ton) verzögern: die kleinen Bilder treffen dann zeitlich besser auf das Hauptbild.
-        # Die Wartezeit sitzt NACH dem Auspacken (dort haben die Pakete die Zeitstempel der Kamera) und gilt für
-        # Bild und Ton gleich, damit beide zueinander synchron bleiben (gemessen: Abweichung unter einem Bild).
         delay = 0
         if c["type"] == "pip":
             try:
@@ -1845,8 +1681,6 @@ class PipelineStore:
             return self._build_dual(c, plan, base, small, xy, pip2, pip3, sty)
         out.append(f"rtmpsrc location={base}/{c['main']} do-timestamp=true !\nflvdemux name=demux\n")
         if pip:
-            # Kein videorate/textoverlay: sie halten das Hauptbild fest, dann wäre das Hineinschreiben
-            # nicht mehr in-place (gemessen: bremst). Die Kameras liefern ohnehin 30 fps.
             v = (f"demux.video !\n{qv} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
                  "video/x-raw,format=NV12 !\n"
                  f"pbpipmix name=pipmix corner={c['corner']}{xy(c, 'x', 'y', c['corner'])} width-pct={c['size_pct']}{sty(0, 1)}"
@@ -1860,7 +1694,7 @@ class PipelineStore:
         v += ("mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
               f"h265parse config-interval=-1 ! {q} ! mux.\n")
         out.append(v)
-        vol = "volume name=avol ! " if pip and plugin_view() else ""             # Stummschalten im Betrieb (pbctl, siehe gst/gstpbpip.c)
+        vol = "volume name=avol ! " if pip and plugin_view() else ""
         opus = f"audioconvert ! audioresample quality=10 sinc-filter-mode=1 ! {vol}opusenc bitrate=128000 ! opusparse"
         audio_sel = c.get("audio", "main") if pip else "main"
         if audio_sel == "pip2" and not pip2 or audio_sel == "pip3" and not pip3 or audio_sel not in ("main", "pip", "pip2", "pip3"):
@@ -1878,7 +1712,6 @@ class PipelineStore:
         else:
             out.append("demux.audio !\nqueue max-size-buffers=4 leaky=downstream ! fakesink sync=false async=false\n")
         if pip:
-            # Jedes kleine Bild hat seine eigene Größe (Prozent der Bildbreite); der Hardware-Decoder verkleinert auf genau diese Größe
             (w, h), (w2, h2), (w3, h3) = pip_size(c["size_pct"]), pip_size(c["size_pct2"]), pip_size(c["size_pct3"])
             out.append(f"rtmpsrc location={base}/{c['pip']} do-timestamp=true !\nflvdemux name=pdemux\n")
             out.append(f"pdemux.video !\n{small('pipq_v', 'pip_delay_ms')} !\n"
@@ -1898,7 +1731,6 @@ class PipelineStore:
                 out.append(small_audio("p3demux", "pip3"))
             out.append(small_audio("pdemux", "pip"))
         if pip:
-            # Steuerung: liest die Verzögerung aus /var/lib/pipbox/main-delay-ms und stellt die beiden Queues im Betrieb um
             out.append("pbctl name=pbctl video-queue=mainq_v audio-queue=mainq_a pip-queue=pipq_v"
                        + (" pip2-queue=pip2q_v" if pip2 else "") + (" pip3-queue=pip3q_v" if pip3 else "") + "\n")
         out.append("mpegtsmux name=mux !\nappsink name=appsink\n")
@@ -1906,8 +1738,6 @@ class PipelineStore:
 
     @staticmethod
     def _style_props(c):
-        """Funktion (Stelle 0 bis 2, Nummer der Eigenschaft) -> Text " styleN=\"...\"" für pbpipmix, leer bei Standardaussehen oder wenn der
-        installierte Baustein die Eigenschaft nicht kennt."""
         texts = [style_text(c["styles"][k]) for k in STYLE_SLOTS] if plugin_style() else ["", "", ""]
 
         def sty(pos, n):
@@ -1915,16 +1745,9 @@ class PipelineStore:
         return sty
 
     def _build_dual(self, c, plan, base, small, xy, pip2, pip3, sty):
-        """Pipeline für den Tausch ohne Unterbrechung (siehe swap_plan). Jede Kamera der Gruppe liefert ihr Bild zweimal: groß in den
-        Umschalter vsel (Hauptbild), klein in einen eigenen Platz des Bild-in-Bild (Platz = Kamera + 3 mod 4: Kamera 0 -> 3, 1 -> 0 ...).
-        Welche Kamera gerade Hauptbild ist und wo die anderen kleiner erscheinen, schreibt vsel in jedes Bild; pbpipmix liest es dort.
-        Der Ton läuft bei Bedarf über einen zweiten Umschalter asel, den pbctl im selben Schritt mitstellt. Die Wartezeit gehört je
-        Kamera zu allen ihren Warteschlangen (vfq = Bild groß, vsq = Bild klein, aq = Ton)."""
         q = self.Q
         cams, group, ap = plan["cams"], plan["group"], plan["audio_pos"]
-        always = bool(plan.get("always"))          # Eingänge von den Zubringern (udpsrc, enden nie) statt rtmpsrc ! flvdemux
-        # Größe des kleinen Bildes je Kamera: die der Stelle, an der sie beim Aufbau steht (Stelle 1 bis 3); die Hauptkamera bekommt die der Stelle 1.
-        # Beim Tausch folgt die Größe der Kamera, nicht der Stelle (der Decoder verkleinert fest auf diese Größe).
+        always = bool(plan.get("always"))
         sizes = [pip_size(c["size_pct"]), pip_size(c["size_pct2"]), pip_size(c["size_pct3"])]
         out = []
         fillv = f' fill-caps="{FEED_FILL_VIDEO}"' if always else ""
@@ -1937,7 +1760,7 @@ class PipelineStore:
                    "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
                    "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                    f"h265parse config-interval=-1 ! {q} ! mux.\n")
-        vol = "volume name=avol ! " if plugin_view() else ""                      # Stummschalten im Betrieb (pbctl, siehe gst/gstpbpip.c)
+        vol = "volume name=avol ! " if plugin_view() else ""
         opus = f"audioconvert ! audioresample quality=10 sinc-filter-mode=1 ! {vol}opusenc bitrate=128000 ! opusparse"
         mute = "queue max-size-buffers=4 leaky=downstream ! fakesink sync=false async=false\n"
         queues = []
@@ -1964,7 +1787,7 @@ class PipelineStore:
                 out.append(f"{vsrc}{small_chain}")
             qa = f"{q} name=aq{i}" + (f" min-threshold-time={d * 1000000}" if d else "")
             if plan["asel"] and i < group:
-                if always:                                           # der Zubringer liefert den Ton schon als PCM (48 kHz, Stereo)
+                if always:
                     out.append(f'udpsrc port={aport} address=127.0.0.1 buffer-size=1048576 do-timestamp=true caps="{FEED_AUDIO_CAPS}" !\n{qa} !\nasel.sink_{i}\n')
                 else:
                     out.append(f"dm{i}.audio !\n{qa} !\naacparse ! avdec_aac ! audioconvert ! audioresample quality=10 sinc-filter-mode=1 !\n"
@@ -1992,8 +1815,6 @@ class PipelineStore:
 
 
 def view_only_change(a, b):
-    """Unterscheiden sich zwei Bildaufbau-Einstellungen nur in "Bild einblenden" (je Stelle) und der Tonquelle? Nur das lässt sich in der laufenden
-    Sendekette ohne Neustart umschalten."""
     def norm(c):
         c = dict(c)
         c.pop("facecam", None)
@@ -2006,9 +1827,6 @@ def view_only_change(a, b):
 
 
 def always_compatible(a, b):
-    """Unterscheiden sich zwei Bildaufbau-Einstellungen nur in Dingen, die die Sendekette im Modus "alle Kameras immer bereit" ohne Neustart übernimmt?
-    Das sind: welche Kamera an welchem Platz ist (die Zahl der kleinen Bilder muss gleich bleiben), Verzögerungen, Tonquelle, "Bild einblenden",
-    deaktivierte Kameras, automatisches Umschalten. Alles andere (Art, Ecken, Größen, Stile, Schalter selbst) ändert den Aufbau."""
     def norm(c):
         c = dict(c)
         for k in ("main", "pip", "pip2", "pip3"):
@@ -2022,15 +1840,13 @@ def always_compatible(a, b):
             c["styles"][k] = dict(c["styles"][k], visible=True)
         return c
     if pipbox_live.supported() and a.get("type") == "pip" and b.get("type") == "pip" and a.get("always_ready") is True and b.get("always_ready") is True:
-        return True                       # Engine Compositor: Zuordnung, Größen, Ecken, Stile, Zuschnitt, Rahmen, Verzögerung, Ton: alles live
+        return True
     return a.get("type") == "pip" and b.get("type") == "pip" and a.get("always_ready") is True and b.get("always_ready") is True and norm(a) == norm(b)
 
 
 class SendControl:
-    """Live gehen / beenden. Die eigentliche Sendekette läuft als Root-Dienst (pipbox-send);
-    wir stellen nur Zustand und Voraussetzungen dar und legen eine Anforderungsdatei ab."""
     STATUS = "/run/pipbox-send/status.json"
-    SWAP_WAIT = 2.0               # so lange auf die Rückmeldung des Bausteins warten (Sekunden)
+    SWAP_WAIT = 2.0
 
     def __init__(self, state_dir, srtla, pipeline, cams, demo=False):
         self.req = os.path.join(state_dir, "send-request")
@@ -2040,14 +1856,13 @@ class SendControl:
         if self.demo:
             return False
         hit = getattr(self, "_act", None)
-        if hit is not None and time.monotonic() - hit[0] < 1.5:      # mehrere Abfragen pro Takt teilen sich ein systemctl
+        if hit is not None and time.monotonic() - hit[0] < 1.5:
             return hit[1]
         try:
             r = subprocess.run(["systemctl", "is-active", "pipbox-send.service"],
                                capture_output=True, text=True, timeout=4)
             val = r.stdout.strip() in ("active", "activating", "deactivating")
         except (OSError, subprocess.TimeoutExpired):
-            # systemctl antwortet unter Last manchmal nicht in 4 s: das ist kein "Sendung aus". Der Sende-Dienst schreibt seinen Zustand alle 2 s.
             try:
                 with open(self.STATUS) as f:
                     st = json.load(f)
@@ -2065,8 +1880,6 @@ class SendControl:
             return {}
 
     def measured_fps(self):
-        """Von belacoder gemessene Bildrate je Kamera {Schlüssel: fps} (nur bei laufender Sendekette mit der Engine "Alle Kameras immer bereit"). Für Kameras, die ihre Bildrate nicht
-        melden (Handys); der Sende-Dienst schreibt sie alle 2 Sekunden in seine Statusdatei."""
         if self.demo:
             return {}
         d = self._detail()
@@ -2078,8 +1891,6 @@ class SendControl:
             return {}
 
     def live_fast(self):
-        """Läuft die Sendung? Billig (eine kleine Datei lesen, kein systemctl, keine Prozessliste): der Sende-Dienst schreibt seinen Zustand alle 2 Sekunden. Für die Statistik,
-        die jede Sekunde fragt; status() prüft dagegen vieles mehr."""
         if self.demo:
             return False
         st = self._detail()
@@ -2089,8 +1900,6 @@ class SendControl:
             return False
 
     def picture(self):
-        """Welche eingestellte Kamera ist gerade im Bild? {Schlüssel: ("an"|"wartet"|"aus", Sekunden bis zur Aufnahme)}
-        oder None, wenn nicht gesendet wird oder keine Automatik läuft."""
         if not self._active():
             return None
         fo = self._detail().get("failover")
@@ -2119,9 +1928,8 @@ class SendControl:
             live = {c["key"]: c.get("state") for c in self.cams.listing("")}
             keys = [k for k in (cfg["main"], cfg.get("pip", ""), cfg.get("pip2", ""), cfg.get("pip3", "")) if k]
             if PipelineStore.always_plan(cfg) and PipelineStore.always_plan(cfg).get("live"):
-                pass                                  # Engine "immer bereit": die Sendung startet auch ohne Kamera, jede Kamera kommt dazu, sobald sie sendet
+                pass
             elif cfg.get("auto_failover", True) and len(set(keys)) > 1:
-                # Automatisch umschalten: es genügt, wenn mindestens eine Kamera sendet (eine deaktivierte nur, wenn sie das Hauptbild ist)
                 off = set(cfg.get("inactive") or [])
                 if not any(live.get(k) == "live" for k in keys if k == cfg["main"] or k not in off):
                     r.append("Es sendet nur eine deaktivierte Kamera" if any(live.get(k) == "live" for k in keys) else "Keine Kamera sendet gerade")
@@ -2151,7 +1959,7 @@ class SendControl:
         cur = srtla_signature(self.srtla.data)
         out["pending"] = [lab for k, lab in PENDING_LABELS if isinstance(applied, dict) and k in applied and applied[k] != cur[k]]
         running = d.get("buffer_ms") if active else None
-        if isinstance(running, int) and not isinstance(running, bool):                       # Verzögerungen geändert: der Puffer der laufenden Sendekette passt nicht mehr (hilft nur ein Neustart)
+        if isinstance(running, int) and not isinstance(running, bool):
             need = pipbox_live.buffer_need_ms(PipelineStore._safe_cfg(self.pipeline.cfg))
             if pipbox_live.buffer_mismatch(running, need):
                 out["pending"].append("Verzögerung")
@@ -2159,8 +1967,8 @@ class SendControl:
         if not active and belacoder_running():
             out["reasons"].append("Es läuft schon ein belacoder (z. B. über die BELABOX-Oberfläche)")
         out["no_layout"] = not active and not self.pipeline.cfg.get("main")
-        out["no_server"] = not active and not pub["selected"]            # noch kein SRTLA-Server eingetragen oder ausgewählt: Live ist grau, die Live-Karte sagt es und führt zum Server
-        out["net_conflict"] = net_conflict()                                   # derselbe Adressbereich bei zwei verschiedenen Geräten (nicht: LAN und WLAN am selben Router): kleine Warnung in der Live-Karte, auch während der Sendung
+        out["no_server"] = not active and not pub["selected"]
+        out["net_conflict"] = net_conflict()
         out["can_start"] = not active and not out["reasons"]
         return out
 
@@ -2180,7 +1988,7 @@ class SendControl:
         elif action != "stop":
             raise ValueError("Unbekannte Aktion")
         if action == "start" and not self.demo:
-            self.reset_mute()                      # eine neue Sendung beginnt nie stumm
+            self.reset_mute()
         self._act = None
         if self.demo:
             return
@@ -2190,19 +1998,14 @@ class SendControl:
 
 
     def delay_live(self):
-        """Hat die laufende Sendekette den Steuerbaustein (Verzögerung des Hauptbildes ohne Neustart änderbar)?"""
         d = self._detail()
-        # Im Notbetrieb (Anordnung weicht von der Einstellung ab) passen die Regler nicht zu den Plätzen: neu starten
         return bool(self._active() and d.get("delay_live") and not (d.get("failover") or {}).get("degraded"))
 
     def delay_live_pips(self):
-        """Dasselbe für die Verzögerung der kleinen Bilder (neuere Version des Steuerbausteins)."""
         d = self._detail()
         return bool(self._active() and d.get("delay_live_pips") and not (d.get("failover") or {}).get("degraded"))
 
     def swap_live(self):
-        """Tausch des Hauptbilds in der laufenden Sendekette übernehmen lassen, ohne Neustart (nur im Tausch-Betrieb und wenn die
-        Anordnung der Kameras noch zum Aufbau passt). Wahr, wenn der Baustein den neuen Zustand zurückgemeldet hat; sonst bleibt der Neustart."""
         if self.demo or not self._active():
             return False
         d = self._detail()
@@ -2216,7 +2019,7 @@ class SendControl:
             if line is None:
                 return False
             live = {c["key"]: c.get("state") for c in self.cams.listing("")}
-            if live.get(cfg.get("main")) != "live":          # die neue Hauptkamera sendet nicht: lieber neu starten (Notbetrieb)
+            if live.get(cfg.get("main")) != "live":
                 return False
         except (TypeError, ValueError, KeyError):
             return False
@@ -2231,7 +2034,7 @@ class SendControl:
         except OSError:
             return False
         end = time.monotonic() + self.SWAP_WAIT
-        while time.monotonic() < end:                       # der Baustein liest alle 0,1 s und meldet den Zustand zurück
+        while time.monotonic() < end:
             try:
                 if os.stat(SWAP_STATE).st_mtime >= t0 - 0.2:
                     with open(SWAP_STATE) as f:
@@ -2243,7 +2046,6 @@ class SendControl:
         return False
 
     def reset_mute(self):
-        """Stumm gilt nur für die laufende Sendung: vor dem Start die Ansicht-Datei ohne Stumm neu schreiben (der Sender liest sie beim Aufbau)."""
         folder = os.path.dirname(self.req)
         try:
             tmp = os.path.join(folder, VIEW_FILE + ".tmp")
@@ -2255,31 +2057,25 @@ class SendControl:
             pass
 
     def view_live(self):
-        """Läuft die Sendekette mit der Ansicht im Betrieb (kleine Bilder ein-/ausblenden und stumm ohne Neustart)? Im Notbetrieb (Anordnung weicht
-        von der Einstellung ab) passen die Stellen nicht zu den Kameras: dann nicht."""
         if self.demo:
             return True
         d = self._detail()
         return bool(self._active() and d.get("view_live") and not (d.get("failover") or {}).get("degraded"))
 
     def always_live(self):
-        """Läuft die Sendekette im Modus "alle Kameras immer bereit" (Kamerawechsel und Rückkehr ohne Neustart)?"""
         if self.demo:
             return False
         return bool(self._active() and self._detail().get("always"))
 
     def view_degraded(self):
-        """Läuft die Sendung gerade im Notbetrieb (weniger Kameras als eingestellt)?"""
         if self.demo:
             return False
         return bool(self._active() and (self._detail().get("failover") or {}).get("degraded"))
 
     def audio_live(self):
-        """Dasselbe für die Tonquelle (braucht den Ton-Umschalter der laufenden Sendekette)."""
         return True if self.demo else bool(self.view_live() and self._detail().get("audio_live"))
 
     def view_state(self):
-        """Was der Baustein gerade eingestellt hat: {"hide": Bits, "audio": -1..2, "mute": bool} oder None."""
         if self.demo:
             return getattr(self, "_fake_view", None)
         if not self._active():
@@ -2291,9 +2087,6 @@ class SendControl:
         return {"hide": hide, "audio": audio, "mute": bool(mute)}
 
     def footer(self):
-        """Angaben für die Fußleiste am Handy (Issue #19): die Kameras im Bild in der Reihenfolge der Kameraliste (so springen die Knöpfe nach einem
-        Tausch nicht), welche Hauptbild und welche ausgeblendet ist, und die Tonquelle samt Stumm. Während der Sendung gilt, was der Baustein
-        meldet, sonst die Einstellung. None, wenn die Art nicht Bild-in-Bild ist."""
         c = PipelineStore._safe_cfg(self.pipeline.cfg)
         pip, pip2, pip3, _ = PipelineStore._layout(c)
         if c["type"] != "pip" or not c.get("main") or not pip:
@@ -2307,7 +2100,7 @@ class SendControl:
             (hide, apos), mute = PipelineStore.view_values(c), False
         src = {v: k for k, v in PipelineStore.AUDIO_POS.items()}.get(apos, "main")
         if not place.get(src) or (src != "main" and place[src] in (c.get("inactive") or [])):
-            src = "main"                                  # eine deaktivierte Kamera ist nie die Tonquelle
+            src = "main"
         slot_of = {}
         for i, k in enumerate(order):
             if place[k]:
@@ -2318,10 +2111,9 @@ class SendControl:
                  "slot": slot_of[k], "main": slot_of[k] == 0, "hidden": slot_of[k] > 0 and bool(hide >> (slot_of[k] - 1) & 1),
                  "inactive": slot_of[k] > 0 and k in (c.get("inactive") or [])} for k in keys]
         off = set(c.get("inactive") or [])
-        options = [k for k in order if place[k] and (k == "main" or place[k] not in off)]      # deaktivierte Kameras sind keine Tonquelle (ausgeblendete schon)
-        starting = self._detail().get("state") in ("starting", "restarting")      # noch keine Meldung der Kameras: alle Knöpfe lassen (die Leiste springt sonst beim Start)
+        options = [k for k in order if place[k] and (k == "main" or place[k] not in off)]
+        starting = self._detail().get("state") in ("starting", "restarting")
         if self.always_live() and ((self._detail().get("failover") or {}).get("live") or not starting):
-            # "alle Kameras immer bereit": Knöpfe und Tonwahl nur für Kameras, deren Bilder gerade ankommen; das Hauptbild ist, wer es jetzt wirklich ist
             fo = self._detail().get("failover") or {}
             live = set(fo.get("live") or [])
             effmain = fo.get("main")
@@ -2338,8 +2130,6 @@ class SendControl:
                           "next": nxt}}
 
     def apply_view(self, hide, audio, mute):
-        """Ansicht in die laufende Sendekette übernehmen, ohne Neustart. Wahr, wenn der Baustein den neuen Zustand zurückgemeldet hat (so, wie er
-        wirklich gilt); sonst bleibt der Neustart. Die Zeile schreibt dieser Dienst, den Zustand meldet pbctl zurück."""
         line = f"{int(hide)} {int(audio)} {1 if mute else 0}"
         if self.demo:
             self._fake_view = {"hide": int(hide), "audio": int(audio), "mute": bool(mute)}
@@ -2357,12 +2147,12 @@ class SendControl:
         except OSError:
             return False
         end = time.monotonic() + self.SWAP_WAIT
-        while time.monotonic() < end:                       # der Baustein liest alle 0,1 s und meldet den Zustand zurück
+        while time.monotonic() < end:
             try:
                 if os.stat(VIEW_STATE).st_mtime >= t0 - 0.2:
                     with open(VIEW_STATE) as f:
                         if f.read().split() == line.split():
-                            print(f"Ansicht live umgestellt ({line}), bestätigt nach {time.time() - t0:.2f} s", flush=True)    # im Journal: Zeit des Wechsels
+                            print(f"Ansicht live umgestellt ({line}), bestätigt nach {time.time() - t0:.2f} s", flush=True)
                             return True
             except OSError:
                 pass
@@ -2371,9 +2161,6 @@ class SendControl:
         return False
 
     def change_view(self, visible=None, audio=None, mute=None):
-        """Sichtbarkeit, Tonquelle und Stumm ändern. Speichert Sichtbarkeit und Tonquelle in der Einstellung, schaltet in der laufenden Sendung ohne
-        Neustart um und startet nur dann neu, wenn der Baustein das nicht kann. Stumm gilt nur für die laufende Sendung (ohne Sendung nichts zu tun).
-        Gibt {"live": ob ohne Neustart, "restarted": ob neu gestartet, "note": Text, "view": Zustand} zurück."""
         if mute is not None and not isinstance(mute, bool):
             raise ValueError("Stumm: ja oder nein")
         if visible is None and audio is None and mute is None:
@@ -2393,8 +2180,6 @@ class SendControl:
             if self.apply_view(hide, aud, new_mute):
                 return {"live": True, "restarted": False, "note": "", "view": self.view_state()}
         if self.view_degraded():
-            # Notbetrieb (weniger Kameras als eingestellt): live geht nichts um, und ein Neustart bräche die Sendung ab. Gespeichert gilt es,
-            # sobald die Kameras zurück sind und die Sendung mit dem vollen Bild läuft.
             print("Ansicht im Notbetrieb gespeichert, kein Neustart", flush=True)
             if mute is not None and visible is None and audio is None:
                 raise ValueError("Stumm schalten geht im Notbetrieb nicht. Es gilt wieder, sobald alle Kameras da sind.")
@@ -2405,9 +2190,6 @@ class SendControl:
         return {"live": False, "restarted": restarted, "note": note, "view": None}
 
     def restart_if_live(self):
-        """Nach geänderter Pipeline: läuft die Sendekette, wird sie kurz neu gestartet.
-        Vorher wird geprüft, ob die neue Pipeline überhaupt starten kann; sonst läuft die alte weiter.
-        Gibt (neu gestartet?, Hinweis) zurück."""
         if not self._active():
             return False, ""
         why = self.reasons()
@@ -2422,20 +2204,14 @@ ROLES = ("main", "pip", "extra")
 
 
 class CameraStore:
-    """RTMP-Kameras: Name, Rolle und Stream-Schlüssel in einer JSON-Datei.
-
-    Die Kamera sendet an rtmp://<Box>:1935/<app>/<Schlüssel>. Ob sie gerade
-    sendet, kommt aus der nginx-rtmp-Statistik (--rtmp-stat-url); ohne diese
-    Adresse ist der Status "unbekannt".
-    """
 
     def __init__(self, path, app, stat_url, demo):
         self.path, self.app, self.stat_url, self.demo = path, app, stat_url, demo
         self.lock = threading.Lock()
         self.cams = []
         self.ipfn = lan_ip
-        self.ifaces = iface_ips     # in Tests ersetzbar
-        self.forgotten = set()      # Schlüssel entfernter Kameras: ein noch sendender Stream wird nicht von selbst wieder aufgenommen
+        self.ifaces = iface_ips
+        self.forgotten = set()
         try:
             with open(path) as f:
                 self.cams = json.load(f)
@@ -2462,7 +2238,6 @@ class CameraStore:
         os.replace(tmp, self.path + ".removed")
 
     def forget(self, key):
-        """Nach "Kamera entfernen": ein Stream mit diesem Schlüssel kommt nicht von selbst wieder in die Liste (Hinzufügen von Hand oder eine neu eingerichtete DJI-Kamera heben das auf)."""
         if key and key not in self.forgotten:
             self.forgotten.add(key)
             self._save_forgotten()
@@ -2498,14 +2273,13 @@ class CameraStore:
             return len(self.cams) != n
 
     def auto_add(self):
-        """Unbekannte, sendende Streams automatisch als Kamera aufnehmen."""
         live = self.live_streams() or {}
         added = []
         with self.lock:
             known = {c["key"] for c in self.cams}
             for key in sorted(live):
                 if key in known or key in self.forgotten or not KEY_RE.match(key) or key.startswith("test-"):
-                    continue   # "test-…" sind Testquellen und gehören nicht in die Kameraliste
+                    continue
                 roles = {c["role"] for c in self.cams}
                 role = "main" if "main" not in roles else "pip" if "pip" not in roles else "extra"
                 cam = {"id": secrets.token_hex(4), "name": f"Kamera {key}", "key": key,
@@ -2517,7 +2291,6 @@ class CameraStore:
         return added
 
     def host_for_iface(self, name):
-        """Adresse der Box in der Verbindung <name> (feste Zweitadresse, sonst die der Schnittstelle) oder None, wenn es sie nicht gibt."""
         for o in self.ifaces():
             if o["iface"] == name:
                 return o.get("cam_ip") or o["ip"]
@@ -2536,7 +2309,7 @@ class CameraStore:
                 if iface:
                     cam["iface"] = iface
                 else:
-                    cam.pop("iface", None)                 # leer: wieder die Hauptverbindung
+                    cam.pop("iface", None)
             if name is not None:
                 name = name.strip()[:40]
                 if not name:
@@ -2555,8 +2328,6 @@ class CameraStore:
             return cam
 
     def swap(self, cam_id, other_id):
-        """Zwei Kameras in der Liste die Plätze tauschen (Issue #32): die Reihenfolge der Kamera-Knöpfe in der Fußleiste folgt der Liste.
-        Hauptbild und kleine Bilder bleiben, wie sie sind (die Zuordnung der Bilder ist eine eigene Einstellung)."""
         with self.lock:
             i = next((n for n, c in enumerate(self.cams) if c["id"] == cam_id), None)
             j = next((n for n, c in enumerate(self.cams) if c["id"] == other_id), None)
@@ -2568,8 +2339,6 @@ class CameraStore:
             return self.cams[j]
 
     def move(self, cam_id, before_id=None):
-        """Eine Kamera an eine andere Stelle der Liste ziehen: direkt vor die Kamera `before_id`, ohne Angabe ans Ende. Alle anderen behalten ihre
-        Reihenfolge; Hauptbild und kleine Bilder bleiben, wie sie sind. Die Liste wird gespeichert, die Reihenfolge der Kamera-Knöpfe in der Fußleiste folgt ihr."""
         with self.lock:
             cam = next((c for c in self.cams if c["id"] == cam_id), None)
             if cam is None:
@@ -2577,7 +2346,7 @@ class CameraStore:
             if before_id is not None and before_id != cam_id and not any(c["id"] == before_id for c in self.cams):
                 raise KeyError(before_id)
             if before_id == cam_id:
-                return cam                                   # auf sich selbst gezogen: nichts zu tun
+                return cam
             rest = [c for c in self.cams if c is not cam]
             at = next((n for n, c in enumerate(rest) if c["id"] == before_id), len(rest))
             rest.insert(at, cam)
@@ -2587,14 +2356,13 @@ class CameraStore:
             return cam
 
     def live_streams(self):
-        """Dict Schlüssel -> {fps, mbit} oder None wenn Statistik nicht lesbar."""
         if self.demo:
             return {c["key"]: {"fps": 30.0, "mbit": round(6 + random.random() * 2, 1)}
                     for i, c in enumerate(self.cams) if i % 3 != 2}
         if not self.stat_url:
             return None
         hit = getattr(self, "_live", None)
-        if hit is not None and time.monotonic() - hit[0] < 1.5:      # mehrere Abfragen pro Takt teilen sich eine Statistik
+        if hit is not None and time.monotonic() - hit[0] < 1.5:
             return hit[1]
         res = self._live_read()
         self._live = (time.monotonic(), res)
@@ -2622,9 +2390,6 @@ class CameraStore:
         return res
 
     def listing(self, host, addr_for=None):
-        """Kameras mit Adresse und Zustand. Die Adresse gilt für die Verbindung der Kamera: DJI-Kameras nach ihrer Karte
-        (addr_for(Schlüssel) -> (Adresse, Verbindung) oder None), andere Kameras nach der gewählten Verbindung (Feld iface),
-        sonst nach der Hauptverbindung (Kameras lösen keine .local-Namen auf, darum immer eine IP-Adresse)."""
         main = self.ipfn()
         live = self.live_streams()
         out = []
@@ -2633,7 +2398,7 @@ class CameraStore:
             via, src, host = None, "main", main
             over = addr_for(c["key"]) if addr_for else None
             if c["key"] == HDMI_KEY:
-                src = "hdmi"                       # das Bild kommt vom HDMI-Eingang der Box: keine Adresse, keine Verbindung zu wählen
+                src = "hdmi"
             elif over and over[0]:
                 host, via, src = over[0], over[1], "dji"
             elif c.get("iface") and self.host_for_iface(c["iface"]):
@@ -2648,26 +2413,12 @@ class CameraStore:
 
 
 SESSION_SECONDS = 12 * 3600
-REMEMBER_SECONDS = 30 * 24 * 3600     # "Angemeldet bleiben": überlebt Updates und Neustarts
+REMEMBER_SECONDS = 30 * 24 * 3600
 MAX_FAILS, FAIL_WINDOW = 5, 300
-MAX_CHECKS = 2            # so viele Passwortprüfungen (je ein node-Prozess mit bcrypt oder PBKDF2) laufen höchstens gleichzeitig
+MAX_CHECKS = 2
 
 
 class Auth:
-    """Ein Passwort für die Oberfläche.
-
-    Auf einer BELABOX gilt das Passwort der belaUI (bcrypt-Hash in deren config.json, nur gelesen). Hat die BELABOX noch keins
-    (frisches Image), wartet die Oberfläche darauf: Es wird zuerst in der BELABOX-Oberfläche festgelegt, hier gibt es dann
-    weder einen Setup-Code noch ein zweites Passwort ("belabox-wartet").
-    Nur ohne belaUI (Entwicklung, Demo): eigenes Passwort. Erster Start: Der Server schreibt einen Setup-Code in
-    <state>/setup-code (Rechte 0600, Besitzer pipbox). Wer den Code kennt, legt im Browser das Passwort fest; danach wird die
-    Codedatei gelöscht. Passwort nur als PBKDF2-HMAC-SHA256-Hash. Ein eigenes Passwort aus einer früheren Version bleibt gültig.
-    Demo (--demo auf dem eigenen Rechner): Das Passwort ist von Anfang an gesetzt (DEMO_PASSWORD, nur im Speicher), ohne Setup-Code;
-    die Anmeldeseite füllt es vor. Nie auf einer Box: dort gilt immer das BELABOX-Passwort.
-    "Angemeldet bleiben": Eine solche Sitzung gilt 30 Tage und übersteht Neustarts der Oberfläche (z. B. nach einem Update). Auf der Platte
-    liegt nur ein SHA-256 des Sitzungsschlüssels (<state>/sessions.json, Rechte 0600) mit der Kennung des Passworts: Ändert sich das
-    Passwort (BELABOX oder eigenes), sind diese Sitzungen ungültig. Ohne Haken bleibt die Sitzung nur im Speicher (12 Stunden).
-    """
 
     BELA_JS = ("const b=require(process.argv[1]);let d='';"
                "process.stdin.on('data',c=>d+=c).on('end',()=>"
@@ -2676,7 +2427,7 @@ class Auth:
     DEMO_PASSWORD = "demo"
 
     def __init__(self, state_dir, bela_config=None, demo=False):
-        self.bela_config = bela_config  # belaUI config.json: BELABOX-Passwort mitbenutzen
+        self.bela_config = bela_config
         self.demo = bool(demo)
         self.dir = state_dir
         self.path = os.path.join(state_dir, "auth.json")
@@ -2695,7 +2446,7 @@ class Auth:
             pass
         self.setup_code = None
         if self.demo and not self.bela_hash():
-            salt = secrets.token_bytes(16)       # Vorschau: Passwort von Anfang an gesetzt, nichts auf der Platte
+            salt = secrets.token_bytes(16)
             self.cfg = {"salt": salt.hex(), "hash": self._hash(self.DEMO_PASSWORD, salt).hex()}
             try:
                 os.remove(self.code_path)
@@ -2708,13 +2459,12 @@ class Auth:
                 f.write(self.setup_code + "\n")
         else:
             try:
-                os.remove(self.code_path)     # ein Code von früher ist nicht mehr nötig
+                os.remove(self.code_path)
             except OSError:
                 pass
 
     def _cred(self):
-        """Kennung des gültigen Passworts: ändert es sich, werden gemerkte Sitzungen ungültig."""
-        h = self.bela_hash() or ("demo" if self.demo else (self.cfg or {}).get("hash")) or ""   # Demo: Salt ist bei jedem Start neu
+        h = self.bela_hash() or ("demo" if self.demo else (self.cfg or {}).get("hash")) or ""
         return hashlib.sha256(("pbcred:" + h).encode()).hexdigest()
 
     @staticmethod
@@ -2737,7 +2487,6 @@ class Auth:
         os.replace(tmp, self.store_path)
 
     def bela_hash(self):
-        """bcrypt-Hash des BELABOX-Passworts (nur gelesen) oder None."""
         if not self.bela_config:
             return None
         try:
@@ -2748,7 +2497,6 @@ class Auth:
         return h if isinstance(h, str) and h.startswith("$2") else None
 
     def bela_ok(self, pw, h):
-        """Prüft mit dem Node.js/bcrypt von belaUI; Passwort nur über stdin."""
         mod = os.path.join(os.path.dirname(self.bela_config), "node_modules", "bcrypt")
         try:
             r = subprocess.run(["node", "-e", self.BELA_JS, mod, h],
@@ -2761,7 +2509,6 @@ class Auth:
         return r.returncode == 0
 
     def bela_pending(self):
-        """Läuft die Oberfläche auf einer BELABOX, die noch kein Passwort hat? (belaUI ist da, ihre Konfiguration enthält aber keinen Hash)"""
         if not self.bela_config or self.bela_hash():
             return False
         return os.path.isdir(os.path.dirname(os.path.abspath(self.bela_config)))
@@ -2773,7 +2520,7 @@ class Auth:
         if self.demo and self.cfg:
             return "demo"
         if self.cfg:
-            return "own"                      # eigenes Passwort aus einer früheren Version bleibt gültig
+            return "own"
         return "belabox-wartet" if self.bela_pending() else "own"
 
     @property
@@ -2796,9 +2543,6 @@ class Auth:
             self.fails.setdefault(ip, []).append(time.time())
 
     def reserve(self, ip):
-        """Zählt einen Versuch SOFORT, vor der Prüfung (Issue #25): Wurde erst nach der Prüfung gezählt, kamen bei vielen gleichzeitigen Anmeldungen
-        alle an der Sperre vorbei. Gibt die Marke des Versuchs zurück oder None, wenn die Sperre schon greift. Ein gelungener oder nicht
-        durchgeführter Versuch wird mit unreserve zurückgenommen, ein falsches Passwort bleibt gezählt."""
         now = time.time()
         with self.lock:
             f = [t for t in self.fails.get(ip, []) if now - t < FAIL_WINDOW]
@@ -2816,8 +2560,6 @@ class Auth:
                 f.remove(mark)
 
     def check_password(self, ip, verify):
-        """Führt verify() (die eigentliche Prüfung) mit der Sperre aus: erst zählen, höchstens MAX_CHECKS Prüfungen gleichzeitig, falsch bleibt
-        gezählt. verify gibt wahr/falsch zurück. Sperre und Überlastung melden PermissionError (-> 429), ohne eine Prüfung zu starten."""
         mark = self.reserve(ip)
         if mark is None:
             raise PermissionError("Zu viele Versuche, bitte 5 Minuten warten")
@@ -2827,7 +2569,7 @@ class Auth:
         try:
             good = verify()
         except BaseException:
-            self.unreserve(ip, mark)            # die Prüfung selbst ging schief (nicht das Passwort): nicht als Fehlversuch zählen
+            self.unreserve(ip, mark)
             raise
         finally:
             self.checks.release()
@@ -2881,7 +2623,7 @@ class Auth:
                 try:
                     self._save_remembered(keep)
                 except OSError:
-                    pass          # dann gilt die Sitzung wie ohne Haken
+                    pass
         return tok
 
     def valid(self, tok):
@@ -2918,7 +2660,6 @@ def belacoder_running():
 
 
 def installed_versions():
-    """Versionen wichtiger Pakete aus /var/lib/dpkg/status (nur lesend)."""
     try:
         st = os.stat("/var/lib/dpkg/status")
         sig = (st.st_mtime_ns, st.st_size)
@@ -2940,16 +2681,11 @@ VERSION_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}(-[a-z0-9.]{1,16})?$")
 
 
 def vkey(v):
-    """Sortierschlüssel einer Versionsnummer (Release vor Vorabversion)."""
     core, _, pre = v.partition("-")
     return tuple(int(x) for x in core.split(".")), (1, ()) if not pre else (0, tuple(pre.split(".")))
 
 
 class Remote:
-    """Fernzugriff über Tailscale. Lesen darf dieser Dienst (tailscale status), Verändern macht der Root-Helfer
-    pipbox-remote.py über eine Auslösedatei mit einem Stichwort aus fester Liste. Funnel (öffentlich im Internet) gibt es nur auf
-    ausdrückliche Anforderung (funnel_on mit Bestätigung "public"); sie hat keine Zeitgrenze und bleibt auch nach einem Neustart der
-    Box bis zum Beenden bestehen."""
     STATUS = "/run/pipbox-remote/status.json"
     ACTIONS = ("install", "login", "down", "serve_on", "serve_off", "funnel_on", "funnel_off", "stats_on", "stats_off", "logout")
 
@@ -2959,8 +2695,6 @@ class Remote:
         self.fake = {}
 
     def _ts(self, *args):
-        """tailscale-Abfrage, 20 s zwischengespeichert (das Go-Programm zu starten kostet spürbar CPU). Ändert der Root-Helfer
-        etwas (seine Statusdatei bekommt eine neue Zeit), gilt der Speicher als abgelaufen."""
         try:
             sig = os.stat(self.STATUS).st_mtime_ns
         except OSError:
@@ -3022,7 +2756,7 @@ class Remote:
                     if "127.0.0.1:%d" % 8780 in px:
                         out["serve"], out["url"] = True, "https://" + host.replace(":443", "") + "/"
                         if allow.get(host):
-                            out["funnel"] = True                            # öffentlich ist nur die Oberfläche (Port 443); die Statistik hat ihren eigenen Schalter
+                            out["funnel"] = True
                     if "127.0.0.1:%d" % 8781 in px and allow.get(host):
                         out["stats"], out["stats_base"] = True, "https://" + host
         return out
@@ -3069,9 +2803,6 @@ class Remote:
 
 
 class DeviceNames:
-    """Eigene Namen für WLAN- und Bluetooth-Sticks (der Stick kennt seinen Handelsnamen, zum Beispiel Logilink, meist nicht). Schlüssel: die USB-Kennung
-    ("usb:0bda:c811"; zwei gleiche Sticks teilen sich den Namen), sonst die Schnittstelle ("if:wlan0") oder die Adresse des Bluetooth-Adapters
-    ("bt:AA:BB:CC:DD:EE:FF"). Die Datei steht im Zustandsordner; es sind keine Geheimnisse."""
     KEY_RE = re.compile(r"^(usb:[0-9a-f]{4}:[0-9a-f]{4}|if:[a-z0-9]{2,15}|net:[a-z0-9]{2,15}|bt:([0-9A-F]{2}:){5}[0-9A-F]{2})$")
 
     def __init__(self, state_dir):
@@ -3098,11 +2829,9 @@ class DeviceNames:
         return self._all().get(key) or default
 
     def conn_names(self):
-        """Eigene Namen der Verbindungen (Netzwerkschnittstellen), ergänzend zur Bezeichnung: {Schnittstelle: Name}. Schlüssel "net:<Schnittstelle>"."""
         return {k[4:]: v for k, v in self._all().items() if k.startswith("net:") and v}
 
     def set(self, key, name):
-        """Name setzen (leer = Standardname). Prüft Schlüssel und Name streng."""
         if not isinstance(key, str) or not self.KEY_RE.match(key):
             raise ValueError("Gerät unbekannt")
         if not isinstance(name, str):
@@ -3124,17 +2853,10 @@ class DeviceNames:
 
 
 class StatsServer:
-    """Kleiner eigener Webserver NUR für die Statistik (127.0.0.1:8781). Von außen kommt man nur über Tailscale Funnel auf Port 8443 heran (Schalter "Statistik öffentlich");
-    die Oberfläche der Box (Port 8780) ist darüber nicht erreichbar. Wege:
-      /ws?t=<Token>[&every=n]   WebSocket: schickt jede Sekunde (every = 1 bis 10) den Schnappschuss als JSON, höchstens MAX_CLIENTS gleichzeitig
-      /stats?t=<Token>          derselbe Schnappschuss einmalig (zum Prüfen)
-      /health                   "ok" (für die Prüfung der Freigabe von außen, ohne Daten)
-      /  oder /statistik.html   die Seite statistik.html (ohne Daten; sie holt sie mit dem Token aus der Adresse)
-    Alles andere: 404. Ohne gültigen Token (oder bei ausgeschalteter Freigabe) ebenfalls 404, zu viele Versuche: 429 (siehe StatsShare.check)."""
     HOST, PORT = "127.0.0.1", 8781
     MAX_CLIENTS = 3
     GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-    MAX_FRAME = 1024                         # Rahmen der Gegenstelle (Ping, Schließen): mehr gibt es nicht
+    MAX_FRAME = 1024
 
     def __init__(self, share, snapshot, host=None, port=None):
         self.share, self.snapshot = share, snapshot
@@ -3166,8 +2888,6 @@ class StatsServer:
 
     @classmethod
     def read_frame(cls, buf):
-        """Ein Rahmen der Gegenstelle aus buf (bytearray) lesen und abschneiden. (Befehl, Nutzdaten), None wenn noch nicht vollständig; wirft ValueError bei Unzulässigem
-        (nicht maskiert, zu groß, in Teile zerlegt)."""
         if len(buf) < 2:
             return None
         b0, b1 = buf[0], buf[1]
@@ -3190,7 +2910,6 @@ class StatsServer:
         return b0 & 0x0f, data
 
     def serve_ws(self, sock, every):
-        """Schleife einer WebSocket-Verbindung: Schnappschuss im Takt senden, Ping beantworten, bei Schließen oder Fehler enden."""
         buf = bytearray()
         next_t = time.monotonic()
         while True:
@@ -3305,7 +3024,6 @@ class StatsServer:
         return H
 
     def start(self):
-        """Server im Hintergrund starten; ein belegter Port darf die Oberfläche nicht verhindern."""
         class Srv(ThreadingHTTPServer):
             daemon_threads = True
             allow_reuse_address = True
@@ -3326,19 +3044,15 @@ class StatsServer:
 
 
 class StatsShare:
-    """Freigabe der Statistik (alles unter "Status") für statistik.html, zum Beispiel als Browserquelle in OBS oder auf einer Homepage.
-    Die Seite verbindet sich mit dem Statistik-Server (StatsServer, Port 8781, von außen über Tailscale Funnel auf Port 8443) mit ?t=<Token>. Der Token (32 Zeichen, zufällig) erlaubt nur das Lesen des Schnappschusses; er steht in <Zustand>/stats-share.json (Modus 0600),
-    lässt sich erneuern (der alte gilt sofort nicht mehr) und die Freigabe ist ab Werk aus. Je Gruppe (Senden, Netze, Prozessor, Temperaturen, Kameras, Meldungen) lässt sich
-    einstellen, was nach außen geht. Zugriffsbegrenzung je Absender; der Schnappschuss wird eine Sekunde zwischengespeichert (viele Zuschauer kosten nicht mehr als einer)."""
-    GROUPS = ("send", "net", "cpu", "temp", "cameras", "alerts", "cores", "disk")      # cores und disk (Details der Statusseite) kamen später dazu; fehlen sie in einer älteren Datei, gelten sie als an
-    WINDOW_S, MAX_HITS = 10.0, 40          # Abrufe je Absender in diesem Zeitraum
-    FAIL_WINDOW_S, MAX_FAILS = 60.0, 10    # falsche Token je Absender in diesem Zeitraum
+    GROUPS = ("send", "net", "cpu", "temp", "cameras", "alerts", "cores", "disk")
+    WINDOW_S, MAX_HITS = 10.0, 40
+    FAIL_WINDOW_S, MAX_FAILS = 60.0, 10
     CACHE_S = 1.0
     MAX_IPS = 500
 
     def __init__(self, state_dir, demo=False):
         self.path = os.path.join(state_dir, "stats-share.json")
-        self.token_path = os.path.join(state_dir, "stats-token")      # Zweitkopie des Schlüssels: Geht stats-share.json verloren oder ist kaputt, bleibt die Adresse trotzdem dieselbe
+        self.token_path = os.path.join(state_dir, "stats-token")
         self.demo = demo
         self.lock = threading.Lock()
         self.build_lock = threading.Lock()
@@ -3366,7 +3080,7 @@ class StatsShare:
                 pass
         elif not os.path.exists(self.token_path):
             try:
-                self._save_token()                                          # Zweitkopie nachholen (Einstellung stammt aus einer älteren Version)
+                self._save_token()
             except OSError:
                 pass
 
@@ -3396,7 +3110,6 @@ class StatsShare:
             return dict(self.data["groups"])
 
     def update(self, enabled=None, groups=None, new_token=False):
-        """Einschalten/Ausschalten, Gruppen wählen, Token erneuern. Beim ersten Einschalten entsteht der Token."""
         with self.lock:
             if enabled is not None:
                 if not isinstance(enabled, bool):
@@ -3413,7 +3126,6 @@ class StatsShare:
         return self.status()
 
     def check(self, token, ip):
-        """"ok", "bad" (aus oder falscher Token) oder "limit" (zu viele Abrufe oder falsche Token von diesem Absender)."""
         now = time.monotonic()
         with self.lock:
             if len(self.hits) > self.MAX_IPS:
@@ -3435,7 +3147,6 @@ class StatsShare:
             return "bad"
 
     def snapshot(self, build):
-        """Zwischengespeicherter Schnappschuss (build() rechnet ihn, höchstens einmal je CACHE_S)."""
         with self.build_lock:
             now = time.monotonic()
             c = self.cache
@@ -3447,9 +3158,6 @@ class StatsShare:
 
 
 def build_stats_snapshot(m, send, labels, groups, now=None):
-    """Schnappschuss der Statistik für statistik.html aus den Messwerten der Statusseite (m, wie /api/metrics) und dem Sendestatus. Es kommen nur Zahlen, Zustände und die Namen,
-    die der Nutzer selbst vergeben hat (Verbindungen, Kameras); nie Adressen (IP, MAC), Stream-ID, Serveradresse, Schlüssel, WLAN-Namen oder Tailscale-Namen. groups wählt,
-    welche Teile dabei sind."""
     def num(v, nd=1):
         return round(v, nd) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
@@ -3468,7 +3176,7 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
         if not ups0:
             wire = sum((r.get("tx_mbit") or 0) for n, r in rates0.items() if isinstance(r, dict) and n != "lo" and not n.startswith(("tailscale", "docker", "veth")))
         pay = m.get("payload_mbit")
-        shown = min(pay, wire) if isinstance(pay, (int, float)) and not isinstance(pay, bool) else wire               # wie die Zahl neben "Live" in der Oberfläche
+        shown = min(pay, wire) if isinstance(pay, (int, float)) and not isinstance(pay, bool) else wire
         out["send"] = {"fps": num(ss.get("fps")), "bitrate_kbps": num(ss.get("bitrate_kbps"), 0), "rtt_ms": num(ss.get("rtt_ms"), 0), "send_mbps": num(ss.get("send_mbps"), 2),
                        "buffer_ms": num(ss.get("snd_buf_ms"), 0), "loss_pct": num(ss.get("loss_pct"), 2),
                        "payload_mbit": num(m.get("payload_mbit"), 2), "shown_mbit": num(shown, 2) if ss else None, "buf_pkts": num(ss.get("snd_buf_pkts"), 0),
@@ -3493,7 +3201,7 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
         mem = m.get("mem") if isinstance(m.get("mem"), dict) else {}
         out["cpu"] = {"avg": num(cpu.get("avg")), "max": num(cpu.get("max")), "mem_used_pct": num(mem.get("used_pct")), "mem_avail_mb": num(mem.get("avail_mb"), 0),
                       "mem_total_mb": num(mem.get("total_mb"), 0)}
-    if groups.get("cores"):                                                        # Details: Prozessor (jeder Kern mit Takt, GPU)
+    if groups.get("cores"):
         cpu = m.get("cpu") if isinstance(m.get("cpu"), dict) else {}
         acc = det.get("accel") if isinstance(det.get("accel"), dict) else {}
 
@@ -3502,7 +3210,7 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
             return {"load_pct": num(v.get("load_pct"), 0), "mhz": num(v.get("mhz"), 0)} if isinstance(v, dict) else None
         out["cores"] = {"load": [num(c) for c in (cpu.get("cores") or [])[:16]], "freq_mhz": [num(f, 0) for f in (cpu.get("freq_mhz") or [])[:16]],
                         "gpu": accel("gpu")}
-    if groups.get("disk"):                                                         # Details: Speicherplatz
+    if groups.get("disk"):
         k = det.get("disk")
         out["disk"] = {x: num(k.get(x), 1) for x in ("used_gb", "free_gb", "total_gb", "used_pct")} if isinstance(k, dict) else None
     if groups.get("temp"):
@@ -3523,10 +3231,6 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
 
 
 class FpsProbe:
-    """Bildrate einer sendenden Kamera messen, die sie nicht meldet (Handys: der nginx kennt sie nur aus den Metadaten des Streams, und dort steht bei vielen Apps 0), solange
-    belacoder sie nicht misst (die Sendung läuft noch nicht). Der Stream wird WINDOW_S Sekunden lang vom nginx der Box gelesen und es werden nur Bilder gezählt (kein Dekodieren,
-    gst-launch mit fpsdisplaysink). Das Ergebnis bleibt TTL_S Sekunden gültig und wird im Hintergrund erneuert (get() blockiert nie, der alte Wert bleibt sichtbar); höchstens
-    eine Messung gleichzeitig. Werte nahe einer üblichen Bildrate (24, 25, 30, 50, 60) werden auf sie gerundet: die Zählung über wenige Sekunden schwankt um etwa 2 Prozent."""
     TTL_S, FAIL_TTL_S, WINDOW_S = 120.0, 20.0, 6.0
     COMMON = (24, 25, 30, 50, 60)
     RE_AVG = re.compile(r"rendered: (\d+), dropped: \d+, current: ([\d.]+), average: ([\d.]+)")
@@ -3535,7 +3239,7 @@ class FpsProbe:
         self.base, self.registry, self.demo = base, registry, demo
         self.runner = runner or self._gst
         self.lock = threading.Lock()
-        self.cache = {}                      # Schlüssel -> (Zeit, fps oder None)
+        self.cache = {}
         self.busy = False
 
     @classmethod
@@ -3547,7 +3251,6 @@ class FpsProbe:
 
     @classmethod
     def parse(cls, out):
-        """Bildrate aus den Meldungen von fpsdisplaysink (eine je Sekunde): Mittel der Sekundenwerte ohne die erste, die das Anlaufen mitzählt. None bei zu wenig Bildern."""
         found = [(int(f), float(c)) for f, c, a in cls.RE_AVG.findall(out or "")]
         if len(found) < 2 or found[-1][0] < 45:
             return None
@@ -3559,7 +3262,7 @@ class FpsProbe:
                "fpsdisplaysink", "text-overlay=false", "video-sink=fakesink", "fps-update-interval=1000", "signal-fps-measurements=true"]
         env = dict(os.environ)
         if self.registry:
-            env["GST_REGISTRY"] = self.registry                # sonst baut jeder Aufruf die Liste der Bausteine neu (rund eine Sekunde Rechenzeit)
+            env["GST_REGISTRY"] = self.registry
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         try:
             out, _ = p.communicate(timeout=self.WINDOW_S + 1.0)
@@ -3580,12 +3283,11 @@ class FpsProbe:
                 now = time.monotonic()
                 old = self.cache.get(key)
                 if fps is None and old and old[1] is not None and now - old[0] < 3 * self.TTL_S:
-                    fps = old[1]                                   # eine fehlgeschlagene Messung löscht einen noch jungen Wert nicht
+                    fps = old[1]
                 self.cache[key] = (now, fps)
                 self.busy = False
 
     def get(self, key):
-        """Letzte gemessene Bildrate dieser Kamera oder None; stößt bei Bedarf eine Messung im Hintergrund an."""
         if self.demo or not isinstance(key, str) or not KEY_RE.match(key):
             return None
         now = time.monotonic()
@@ -3598,17 +3300,12 @@ class FpsProbe:
             return hit[1] if hit else None
 
     def keep(self, live_keys):
-        """Nur Kameras, die gerade senden, behalten ihren Wert: eine Kamera, die neu verbindet, wird neu gemessen (sie kann eine andere Bildrate eingestellt haben)."""
         with self.lock:
             for k in [k for k in self.cache if k not in live_keys]:
                 del self.cache[k]
 
 
 class LayoutStore:
-    """Ansichten der Oberfläche für Desktop und Mobil, gespeichert auf der Box (gilt für alle Geräte): je Ansicht die eigene Reihenfolge der Hauptmenüs, die
-    ausgeblendeten Menüpunkte und das Design. Beide Ansichten haben denselben Aufbau. Gespeichert werden nur Abweichungen vom Standard (Reihenfolge, Ausgeblendetes),
-    neue Menüs erscheinen darum von selbst in beiden Ansichten. Der Browser wählt die Ansicht nach der Breite des Fensters (und der Wahl des Geräts).
-    Die Datei steht im Zustandsordner; es sind keine Geheimnisse."""
     PROFILES = ("desktop", "mobile")
     DESIGNS = ("", "klar", "kompakt")
     ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -3620,7 +3317,6 @@ class LayoutStore:
 
     @classmethod
     def clean(cls, d):
-        """Eine Ansicht prüfen und bereinigen: {"order": [...], "hidden": [...], "design": ""}; Unbrauchbares fällt weg."""
         d = d if isinstance(d, dict) else {}
         out = {}
         for k in ("order", "hidden"):
@@ -3642,7 +3338,6 @@ class LayoutStore:
         return d if isinstance(d, dict) else None
 
     def get(self):
-        """{"set": ob schon gespeichert, "desktop": {...}, "mobile": {...}}"""
         d = self._read()
         p = (d or {}).get("profiles") if isinstance((d or {}).get("profiles"), dict) else {}
         return {"set": d is not None, **{k: self.clean(p.get(k)) for k in self.PROFILES}}
@@ -3655,7 +3350,6 @@ class LayoutStore:
         os.replace(tmp, self.path)
 
     def put(self, profile, data):
-        """Eine Ansicht speichern (nur die angegebenen Felder ändern sich)."""
         if profile not in self.PROFILES:
             raise ValueError("Ansicht unbekannt")
         if not isinstance(data, dict):
@@ -3672,8 +3366,6 @@ class LayoutStore:
         return self.get()
 
     def init(self, data):
-        """Beim ersten Start: beide Ansichten aus den bisherigen Einstellungen des Browsers anlegen, aber nur, wenn noch nichts gespeichert ist
-        (ein zweites Gerät überschreibt nichts)."""
         if not isinstance(data, dict):
             raise ValueError("Angaben ungültig")
         with self.lock:
@@ -3683,16 +3375,11 @@ class LayoutStore:
 
 
 class DeckStore:
-    """Adresse des Streamer.bot-Decks für die Karte "Streamerbot Deck", gespeichert auf der Box (gilt für alle Geräte, immer gleich), dazu die Größe, für die das
-    Deck gebaut ist (Breite und Höhe in Pixeln), getrennt für Desktop (width, height) und Mobil (mobile_width, mobile_height): Die Oberfläche zeigt es in dieser Größe
-    und verkleinert es, wenn die Karte schmaler ist. Die Höhe darf nicht klein sein, sonst schneidet der Rahmen das Auswahlfeld der Seiten ab. Nur https-Adressen;
-    die Datei enthält keine Geheimnisse. Ältere Dateien mit "desktop" und "mobile" werden gelesen (erst "desktop")."""
     MAX_LEN = 500
-    SIZE = {"width": (200, 4000, 600), "height": (320, 4000, 600), "mobile_width": (200, 4000, 390), "mobile_height": (320, 4000, 600)}      # kleinster, größter, Standardwert
+    SIZE = {"width": (200, 4000, 600), "height": (320, 4000, 600), "mobile_width": (200, 4000, 390), "mobile_height": (320, 4000, 600)}
 
     @classmethod
     def clean_url(cls, v):
-        """Leer oder eine https-Adresse ohne Zugangsdaten; sonst ValueError."""
         if v is None:
             return ""
         if not isinstance(v, str):
@@ -3744,7 +3431,6 @@ class DeckStore:
         return out
 
     def put(self, data):
-        """Nur die angegebenen Angaben ändern sich (eine leere Adresse entfernt das Deck)."""
         if not isinstance(data, dict):
             raise ValueError("Angaben ungültig")
         new = {}
@@ -3765,8 +3451,6 @@ class DeckStore:
 
 
 def label_bluetooth(st, names):
-    """Anzeigenamen der Bluetooth-Adapter und der Sticks ohne Adapter in der Antwort des Bluetooth-Dienstes: eigener Name (names), sonst der
-    Standardname aus der Meldung des Sticks (Hersteller davor, wenn der Name nur eine Standardbezeichnung ist)."""
     for a in st.get("adapters") or []:
         a["key"] = DeviceNames.key(a.get("usb_id", ""), "", a.get("address", ""))
         default = dji.device_label(a.get("name", ""), a.get("vendor", ""), a.get("usb_id", "")) or ("Eingebauter Bluetooth-Adapter" if not a.get("usb_id") else "Bluetooth-Stick")
@@ -3780,12 +3464,8 @@ def label_bluetooth(st, names):
 
 
 class Wifi:
-    """WLAN-Verbindung (z. B. Handy-Hotspot als weiterer Sendeweg) und WLAN-Hotspot der Box. Lesen darf dieser Dienst, Verbinden macht der
-    Root-Helfer pipbox-wifi.py über eine Auslösedatei (0600, wird dort sofort gelöscht). Das Passwort eines WLANs, mit dem sich die Box
-    verbindet, liegt nur dort und wird nie gespeichert oder ausgegeben; nmcli legt das Profil an. Das Passwort des eigenen Hotspots ist
-    zum Weitergeben an Kameras und Handys gedacht und liegt in hotspot.json (Benutzer pipbox, 0600)."""
     STATUS = "/run/pipbox-wifi/status.json"
-    DRIVER_STATUS = "/run/pipbox-wlandriver/status.json"        # schreibt der Root-Helfer pipbox-wlandriver.py (Treiber für WLAN-Sticks mit AIC8800D80)
+    DRIVER_STATUS = "/run/pipbox-wlandriver/status.json"
     ACTIONS = ("scan", "connect", "forget", "disconnect", "hotspot_start", "hotspot_stop", "hotspot_save", "hotspot_delete")
     HS_PREFIX = "pipbox-hotspot-"
     HS_BANDS = {"bg": tuple(range(1, 14)), "a": (36, 40, 44, 48)}
@@ -3796,13 +3476,9 @@ class Wifi:
         self.demo, self.netchoice, self.names, self.srtla = demo, netchoice, names, srtla
         self.fake_hs = {}
         self.fake_msg = ("", "")
-        # Die Auslösedatei des Helfers ist nur eine Datei: Schreibt eine zweite Anfrage (zum Beispiel die Suche nach WLANs) hinein, solange
-        # die erste noch nicht gelesen ist, geht eine davon verloren oder ihr Ergebnis wird überschrieben ("Helfer hat nicht rechtzeitig geantwortet").
-        # Darum läuft immer nur eine Anfrage gleichzeitig; eine zweite wird abgewiesen.
         self.lock = threading.Lock()
 
     def hotspots(self):
-        """Gespeicherte Hotspot-Einstellungen {Karte: {ssid, password, band, channel}}."""
         if self.demo:
             return dict(self.fake_hs)
         try:
@@ -3813,7 +3489,6 @@ class Wifi:
         return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, dict)} if isinstance(d, dict) else {}
 
     def hotspot_secret(self, iface):
-        """Name und Passwort des Hotspots dieser Karte (nur für die angemeldete Oberfläche, auf Knopfdruck)."""
         h = self.hotspots().get(iface if isinstance(iface, str) else "")
         if not h or not h.get("password"):
             raise ValueError("Auf dieser Karte ist kein Hotspot gespeichert")
@@ -3821,7 +3496,6 @@ class Wifi:
 
     @staticmethod
     def caps(iface):
-        """Was die Karte kann (NetworkManager): Zugangspunkt, 2,4 und 5 GHz. Fünf Minuten zwischengespeichert."""
         def raw():
             try:
                 r = subprocess.run(["nmcli", "-g", "WIFI-PROPERTIES.AP,WIFI-PROPERTIES.2GHZ,WIFI-PROPERTIES.5GHZ", "dev", "show", iface],
@@ -3843,13 +3517,13 @@ class Wifi:
         hs = self.hotspots()
         for n in names:
             if os.path.isdir(f"/sys/class/net/{n}/wireless") and not n.startswith("p2p"):
-                info = dji.netdev_info(n)                          # Name des WLAN-Sticks (z. B. "802.11ac NIC"), USB-Kennung, Treiber
+                info = dji.netdev_info(n)
                 out.append({"iface": n, "ip": ips.get(n, ""), "camera_net": n == self.netchoice.iface,
                             "up": (read(f"/sys/class/net/{n}/operstate", "") or "").strip() == "up",
                             "ssid": "", "signal": None, "name": info["name"], "vendor": info["vendor"],
                             "usb_id": info["usb_id"], "driver": info["driver"], **self.caps(n)})
                 self._name(out[-1])
-        if out:                                        # Name und Signal des verbundenen Netzes (Profilname = SSID)
+        if out:
             try:
                 r = subprocess.run(["nmcli", "-t", "-f", "DEVICE,CONNECTION", "dev"], capture_output=True, text=True, timeout=4)
                 for line in r.stdout.splitlines():
@@ -3857,7 +3531,7 @@ class Wifi:
                     con = con.replace("\\:", ":")
                     for c in out:
                         if c["iface"] == dev and c["ip"]:
-                            if con.startswith(self.HS_PREFIX):     # der Hotspot dieser Box (sein Name trägt den Kartennamen von damals): kein Netz, mit dem die Karte verbunden ist
+                            if con.startswith(self.HS_PREFIX):
                                 c["hotspot_running"] = True
                                 c["hotspot_con"] = con
                             else:
@@ -3874,7 +3548,7 @@ class Wifi:
         for c in out:
             h = hs.get(c["iface"])
             con = c.pop("hotspot_con", "")
-            if not h and con:                          # läuft ein Hotspot ohne gespeicherte Einstellungen (Profil von früher): Name und Band aus dem Profil, damit die Karte "an" zeigt
+            if not h and con:
                 try:
                     r = subprocess.run(["nmcli", "-t", "-g", "802-11-wireless.ssid,802-11-wireless.band,802-11-wireless.channel", "connection", "show", con],
                                        capture_output=True, text=True, timeout=4)
@@ -3889,7 +3563,6 @@ class Wifi:
         return out
 
     def _name(self, card):
-        """Schlüssel und Anzeigename der Karte: eigener Name, sonst der Standardname aus der Meldung des Sticks."""
         card["key"] = DeviceNames.key(card.get("usb_id", ""), card["iface"])
         default = dji.device_label(card.get("name", ""), card.get("vendor", ""), card.get("usb_id", ""))
         card["label"] = self.names.label(card["key"], default) if self.names else default
@@ -3898,8 +3571,6 @@ class Wifi:
     SYS_NET = "/sys/class/net"
 
     def labels(self):
-        """{Schnittstelle: Anzeigename} der WLAN-Karten für die Anzeige im Status ("wlan0 (TP-Link Archer T2U)"): eigener Name der Karte, sonst der Name,
-        den der Stick meldet. Leicht (nur /sys, der Stand der Sticks 10 s gemerkt), weil die Statusseite oft fragt."""
         if self.demo:
             return {"wlan0": dji.device_label("802.11ac NIC", "Realtek", "0bda:c811"), "wlan1": dji.device_label("802.11ac NIC", "Realtek", "2357:011e")}
 
@@ -3920,7 +3591,6 @@ class Wifi:
         return {n: v for n, v in res.items() if v}
 
     def driver_status(self):
-        """Was der Treiber-Helfer für WLAN-Sticks gerade tut ("working", "waiting", "failed", "unsupported", "ok") und sagt, sonst leer."""
         try:
             with open(self.DRIVER_STATUS) as f:
                 raw = json.load(f)
@@ -3955,8 +3625,6 @@ class Wifi:
                 "saved": h.get("saved") or [], "time": h.get("time", 0), "driver": self.driver_status()}
 
     def _hotspot_request(self, d, st, card):
-        """Prüft Starten, Beenden und Speichern der Einstellungen eines Hotspots; gibt die Anfrage für den Helfer zurück. Fehlen bei "hotspot_start"
-        Name und Co., gelten die gespeicherten Einstellungen dieser Karte (Schalter "Hotspot-Modus")."""
         action, iface = d.get("action"), card["iface"]
         req = {"action": action, "iface": iface}
         running = bool((card.get("hotspot") or {}).get("running"))
@@ -4076,7 +3744,6 @@ class Wifi:
             self.lock.release()
 
     def _helper_call(self, req, wait=40):
-        """Eine Aktion für den Root-Helfer auslösen und auf sein Ergebnis warten (status.json mit unserer Marke)."""
         st = self.status()
         if not st["helper_installed"]:
             raise RuntimeError("Der WLAN-Helfer ist nicht installiert (install.sh erneut ausführen)")
@@ -4099,7 +3766,6 @@ class Wifi:
         raise RuntimeError("Der WLAN-Helfer hat nicht rechtzeitig geantwortet")
 
     def export_saved(self, with_passwords):
-        """Gespeicherte WLAN-Netze samt Passwort (nur wenn gewünscht) über den Helfer lesen: {"networks": [...], "skipped": [...]}."""
         if self.demo:
             return {"networks": [{"ssid": "Demo-Hotspot", "hidden": False, "open": False, "password": "demo-passwort-1" if with_passwords else ""},
                                  {"ssid": "Gast", "hidden": False, "open": True, "password": ""}], "skipped": []}
@@ -4119,7 +3785,7 @@ class Wifi:
                 raw = os.read(fd, self.EXPORT_MAX + 1)
             finally:
                 os.close(fd)
-            os.unlink(path)                                    # die Datei enthält Passwörter: sofort wieder weg
+            os.unlink(path)
         except OSError:
             raise RuntimeError(h.get("message") or "Der WLAN-Helfer hat keine Liste geliefert")
         try:
@@ -4131,7 +3797,6 @@ class Wifi:
         return {"networks": [n for n in d["networks"] if isinstance(n, dict)], "skipped": [x for x in d.get("skipped", []) if isinstance(x, dict)]}
 
     def import_saved(self, networks):
-        """Gespeicherte WLAN-Netze über den Helfer anlegen (er prüft noch einmal und ersetzt gleichnamige Profile)."""
         if not networks:
             return "Keine WLAN-Netze zum Einspielen"
         if self.demo:
@@ -4142,8 +3807,6 @@ class Wifi:
         return h.get("message") or "WLAN-Netze eingespielt"
 
     def hotspot_import(self, entries):
-        """Hotspot-Einstellungen (Name, Passwort, Band, Kanal je Karte) aus einer Sicherung in hotspot.json übernehmen; die Hotspots selbst startet niemand.
-        Fehlt in der Sicherung das Passwort, bleibt das gespeicherte dieser Karte; ohne eines gibt es keinen Eintrag."""
         cur = self.hotspots()
         out, skipped = dict(cur), []
         for iface, h in entries.items():
@@ -4165,7 +3828,6 @@ class Wifi:
         return "%d Hotspots eingespielt" % n + ((", ohne Passwort ausgelassen: " + ", ".join(skipped)) if skipped else "")
 
     def _leave_uplinks(self, iface):
-        """Ein Hotspot hat keinen Weg ins Internet: Die Karte darf danach kein Netz zum Senden mehr sein. Ist sie das einzige, wird nichts gestartet."""
         if self.srtla is None:
             return
         ups = list(((self.srtla.data or {}).get("settings") or {}).get("uplinks") or [])
@@ -4179,8 +3841,6 @@ class Wifi:
 
 
 class Power:
-    """Box herunterfahren oder neu starten. Dieser Dienst hat keine Root-Rechte: er legt nur ein Stichwort aus fester Liste
-    in eine Auslösedatei, der Root-Helfer pipbox-power.py führt es aus."""
     ACTIONS = ("poweroff", "reboot")
 
     def __init__(self, state_dir, demo, send):
@@ -4206,12 +3866,6 @@ class Power:
 
 
 class AutoStart:
-    """Automatisch live gehen, nachdem die Box gestartet wurde (Einstellung, standardmäßig aus).
-
-    Nur einmal pro Start der Box: Nach dem Hochfahren wartet die Box, bis ein SRTLA-Server gewählt ist und mindestens eine
-    Kamera sendet (dieselben Voraussetzungen wie "Live gehen"), und startet dann genau so, als wäre "Live gehen" gedrückt worden.
-    "Live beenden" vor dem Start bricht ab; ein Neustart der Oberfläche (zum Beispiel durch ein Update) startet die Sendung
-    nicht noch einmal. Findet sich innerhalb von WAIT_S Sekunden keine Kamera, gibt die Box auf und zeigt den Grund."""
     WAIT_S = 600
     RETRY_S = 20
 
@@ -4256,7 +3910,6 @@ class AutoStart:
             self.cancel("ausgeschaltet")
 
     def cancel(self, why="abgebrochen"):
-        """Wartet die Box noch auf den Automatik-Start, wird er für diesen Start der Box abgebrochen."""
         with self.lock:
             if self.phase == "wartet":
                 self.cancel_ev.set()
@@ -4275,7 +3928,6 @@ class AutoStart:
             self._save()
 
     def run(self):
-        """Läuft einmal im Hintergrund, solange die Oberfläche läuft."""
         if not self.data["enabled"]:
             return
         if self.data["boot"] == self.boot_id():
@@ -4286,7 +3938,7 @@ class AutoStart:
             self.phase, self.message = "wartet", "Wartet auf eine sendende Kamera"
             self.until = time.time() + self.wait_s
         deadline = time.monotonic() + self.wait_s
-        last_try, reasons = None, []       # None: noch kein Versuch (die Uhr zählt ab Hochfahren, 0 wäre nicht 'lange her')
+        last_try, reasons = None, []
         while time.monotonic() < deadline and not self.cancel_ev.is_set():
             try:
                 st = self.send.status()
@@ -4311,9 +3963,6 @@ class AutoStart:
 
 
 class LogMode:
-    """Protokoll-Modus: "sparsam" (Journal und Zustandsprotokoll nur im Arbeitsspeicher, schont die Speicherkarte, nach einem
-    Absturz bleibt keine Spur) oder "ausfuehrlich" (dauerhaft, zur Fehlersuche). Dieser Dienst hat keine Root-Rechte: er legt
-    nur ein Stichwort aus fester Liste in eine Auslösedatei, der Root-Helfer pipbox-logmode.py stellt um."""
     MODES = ("sparsam", "ausfuehrlich")
     FILE = "/etc/pipbox/logmode"
 
@@ -4326,7 +3975,6 @@ class LogMode:
         if self.demo:
             return {"mode": self.fake, "helper_installed": True}
         mode = (read(self.FILE, "") or "").strip()
-        # Ohne Datei (ältere Installation) schreibt alles wie bisher dauerhaft: das entspricht "ausfuehrlich"
         return {"mode": mode if mode in self.MODES else "ausfuehrlich",
                 "helper_installed": os.path.exists("/etc/systemd/system/pipbox-logmode.path")}
 
@@ -4344,13 +3992,10 @@ class LogMode:
 
 
 class BtDriver:
-    """Bluetooth-Treiber (Realtek- und Barrot-Sticks) von Hand einrichten und den Fortschritt zeigen. Dieser Dienst hat keine Root-Rechte: er legt nur
-    das Stichwort "install" in eine Auslösedatei, der Root-Helfer pipbox-btdriver.py baut und lädt den Treiber und schreibt seinen Stand nach
-    /run/pipbox-btdriver/status.json (hier nur gelesen). Die Anzeige liest von hier und nicht aus dem Bluetooth-Dienst, weil der beim Neuladen kurz fehlt."""
     STATUS = "/run/pipbox-btdriver/status.json"
     UNIT = "/etc/systemd/system/pipbox-btdriver.path"
     STATES = ("working", "waiting", "failed", "unsupported", "ok", "none")
-    CHIP_STATUS = "/run/pipbox-btchip/status.json"          # Helfer für den eingebauten Bluetooth-Chip der ROCK 5B Plus (schreibt nur dort)
+    CHIP_STATUS = "/run/pipbox-btchip/status.json"
     CHIP_UNIT = "/etc/systemd/system/pipbox-btchip.path"
     CHIP_STATES = ("working", "waiting", "failed", "unsupported", "ok")
 
@@ -4379,7 +4024,6 @@ class BtDriver:
         return out
 
     def chip_status(self):
-        """Stand des eingebauten Bluetooth-Chips der ROCK 5B Plus, oder None (anderes Gerät, Helfer fehlt, noch nichts geschrieben)."""
         if self.demo:
             return None
         try:
@@ -4407,23 +4051,19 @@ class BtDriver:
         fd = os.open(self.req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write("install\n")
-        if os.path.exists(self.CHIP_UNIT):                                  # der Chip-Helfer prüft selbst, ob dieses Gerät die ROCK 5B Plus ist
+        if os.path.exists(self.CHIP_UNIT):
             fd = os.open(self.chip_req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as f:
                 f.write("install\n")
 
 
 class LogBundle:
-    """Protokolle zum Herunterladen: eine einzige Textdatei mit den Journalen der IRL4YOU-Dienste, dem Zustandsprotokoll und
-    den Einstellungen, von Passwörtern, Stream-ID, WLAN-Namen und Adressen bereinigt. Dieser Dienst hat keine Root-Rechte und
-    kann die Journale nicht lesen: er legt nur das Stichwort "collect" in eine Auslösedatei, der Root-Helfer pipbox-logs.py
-    sammelt und legt das Ergebnis nach /run/pipbox-logs (nur root darf dort schreiben)."""
     DIR = "/run/pipbox-logs"
     FILE = DIR + "/bundle.txt"
     STATUS = DIR + "/status.json"
     HELPER = "/etc/systemd/system/pipbox-logs.path"
     MAX_BYTES = 4_000_000
-    WAIT_SECONDS = 150                 # so lange darf das Sammeln dauern, bevor der Helfer als nicht erreichbar gilt
+    WAIT_SECONDS = 150
 
     def __init__(self, state_dir, demo):
         self.req = os.path.join(state_dir, "logs-request")
@@ -4447,7 +4087,6 @@ class LogBundle:
             st = None
         waiting = self.requested and time.time() - self.requested < self.WAIT_SECONDS
         if not isinstance(st, dict) or (self.requested and int(st.get("time", 0) or 0) < int(self.requested)):
-            # Der Helfer hat sich zu dieser Anfrage noch nicht gemeldet: ein altes Ergebnis zählt nicht
             if self.requested:
                 out["state"], out["message"] = ("working", "Warte auf den Helfer …") if waiting else ("error", "Keine Antwort vom Helfer")
             return out
@@ -4466,7 +4105,7 @@ class LogBundle:
         if not self.installed():
             raise ValueError("Der Helfer ist nicht installiert (Software-Update einspielen oder install.sh erneut ausführen)")
         if self.status()["state"] == "working" and time.time() - self.requested < self.WAIT_SECONDS:
-            return                                            # läuft schon
+            return
         self.requested = time.time()
         if self.demo:
             self.fake = ("IRL4YOU BOX Protokolle (Vorschau)\n\n===== Journal pipbox-dji =====\n"
@@ -4477,7 +4116,6 @@ class LogBundle:
             f.write("collect\n")
 
     def content(self):
-        """Inhalt der fertigen Datei oder None."""
         if self.demo:
             return self.fake.encode() if self.fake else None
         if self.status()["state"] != "done":
@@ -4490,11 +4128,6 @@ class LogBundle:
 
 
 class Developer:
-    """Entwickler: den SSH-Dienst der Box ein- und ausschalten und das SSH-Passwort erzeugen (wie die Original-Oberfläche der BELABOX). Dieser
-    Dienst hat keine Root-Rechte: er legt nur ein Stichwort aus fester Liste (start, stop, check, reset) in eine Auslösedatei, der Root-Helfer
-    pipbox-ssh.py führt es aus. Schlüssel und die Einstellungen von SSH fasst nichts davon an. Das erzeugte Passwort liegt in ssh-pass.json
-    (Benutzer pipbox, 0600) und wird nur auf Knopfdruck angezeigt, nie in der Statusabfrage. Von den Dateien der Original-Oberfläche wird nur
-    gelesen, wie der SSH-Benutzer heißt und welches Passwort sie erzeugt hat."""
     ACTIONS = ("start", "stop", "check", "reset")
     STATUS = "/run/pipbox-ssh/status.json"
     HELPER = "/etc/systemd/system/pipbox-ssh.path"
@@ -4524,7 +4157,6 @@ class Developer:
         return u if isinstance(u, str) and self.USER_RE.fullmatch(u) else ""
 
     def _ours(self):
-        """Das von IRL4YOU BOX erzeugte Passwort (ssh-pass.json) für den SSH-Benutzer oder None."""
         try:
             with open(self.pass_file) as f:
                 d = json.load(f)
@@ -4536,8 +4168,6 @@ class Developer:
         return None
 
     def password_created(self):
-        """Gibt es ein erzeugtes SSH-Passwort (von IRL4YOU BOX oder von der Original-Oberfläche)? None, wenn weder das eine noch die Original-Oberfläche
-        da ist. Nur das Vorhandensein wird geprüft."""
         if self._ours():
             return True
         c = self._json("config.json")
@@ -4605,8 +4235,6 @@ class Developer:
             f.write(action + "\n")
 
     def password(self):
-        """Das erzeugte SSH-Passwort (nur für die angemeldete Oberfläche, auf Knopfdruck): das von IRL4YOU BOX erzeugte, sonst das der Original-Oberfläche.
-        Hier wird nichts erzeugt oder geändert."""
         if self.demo:
             if not self.fake_pass:
                 raise ValueError("Für SSH wurde noch kein Passwort erzeugt")
@@ -4622,23 +4250,17 @@ class Developer:
 
 
 class SwUpdate:
-    """Software-Update von IRL4YOU BOX aus dem eigenen GitHub-Repository.
-
-    Dieser Dienst hat keine Root-Rechte. Er prüft nur, ob auf GitHub eine neuere VERSION liegt, und legt auf Wunsch
-    eine Auslösedatei mit einem festen Stichwort (install / rollback) ab. Laden, Prüfen und Einspielen macht der
-    getrennte Root-Helfer pipbox-swupdate.py.
-    """
-    CHECK_EVERY = 6 * 3600     # Sekunden zwischen zwei Abfragen bei GitHub (Abfrage von selbst im Hintergrund)
-    FRESH_AFTER = 5 * 60       # wer die Seite oder die Karte öffnet, bekommt eine Antwort, die nicht älter als so viele Sekunden ist
-    RETRY_AFTER_ERROR = 30 * 60   # ein Fehlversuch (kein Internet) wird früher wiederholt
-    EARLY_SECONDS = 30 * 60       # in der ersten halben Stunde nach dem Start (Router und Mobilfunk brauchen oft einige Minuten) ...
-    RETRY_EARLY = 3 * 60          # ... wird ein Fehlversuch schon nach 3 Minuten wiederholt
+    CHECK_EVERY = 6 * 3600
+    FRESH_AFTER = 5 * 60
+    RETRY_AFTER_ERROR = 30 * 60
+    EARLY_SECONDS = 30 * 60
+    RETRY_EARLY = 3 * 60
     RAW = "https://raw.githubusercontent.com/IRL4YOU/irl4you-pip/main/"
     API = "https://api.github.com/repos/IRL4YOU/irl4you-pip/releases?per_page=30"
     STATUS = "/run/pipbox-swupdate/status.json"
     BACKUP = "/var/lib/pipbox-backup"
     STAGE = ""
-    CHANGELOG_MAX = 600_000          # die ganze Datei (heute rund 130 KB; früher nur die ersten 60 KB: ältere Versionen fehlten schon)
+    CHANGELOG_MAX = 600_000
     HISTORY_TTL = 30 * 60
 
     def __init__(self, state_dir, demo, send):
@@ -4657,15 +4279,13 @@ class SwUpdate:
     CONTENTS = "https://api.github.com/repos/IRL4YOU/irl4you-pip/contents/%s?ref=main"
 
     def _get(self, name, limit):
-        """Eine Datei des Repositorys lesen. Zuerst über die API von GitHub (immer der aktuelle Stand), dann über raw.githubusercontent.com: Dort liegt
-        eine neue Version bis zu fünf Minuten im Zwischenspeicher, die Box zeigte kurz nach einer Veröffentlichung noch die vorherige Version als neueste."""
         last = None
         for url, extra in ((self.CONTENTS % name, {"Accept": "application/vnd.github.raw+json"}), (self.RAW + name, {})):
             try:
                 req = urllib.request.Request(url, headers=dict(extra, **{"User-Agent": "irl4you-box"}))
                 with urllib.request.urlopen(req, timeout=8) as r:
                     return r.read(limit + 1)[:limit].decode("utf-8", "replace")
-            except OSError as e:                      # auch HTTP-Fehler (z. B. 403 bei erreichter Anfragegrenze): dann der nächste Weg
+            except OSError as e:
                 last = e
         raise last
 
@@ -4685,7 +4305,6 @@ class SwUpdate:
 
     @staticmethod
     def _oldest(text):
-        """Die älteste Versionsnummer, die als Überschrift im Text steht (als Zahlentripel), sonst None."""
         out = None
         for m in re.finditer(r"(?m)^##\s+(\d+)\.(\d+)\.(\d+)", text):
             v = tuple(int(x) for x in m.groups())
@@ -4693,8 +4312,6 @@ class SwUpdate:
         return out
 
     def _changelog(self, current=None):
-        """Der Text der Änderungsliste: CHANGELOG.md; die ältere Hälfte steht in CHANGELOG-Archiv.md und wird nur dazugeladen, wenn sie gebraucht wird (current:
-        die installierte Version ist älter als die älteste Überschrift der Liste; ohne current: immer, für die Suche im ganzen Verlauf). Fehlt das Archiv, bleibt die Liste."""
         text = self._get("CHANGELOG.md", self.CHANGELOG_MAX)
         oldest = self._oldest(text)
         m = re.match(r"^(\d+)\.(\d+)\.(\d+)", current or "")
@@ -4709,8 +4326,6 @@ class SwUpdate:
 
     @classmethod
     def _sections_since(cls, text, current, max_sections=100, max_lines=4000, max_chars=200_000):
-        """Die Änderungen aller Versionen, die neuer sind als die installierte (neueste zuerst), aus dem Text der CHANGELOG.md. Wer mehrere
-        Versionen übersprungen hat, sieht so alles, was neu ist (Issue #57: früher nur die neuesten 6 Versionen; jetzt bis zu 100, höchstens 200 KB). Ist keine neuer (oder die Überschriften sind unbekannt), gilt der erste Abschnitt."""
         def num(v):
             m = re.match(r"^(\d+)\.(\d+)\.(\d+)", v or "")
             return tuple(int(x) for x in m.groups()) if m else None
@@ -4733,20 +4348,17 @@ class SwUpdate:
         return "\n".join(out) if out else cls._first_section(text)
 
     def check(self, force=False, fresh=False):
-        """Fragt die neueste Version auf GitHub ab (im Hintergrund höchstens alle 6 Stunden und nie während einer Übertragung, außer force). fresh: wer
-        die Seite oder die Karte öffnet, will wissen, ob es gerade eine neue Version gibt: Eine Antwort, die älter als fünf Minuten ist, wird erneuert
-        (vorher blieb eine neue Version bis zu sechs Stunden unsichtbar, wenn die Box kurz davor nachgefragt hatte)."""
         with self.lock:
             early = time.time() - self.started < self.EARLY_SECONDS
             wait = (self.RETRY_EARLY if early else self.RETRY_AFTER_ERROR) if self.cache and self.cache.get("error") else self.CHECK_EVERY
             if self.cache and self.cache.get("stale"):
-                wait = self.RETRY_EARLY                    # die Antwort war älter als die installierte Version: bald noch einmal fragen
+                wait = self.RETRY_EARLY
             if fresh:
                 wait = min(wait, self.FRESH_AFTER)
             if not force and self.cache and (time.time() - self.cache_t < wait or self.send._active()):
                 return self.cache
             if not force and not self.cache and not self.demo and self.send._active():
-                return {"checked_at": None}          # während der Übertragung nicht über das Mobilfunknetz nachfragen
+                return {"checked_at": None}
         res = {"checked_at": int(time.time())}
         if self.demo:
             res.update(latest="0.9.1", notes="## 0.9.1 (Demo)\n- Beispiel für eine neue Version.")
@@ -4757,8 +4369,6 @@ class SwUpdate:
                     raise ValueError("ungültige Versionsnummer")
                 res["latest"] = v
                 if vkey(v) < vkey(self.version):
-                    # Die Antwort von GitHub ist älter als die installierte Version (veralteter Zwischenspeicher, kurz nach einer Veröffentlichung): Die
-                    # installierte Version ist dann die neueste, die wir kennen; nach wenigen Minuten wird noch einmal gefragt.
                     res["latest"], res["stale"] = self.version, True
                 try:
                     res["notes"] = self._sections_since(self._changelog(self.version), self.version)
@@ -4771,9 +4381,6 @@ class SwUpdate:
         return res
 
     def history(self):
-        """Der ganze Änderungsverlauf (CHANGELOG.md von GitHub) für die Suche in der Oberfläche: {"text", "error"}. Nur auf Wunsch geladen (ein Klick auf das "i"),
-        30 Minuten gehalten, auch während einer Übertragung: Der Abruf ist einmalig (Änderungsliste mit Archiv rund 400 KB Download, kein Upload), die automatischen
-        Prüfungen (check, releases) bleiben während der Übertragung gesperrt. Der Fehlertext ist fertig lesbar."""
         with self.lock:
             if self.hist and time.time() - self.hist_t < self.HISTORY_TTL:
                 return self.hist
@@ -4790,18 +4397,15 @@ class SwUpdate:
         return res
 
     def auto_loop(self):
-        """Fragt von selbst nach (alle 6 Stunden, check() hält das ein und fragt nie während einer Übertragung), damit der Punkt
-        "Oberfläche" in der Kopfleiste auch dann stimmt, wenn gerade niemand die Seite offen hat."""
         time.sleep(30)
         while True:
             try:
                 self.check()
-            except Exception as e:                # nie den Dienst beenden
+            except Exception as e:
                 print("swupdate auto_check:", e)
             time.sleep(60 if time.time() - self.started < self.EARLY_SECONDS else 15 * 60)
 
     def releases(self, force=False):
-        """Veröffentlichte Versionen (Releases) auf GitHub: [{version, date, notes}], höchstens alle 6 Stunden, nie während einer Übertragung."""
         if not force and (time.time() - self.rel_t < self.CHECK_EVERY or (not self.demo and self.send._active())):
             return self.rel_cache
         out = []
@@ -4818,13 +4422,12 @@ class SwUpdate:
                         out.append({"version": v, "date": str(x.get("published_at", ""))[:10],
                                     "notes": str(x.get("body") or "")[:300]})
             except (OSError, ValueError):
-                out = self.rel_cache                                 # alte Liste behalten, wenn GitHub nicht antwortet
+                out = self.rel_cache
         with self.lock:
             self.rel_cache, self.rel_t = out, time.time()
         return out
 
     def backups(self):
-        """Lokal gesicherte Versionen, neueste zuerst (die Verzeichnisse sind lesbar, enthalten nur Programmdateien)."""
         if self.demo:
             return ["0.9.0"]
         out = []
@@ -4833,7 +4436,7 @@ class SwUpdate:
                 p = os.path.join(self.BACKUP, n)
                 if VERSION_RE.match(n) and os.path.isdir(os.path.join(p, "opt-pipbox")):
                     out.append((os.stat(p).st_mtime, n))
-            legacy = (read(os.path.join(self.BACKUP, "VERSION"), "") or "").strip()      # frühere Ablage (eine Version)
+            legacy = (read(os.path.join(self.BACKUP, "VERSION"), "") or "").strip()
             if VERSION_RE.match(legacy) and os.path.isdir(os.path.join(self.BACKUP, "opt-pipbox")) \
                     and legacy not in [n for _, n in out]:
                 out.append((os.stat(os.path.join(self.BACKUP, "VERSION")).st_mtime, legacy))
@@ -4842,7 +4445,6 @@ class SwUpdate:
         return [n for _, n in sorted(out, reverse=True)]
 
     def versions(self, force=False):
-        """Alle wählbaren Versionen: gesichert und/oder auf GitHub, neueste Versionsnummer zuerst."""
         local = self.backups()
         rel = {r["version"]: r for r in self.releases(force)}
         res = []
@@ -4858,7 +4460,6 @@ class SwUpdate:
         return p if isinstance(p, int) and not isinstance(p, bool) and 0 <= p <= 100 else 0
 
     def demo_fake(self):
-        """Demo: ein vorgetäuschtes Update, dessen Fortschritt über einige Sekunden läuft (für die Ansicht ohne Box)."""
         t0 = self.fake_t0
         steps = ((0, 2, "Lade die neue Version von GitHub"), (2, 22, "Prüfe das Archiv"), (3, 30, "Sichere die jetzige Version"),
                  (4, 36, "Installiere Version %s" % "9.9.9"), (6, 58, "Kopiere Programme und Oberfläche"), (8, 78, "Prüfe den SRTLA-Sender (wird neu gebaut, wenn er sich geändert hat)"),
@@ -4870,8 +4471,6 @@ class SwUpdate:
         return {"state": "installing", "step": cur[2], "progress": cur[1], "time": int(time.time())}
 
     def progress_public(self):
-        """Nur Zustand, Schritt und Prozent des Updates, ohne Anmeldung abrufbar: Beim Update startet die Oberfläche neu und kennt die Anmeldung des
-        Browsers danach evtl. nicht mehr; die Seite zeigt den Fortschritt trotzdem weiter und lädt erst nach dem Ende neu. Keine Version, keine Adressen."""
         if self.demo:
             st = self.demo_fake() if self.fake_t0 else {}
         else:
@@ -4904,9 +4503,9 @@ class SwUpdate:
                "frm": st.get("frm", ""), "to": st.get("to", ""), "progress": self._pct(st)}
         if st.get("state") in ("installing", "refused", "done", "rolledback", "failed") and st.get("time") \
                 and st["state"] != "installing" and time.time() - st["time"] > 6 * 3600:
-            out["state"], out["message"] = "idle", ""             # alte Meldung nach 6 Stunden ausblenden
+            out["state"], out["message"] = "idle", ""
         bk = [v for v in self.backups() if v != self.version]
-        out["backup_version"] = bk[0] if bk else ""                  # Ziel des Knopfes "Zurück"
+        out["backup_version"] = bk[0] if bk else ""
         out["versions"] = self.versions(force)
         out["sending"] = False if self.demo else bool(belacoder_running() or self.send._active())
         out["helper_installed"] = self.demo or os.path.exists("/etc/systemd/system/pipbox-swupdate.path")
@@ -4949,11 +4548,6 @@ class SwUpdate:
 
 
 class Updates:
-    """Systemupdates über den getrennten Root-Helfer (pipbox-update.py).
-
-    Dieser Dienst hat keine Root-Rechte. Er legt nur eine Auslösedatei mit einem
-    Stichwort aus fester Liste ab; der Helfer führt dann die festen Aktionen aus.
-    """
     MODES = ("check", "dry", "run", "reboot")
 
     def __init__(self, state_dir, demo):
@@ -4963,13 +4557,12 @@ class Updates:
         self.log_path = os.path.join(state_dir, "update.log")
         self.fake = {}
         self.lock = threading.Lock()
-        self.last_try = 0.0              # wann zuletzt eine stille Suche angefordert wurde (Schleife und Anmeldung teilen sich das)
+        self.last_try = 0.0
 
     def boot_id(self):
         return (read("/proc/sys/kernel/random/boot_id", "demo") or "demo").strip()
 
     def reboot_done(self, st):
-        """Ist die Box seit dem Neustart-Befehl schon wieder gestartet? Erst die Boot-Kennung, sonst die Zeit."""
         rb = st.get("reboot_boot_id")
         if rb and rb != self.boot_id():
             return True
@@ -5002,7 +4595,6 @@ class Updates:
             kernel = os.uname().release
         st["reboot_pending"] = bool(st.get("reboot_required")) and st.get("reboot_boot_id") == self.boot_id()
         if st.get("state") == "rebooting" and self.reboot_done(st):
-            # Der Zustand "Neustart" stammt von vor dem letzten Start der Box und ist längst erledigt
             st["state"] = "done"
             st["message"] = "Die Box ist nach dem Neustart wieder oben."
         st["versions"] = versions
@@ -5031,15 +4623,14 @@ class Updates:
         with os.fdopen(fd, "w") as f:
             f.write(mode + "\n")
 
-    AUTO_EVERY = 6 * 3600         # so oft sucht die Box von selbst nach Systemupdates (nie während einer Übertragung)
-    AUTO_RETRY = 3600             # nach einer Suche ohne Ergebnis (kein Internet) erst nach einer Stunde wieder
-    AUTO_AFTER_BOOT = 2 * 60      # nach dem Start der Box zwei Minuten abwarten (Dienste und Netz kommen hoch), dann suchen
-    EARLY_UPTIME = 30 * 60        # in der ersten halben Stunde nach dem Start (Router und Mobilfunk brauchen oft einige Minuten) ...
-    AUTO_RETRY_EARLY = 5 * 60     # ... wird ein Fehlversuch schon nach 5 Minuten wiederholt
+    AUTO_EVERY = 6 * 3600
+    AUTO_RETRY = 3600
+    AUTO_AFTER_BOOT = 2 * 60
+    EARLY_UPTIME = 30 * 60
+    AUTO_RETRY_EARLY = 5 * 60
 
     @classmethod
     def auto_check_due(cls, st, now, uptime, streaming, request_pending, last_try, helper=True):
-        """Ist es Zeit für die stille Suche nach Systemupdates (alle 6 Stunden)? Reine Rechnung (testbar)."""
         if not helper or streaming or request_pending or uptime < cls.AUTO_AFTER_BOOT:
             return False
         if st.get("state") in ("running", "rebooting"):
@@ -5049,13 +4640,10 @@ class Updates:
             return False
         last = st.get("last_check") or 0
         if last < now - uptime:
-            return True                # seit dem Start der Box noch nicht gesucht: immer einmal nach dem Start
+            return True
         return now - last >= cls.AUTO_EVERY
 
     def auto_check(self, now=None, last_try=None, present=False):
-        """Legt, wenn es Zeit ist, die Anforderung "autocheck" ab. True, wenn angefordert wurde. Der Helfer sucht still: ohne Zustand
-        "läuft", ohne Fehlermeldung bei fehlendem Internet; das Ergebnis erscheint wie bei der Suche per Knopf (gelber Punkt in der Kopfleiste).
-        present: Jemand hat die Oberfläche geöffnet (Anmeldung): dann nicht erst AUTO_AFTER_BOOT nach dem Start abwarten."""
         if self.demo:
             return False
         try:
@@ -5081,9 +4669,8 @@ class Updates:
         while True:
             try:
                 self.auto_check()
-            except Exception as e:                # nie den Dienst beenden
+            except Exception as e:
                 print("auto_check:", e)
-            # in der ersten halben Stunde nach dem Start jede Minute nachsehen (die Suche selbst ist erst nach AUTO_AFTER_BOOT fällig)
             try:
                 early = float((read("/proc/uptime", "") or "0").split()[0]) < self.EARLY_UPTIME
             except (ValueError, IndexError):
@@ -5119,14 +4706,9 @@ DJI_FIELDS = ("addr", "name", "model", "kind", "wifi_ifname", "ssid", "password"
 
 
 class DjiService:
-    """Dünne Schicht zum Bluetooth-Dienst (pipbox-dji, dji_daemon.py): leitet die Befehle der Oberfläche als JSON-Zeilen an
-    127.0.0.1:9101 weiter (mit dem Token, das nur der Benutzer pipbox lesen kann), trägt neue Kameras in die Kameraliste ein
-    und liefert den Zustand. Passwörter der Kamera-WLANs liefert der Dienst nie, hier kommen nur Namen an."""
     MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
     HOST, PORT = "127.0.0.1", 9101
 
-    # Ausgangswerte nach Rolle (nur für neue Kameras): das Hauptbild bekommt mehr, die kleinen Bilder weniger, weil die Box
-    # sie ohnehin auf 480x270 verkleinert. Spart WLAN und Rechenzeit.
     PROFILES = {"main": {"resolution": "1080p", "fps": 30, "bitrate": 8000},
                 "pip": {"resolution": "720p", "fps": 30, "bitrate": 4000}}
 
@@ -5134,13 +4716,12 @@ class DjiService:
         self.config_path = os.path.join(state_dir, "dji-cameras.json")
         self.token_path = os.path.join(state_dir, "dji-token")
         self.cams, self.app, self.port = cams, rtmp_app, rtmp_port
-        self.pipeline = None      # wird von main() gesetzt: Rolle der Kamera in der Pipeline
+        self.pipeline = None
         self.demo = demo
         self.fake = {"cameras": {}, "scan": [], "scanning": False} if demo else None
         self._next_id = 1
 
     def role_for_key(self, key):
-        """main / pip nach der gespeicherten Pipeline, sonst nach der Rolle in der Kameraliste."""
         cfg = getattr(self.pipeline, "cfg", None) or {}
         if cfg.get("main") == key:
             return "main"
@@ -5154,7 +4735,6 @@ class DjiService:
         return "main" if "main" not in roles else "pip" if "pip" not in roles else "extra"
 
     def _call(self, req, timeout=8):
-        """Eine Anfrage an den Bluetooth-Dienst (eine JSON-Zeile hin, die Antwort mit passender Nummer zurück)."""
         if self.demo:
             return self._fake_call(req)
         try:
@@ -5198,7 +4778,6 @@ class DjiService:
             return {}
 
     def addr_for_key(self, key):
-        """Geräteadresse der DJI-Kamera mit diesem Stream-Schlüssel (dji-xxxxxx) oder None. Nur-Akku-Kameras (Schlüssel des HDMI-Eingangs) zählen nicht."""
         if not (isinstance(key, str) and key.startswith("dji-")):
             return None
         for addr, cfg in self._config().items():
@@ -5207,7 +4786,6 @@ class DjiService:
         return None
 
     def remove_for_key(self, key):
-        """Die DJI-Kamera mit diesem Schlüssel aus dem Kamera-Dienst entfernen (für "Kamera entfernen" in der Kameraliste). True, wenn es sie gab."""
         addr = self.addr_for_key(key)
         if not addr:
             return False
@@ -5217,8 +4795,6 @@ class DjiService:
             return False
 
     def fps_for_key(self, key):
-        """Eingestellte Bildrate einer DJI-Kamera (Schlüssel dji-xxxxxx), sonst None. Manche DJI-Modelle melden in ihren
-        Stream-Metadaten keine Bildrate; dann zeigen wir den Wert, mit dem wir sie starten."""
         if not key.startswith("dji-"):
             return None
         for cfg in self._config().values():
@@ -5227,8 +4803,6 @@ class DjiService:
         return None
 
     def host_for_key(self, key):
-        """(Adresse der Box, Verbindung) für die Adresse dieser DJI-Kamera nach der Verbindung in ihrer Karte, sonst None
-        (dann gilt die Hauptverbindung)."""
         if not str(key).startswith("dji-"):
             return None
         for cfg in self._config().values():
@@ -5247,8 +4821,6 @@ class DjiService:
     EXTRAS_TTL = 3.0
 
     def camera_extras(self):
-        """{Schlüssel: {battery, battery_age, charging}} der DJI-Kameras aus dem Zustand des Dienstes (3 Sekunden zwischengespeichert,
-        die Statusseite fragt oft). Ohne Dienst leer."""
         now = time.monotonic()
         hit = getattr(self, "_extras", None)
         if hit and now - hit[0] < self.EXTRAS_TTL:
@@ -5258,8 +4830,6 @@ class DjiService:
             for c in self._call({"cmd": "state"}, timeout=2).get("cameras", []):
                 if c.get("rtmp_key") and c.get("battery") is not None:
                     out[c["rtmp_key"]] = {"battery": c["battery"], "battery_age": c.get("battery_age"), "charging": c.get("charging")}
-                # bewusst aus: "Trennen" gedrückt oder ohne automatisches Verbinden, und die Kamera streamt gerade nicht. Eine Kamera, die an die Box sendet (auch
-                # ohne automatisches Verbinden, zum Beispiel nach einem Neustart des Bluetooth-Dienstes, der sie weiterlaufen ließ), ist nie "aus (gewollt)".
                 sends = c.get("state") in ("streaming", "status") or (c.get("publishing") is True and not c.get("manual_off"))
                 if c.get("rtmp_key") and (c.get("manual_off") or not c.get("autoconnect")) and not sends:
                     parked.add(c["rtmp_key"])
@@ -5270,18 +4840,16 @@ class DjiService:
         return out
 
     def parked_keys(self):
-        """Schlüssel der DJI-Kameras, die der Nutzer bewusst ausgeschaltet hat (aus demselben Zustand wie camera_extras, 3 Sekunden zwischengespeichert)."""
         self.camera_extras()
         return set(getattr(self, "_parked", set()))
 
     def _ensure_listed(self, cameras):
-        """Jede Kamera des Dienstes steht auch in der Kameraliste der Box (damit sie als Bildquelle gewählt werden kann)."""
         if not self.cams:
             return
         have = {c["key"] for c in self.cams.cams}
         for c in cameras:
             key = c.get("rtmp_key")
-            if key and key not in have and key != HDMI_KEY:      # Nur-Akku-Kameras tragen den Schlüssel des HDMI-Eingangs: der legt seine Kamera selbst an
+            if key and key not in have and key != HDMI_KEY:
                 try:
                     self.cams.add(c.get("name") or c.get("model") or "DJI-Kamera", key, self._free_role())
                     have.add(key)
@@ -5306,7 +4874,6 @@ class DjiService:
         return out
 
     def command(self, d):
-        """Ein Befehl der Oberfläche an den Dienst. Nur die bekannten Befehle und Felder gehen durch."""
         cmd = d.get("cmd")
         if cmd not in DJI_COMMANDS:
             raise ValueError("Unbekannter Befehl")
@@ -5321,13 +4888,12 @@ class DjiService:
         if cmd == "add":
             key = "dji-" + str(req.get("addr", "")).replace(":", "").lower()[-6:]
             role = self.role_for_key(key) or self._free_role()
-            req["settings"] = dict(self.PROFILES.get(role, {}))      # erste Einstellung: Ausgangswerte nach Rolle
+            req["settings"] = dict(self.PROFILES.get(role, {}))
         if cmd == "update" and "name" in req and self.cams:
-            # Der Name gilt auch in der Kameraliste der Box: dort umbenennen (ein doppelter Name wird hier abgelehnt)
             cfg = self._config().get(str(req.get("addr", "")).upper()) or {}
             cam = next((c for c in self.cams.cams if c["key"] == cfg.get("rtmp_key")), None)
             if cfg.get("status_only"):
-                cam = None                                    # die Kamera der Liste gehört dem HDMI-Eingang, nicht umbenennen
+                cam = None
             if cam and str(req["name"]).strip() and cam["name"] != str(req["name"]).strip()[:40]:
                 self.cams.update(cam["id"], name=str(req["name"]))
         gone_key = None
@@ -5340,12 +4906,10 @@ class DjiService:
             old_key = (self._config().get(str(req.get("addr", "")).upper()) or {}).get("rtmp_key")
         res = self._call(req)
         if old_key and old_key.startswith("dji-") and not res.get("error"):
-            # Der Akku erscheint nun bei der HDMI-Kamera: der bisherige eigene Eintrag der Kamera in der Kameraliste entfällt
             cam = next((c for c in self.cams.cams if c["key"] == old_key), None)
             if cam:
                 self.cams.remove(cam["id"])
         if gone_key and not res.get("error") and self.cams:
-            # "Entfernen" heißt entfernen: auch der Eintrag in der Kameraliste verschwindet, und ein noch sendender Stream kommt nicht von selbst zurück
             cam = next((c for c in self.cams.cams if c["key"] == gone_key), None)
             if cam:
                 self.cams.remove(cam["id"])
@@ -5354,7 +4918,6 @@ class DjiService:
             self._ensure_listed([{"rtmp_key": res["key"], "model": req.get("model"), "name": req.get("name")}])
         return {k: v for k, v in res.items() if k not in ("reply_to", "token")}
 
-    # -- Vorschau (--demo): ein nachgestellter Dienst im Speicher, damit die Oberfläche ohne Bluetooth zu sehen ist
     def _fake_call(self, req):
         f, cmd = self.fake, req.get("cmd")
         if not f["cameras"] and not f.get("seeded"):
@@ -5372,7 +4935,7 @@ class DjiService:
         if cmd == "state":
             pair = f.get("pair_until", 0) - time.time()
             if f.get("pair_until") and pair <= 0 and not f.get("phones_seeded"):
-                f["phones_seeded"] = True                 # Vorschau: nach der Kopplungszeit steht ein Handy in der Liste
+                f["phones_seeded"] = True
                 f.setdefault("phones", []).append({"addr": "7C:A1:77:00:00:09", "name": "Pixel von Marco", "percent": 60, "steps": 5,
                                                    "age": 0, "error": "", "reading": False})
             return {"cameras": list(f["cameras"].values()), "scan": f["scan"], "scanning": f["scanning"], "scan_error": "",
@@ -5386,7 +4949,7 @@ class DjiService:
                      if r["addr"] not in {c["addr"] for c in f.get("controllers", [])}],
                     "ctrl_message": ""}
         if cmd == "ctrl_scan":
-            f["ctrl_scan_until"] = time.time() + 5          # Vorschau: kurze Suche, dann stehen zwei Geräte in der Liste
+            f["ctrl_scan_until"] = time.time() + 5
             return {"ok": True}
         if cmd == "ctrl_pair":
             f.setdefault("controllers", []).append({"addr": str(req.get("addr", "")).upper(), "name": "Mini Controller", "connected": True, "battery": 87, "pairing": False})
@@ -5395,7 +4958,7 @@ class DjiService:
             f["controllers"] = [c for c in f.get("controllers", []) if c["addr"] != str(req.get("addr", "")).upper()]
             return {"ok": True}
         if cmd == "phone_pair":
-            f["pair_until"] = time.time() + 6              # Vorschau: kurze Kopplungszeit, danach erscheint ein Handy
+            f["pair_until"] = time.time() + 6
             return {"ok": True}
         if cmd == "phone_pair_stop":
             f["pair_until"] = 0
@@ -5452,18 +5015,14 @@ class DjiService:
         return {"ok": True}
 
 
-HDMI_KEY = "hdmi"           # Schlüssel der HDMI-Kamera: der HDMI-Dienst speist das Bild des HDMI-Eingangs unter diesem Namen in den RTMP-Eingang der Box ein
+HDMI_KEY = "hdmi"
 
 
 class HdmiService:
-    """Dünne Schicht zum HDMI-Dienst (pipbox-hdmi, hdmi_daemon.py): leitet die Befehle der Oberfläche als JSON-Zeilen an 127.0.0.1:9102
-    weiter (mit dem Token, das nur der Benutzer pipbox lesen kann), trägt die Kamera "HDMI" in die Kameraliste ein und liefert den Zustand.
-    Der Dienst selbst läuft als root (Hardware-Kodierer, HDMI-Eingang) und nimmt nur geprüfte Zahlen und feste Auswahlen entgegen.
-    Im Demo-Modus gibt es keinen Dienst: ein Eingang mit Signal, der sich ein- und ausschalten lässt."""
     HOST, PORT = "127.0.0.1", 9102
     CAMERA_NAMES = ("HDMI", "HDMI-Eingang", "HDMI 2")
-    USB_NAMES = ("USB-Kamera", "USB-Webcam", "USB 2")        # Name der Kamera, wenn die Quelle die USB-Webcam ist (der Schlüssel bleibt "hdmi")
-    ALLOWED = ("enabled", "bitrate", "fps", "audio", "source", "usb_format")        # was die Oberfläche ändern darf (der Schlüssel ist fest)
+    USB_NAMES = ("USB-Kamera", "USB-Webcam", "USB 2")
+    ALLOWED = ("enabled", "bitrate", "fps", "audio", "source", "usb_format")
     TTL = 1.5
     DOWN = "Der HDMI-Dienst läuft nicht (Software-Update oder install.sh ausführen)"
 
@@ -5476,7 +5035,6 @@ class HdmiService:
         self.fake = dict(hdmi_daemon.DEFAULTS) if demo else None
 
     def _call(self, req, timeout=4):
-        """Eine Anfrage an den HDMI-Dienst (eine JSON-Zeile hin, die Antwort mit passender Nummer zurück)."""
         try:
             with open(self.token_path) as f:
                 tok = f.read().strip()
@@ -5526,7 +5084,6 @@ class HdmiService:
         return bool(self.cams) and any(c["key"] == HDMI_KEY for c in self.cams.cams)
 
     def ensure_listed(self, source="hdmi"):
-        """Die Kamera (Schlüssel "hdmi", Name je nach Quelle "HDMI" oder "USB-Kamera") steht in der Kameraliste der Box (damit sie als Bildquelle gewählt werden kann)."""
         if not self.cams or self._listed():
             return
         roles = {c["role"] for c in self.cams.cams}
@@ -5537,10 +5094,9 @@ class HdmiService:
         try:
             self.cams.add(name, HDMI_KEY, role)
         except ValueError:
-            pass                                           # z. B. der Schlüssel ist schon vergeben: dann steht die Kamera schon in der Liste
+            pass
 
     def status(self):
-        """Zustand für die Oberfläche (1,5 Sekunden zwischengespeichert, die Seite fragt oft). Ohne Dienst: service false mit Meldung."""
         now = time.monotonic()
         with self.lock:
             if self._hit[1] is not None and now - self._hit[0] < self.TTL:
@@ -5565,11 +5121,10 @@ class HdmiService:
         return dict(out)
 
     def set(self, req):
-        """Einstellungen übernehmen (enabled, bitrate in kbit/s, fps, audio). Wirft ValueError (kurze Meldung) oder RuntimeError (Dienst fehlt)."""
         if not isinstance(req, dict):
             raise ValueError("Ungültige Anfrage")
         settings = {k: req[k] for k in self.ALLOWED if k in req}
-        hdmi_daemon.clean_settings(settings, self.fake if self.demo else None)       # dieselbe Prüfung wie im Dienst, vorab
+        hdmi_daemon.clean_settings(settings, self.fake if self.demo else None)
         if self.demo:
             self.fake = hdmi_daemon.clean_settings(settings, self.fake)
         elif settings:
@@ -5581,13 +5136,11 @@ class HdmiService:
         return self.status()
 
     def _last_source(self):
-        """Quelle laut dem zuletzt gelesenen Zustand (für den Namen der Kamera beim Einschalten ohne neue Quelle)."""
         with self.lock:
             st = self._hit[1] or {}
         return (st.get("settings") or {}).get("source", "hdmi")
 
     def on_camera_removed(self):
-        """Die Kamera "HDMI" wurde aus der Liste entfernt: die Einspeisung dazu ausschalten (sonst käme die Kamera von selbst wieder)."""
         try:
             self.set({"enabled": False})
         except (RuntimeError, ValueError):
@@ -5595,33 +5148,26 @@ class HdmiService:
 
 
 class Vault:
-    """Einstellungen mit einem Passwort verschlüsseln und prüfen (Issue #20). Nur die Standardbibliothek:
-      * Schlüssel aus dem Passwort: PBKDF2-HMAC-SHA256, 600000 Runden, 16 Byte Salz, 64 Byte Ergebnis (32 für AES, 32 für die Prüfsumme).
-      * Verschlüsselung: AES-256 im Zählerbetrieb (CTR), Zähler = 12 Byte Nonce + 4 Byte Zähler ab 0. CTR braucht nur die Richtung "Verschlüsseln";
-        diese steht hier selbst (tabellenbasiert) und ist gegen FIPS 197 und NIST SP 800-38A geprüft.
-      * Echtheit: HMAC-SHA256 über Kennung, Rundenzahl, Salz, Nonce und Daten (erst verschlüsseln, dann prüfen). Ein falsches Passwort oder eine
-        veränderte Datei fällt dadurch sicher auf, bevor etwas entschlüsselt wird."""
     ITERATIONS = 600000
-    MIN_ITER, MAX_ITER = 100000, 2000000          # was eine Datei verlangen darf (sonst ließe sich die Box mit einer Datei ausbremsen)
+    MIN_ITER, MAX_ITER = 100000, 2000000
     TAG = b"IRL4YOU-BOX-SETTINGS-1|"
     MIN_PASSWORD, MAX_PASSWORD = 8, 128
     _TABLES = None
 
     @classmethod
     def _tables(cls):
-        """S-Box und die vier Rundentabellen von AES (aus der Definition berechnet, nicht abgetippt)."""
         if cls._TABLES:
             return cls._TABLES
         sbox = [0] * 256
         rot = lambda v, n: ((v << n) | (v >> (8 - n))) & 0xFF
         p = q = 1
         while True:
-            p = (p ^ ((p << 1) & 0xFF) ^ (0x1B if p & 0x80 else 0)) & 0xFF          # p mal 3 im Körper GF(2^8)
+            p = (p ^ ((p << 1) & 0xFF) ^ (0x1B if p & 0x80 else 0)) & 0xFF
             q ^= (q << 1) & 0xFF
             q ^= (q << 2) & 0xFF
             q ^= (q << 4) & 0xFF
             if q & 0x80:
-                q ^= 0x09                                                          # q durch 3 teilen
+                q ^= 0x09
             sbox[p] = (q ^ rot(q, 1) ^ rot(q, 2) ^ rot(q, 3) ^ rot(q, 4) ^ 0x63) & 0xFF
             if p == 1:
                 break
@@ -5655,7 +5201,6 @@ class Vault:
 
     @classmethod
     def aes256_block(cls, rk, block):
-        """Einen Block (16 Byte) mit AES-256 verschlüsseln. rk: Rundenschlüssel aus _round_keys."""
         sbox, t0, t1, t2, t3 = cls._tables()
         s0, s1, s2, s3 = (int.from_bytes(block[i:i + 4], "big") ^ rk[i // 4] for i in (0, 4, 8, 12))
         for r in range(1, 14):
@@ -5673,7 +5218,6 @@ class Vault:
 
     @classmethod
     def ctr(cls, key, counter, data):
-        """Zählerbetrieb: data mit dem Schlüsselstrom ab dem 128-Bit-Zählerwert counter (Zahl) verknüpfen. Ver- und Entschlüsseln sind dasselbe."""
         rk = cls._round_keys(key)
         out = bytearray()
         for i in range(0, len(data), 16):
@@ -5699,7 +5243,6 @@ class Vault:
 
     @classmethod
     def seal(cls, plain, password, header, iterations=None):
-        """plain (Bytes) verschlüsseln. header: Angaben, die unverschlüsselt in der Datei stehen (Kennung, Version, Zeit). Gibt die Datei als dict zurück."""
         cls.check_password(password)
         iterations = iterations or cls.ITERATIONS
         salt, nonce = secrets.token_bytes(16), secrets.token_bytes(12)
@@ -5711,7 +5254,6 @@ class Vault:
 
     @classmethod
     def open(cls, doc, password):
-        """Verschlüsselte Datei (dict) öffnen: Bytes oder ValueError ("Passwort falsch oder Datei verändert")."""
         cls.check_password(password)
         try:
             if doc.get("cipher") != "AES-256-CTR" or doc.get("kdf") != "PBKDF2-HMAC-SHA256":
@@ -5741,30 +5283,19 @@ IFACE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,15}$")
 
 
 class SettingsTransfer:
-    """Einstellungen in eine Datei sichern und wieder einspielen (Issue #20), zum Beispiel nach dem Neu-Aufspielen der SD-Karte.
-
-    Gesichert werden Kameras, Bildaufbau, SRTLA-Server und Sendeeinstellungen, automatischer Start, Namen der Sticks, DJI-Kameras (ihre Einstellungen, nicht die
-    Bluetooth-Kopplung), der HDMI-Eingang, die Akku-Warnung im Twitch-Chat (ohne Token und Anmeldung), das Netzwerk der Kameras, die Optionen der Oberfläche (Reihenfolge
-    und Ausblenden der Menüs), Hotspots und die gespeicherten WLAN-Netze. Nie dabei: das Passwort dieser Oberfläche, SSH, Schlüssel, die Anmeldung der Fernfreigabe,
-    Token und Anmeldung bei Twitch.
-    Eine Datei mit Passwörtern und Zugangsdaten wird immer mit einem Passwort verschlüsselt (Vault). Beim Einspielen wird jeder Teil streng geprüft; die
-    Prüfung der einzelnen Speicher (Kameras, Bildaufbau, SRTLA, Hotspots, WLAN-Helfer) gilt dabei wie bei der Eingabe von Hand. Eingespielt wird nur, wenn
-    nicht gesendet wird, und der Stand davor wird gesichert (Rückgängig)."""
     MAX_BODY = 262144
 
     def __init__(self, state_dir, cams, pipeline, srtla, autostart, names, djisvc, wifi, send, demo=False):
         self.cams, self.pipeline, self.srtla, self.autostart = cams, pipeline, srtla, autostart
         self.names, self.djisvc, self.wifi, self.send, self.demo = names, djisvc, wifi, send, demo
-        self.progress = {"state": "idle"}                  # für die Fortschrittsanzeige beim Einspielen (GET /api/settings/progress)
-        self.iface_map = {}                                # {Name in der Sicherung: Name auf dieser Box} der letzten Prüfung (gleiche MAC, anderer Name)
-        self.hdmi = self.twitch = self.netchoice = None          # werden nach dem Start gesetzt (entstehen später oder fehlen in Tests)
+        self.progress = {"state": "idle"}
+        self.iface_map = {}
+        self.hdmi = self.twitch = self.netchoice = None
         self.backup_dir = os.path.join(state_dir, "backup")
         self.backup_path = os.path.join(self.backup_dir, "vor-einspielen.json")
         self.version = (read(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"), "") or "").strip()
 
-    # ------------------------------------------------------------------ Sichern
     def make_document(self, secrets_on, wifi_data=None):
-        """Die Einstellungen dieser Box als dict. secrets_on: Passwörter und Zugangsdaten mitnehmen. wifi_data: Ergebnis des WLAN-Helfers oder None."""
         doc = {"format": SETTINGS_FORMAT, "version": SETTINGS_VERSION, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                "box_version": self.version, "secrets": bool(secrets_on)}
         with self.cams.lock:
@@ -5796,16 +5327,16 @@ class SettingsTransfer:
                 e["password"] = h["password"]
             hs[iface] = e
         doc["hotspots"] = hs
-        doc["ifaces"] = self.local_macs()                                      # Name -> MAC: beim Einspielen auf einer anderen Karte werden die Namen anhand der MAC zugeordnet
+        doc["ifaces"] = self.local_macs()
         if self.hdmi is not None:
             try:
                 st = self.hdmi.status()
-            except Exception:                                                # der HDMI-Dienst fehlt: der Teil bleibt weg
+            except Exception:
                 st = {}
             if st.get("service"):
                 doc["hdmi"] = {k: st["settings"][k] for k in HdmiService.ALLOWED}
         if self.twitch is not None:
-            with self.twitch.lock:                                           # ohne Token und Anmeldung: beides bleibt auf der Box
+            with self.twitch.lock:
                 t = self.twitch.data
                 doc["twitch"] = {"enabled": bool(t["enabled"]), "channel": t["channel"], "login": t["login"], "threshold": t["threshold"],
                                  "message": t["message"], "only_live": bool(t["only_live"])}
@@ -5817,7 +5348,6 @@ class SettingsTransfer:
         return doc
 
     def export(self, secrets_on, password=None, with_wifi=True):
-        """Datei zum Herunterladen: {"document": dict, "encrypted": bool, "notes": [..]}. Mit Passwörtern nur verschlüsselt."""
         if secrets_on and not password:
             raise ValueError("Eine Datei mit Passwörtern wird immer verschlüsselt: bitte ein Passwort zum Verschlüsseln eingeben")
         if password:
@@ -5838,9 +5368,7 @@ class SettingsTransfer:
             out = doc
         return {"document": out, "encrypted": bool(password), "notes": notes}
 
-    # ------------------------------------------------------------------ Lesen und Prüfen
     def read_document(self, raw, password=None):
-        """Die Datei (geparstes JSON) lesen, bei Bedarf entschlüsseln. Gibt (Einstellungen, verschlüsselt?) zurück."""
         if not isinstance(raw, dict) or raw.get("format") != SETTINGS_FORMAT:
             raise ValueError("Das ist keine Sicherung der IRL4YOU BOX")
         ver = raw.get("version")
@@ -5901,7 +5429,7 @@ class SettingsTransfer:
     def _clean_pipeline(self, raw, keys):
         if not isinstance(raw, dict):
             raise ValueError("Der Bildaufbau ist ungültig")
-        tmp = PipelineStore(os.devnull)                     # prüft wie das Formular, schreibt nichts
+        tmp = PipelineStore(os.devnull)
         tmp.save = lambda: None
         tmp.set(dict(raw), list(keys))
         return dict(raw), []
@@ -6013,7 +5541,7 @@ class SettingsTransfer:
         if not isinstance(raw, dict):
             raise ValueError("Die HDMI-Einstellungen sind ungültig")
         want = {k: raw[k] for k in HdmiService.ALLOWED if k in raw}
-        out = hdmi_daemon.clean_settings(want, None)                         # dieselbe Prüfung wie im Dienst (wirft ValueError mit kurzem Text)
+        out = hdmi_daemon.clean_settings(want, None)
         return {k: out[k] for k in HdmiService.ALLOWED}, []
 
     def _clean_twitch(self, raw):
@@ -6079,7 +5607,6 @@ class SettingsTransfer:
 
     @staticmethod
     def local_macs():
-        """Netzwerkkarten dieser Box mit ihrer MAC-Adresse: {Name: mac}. Die Namen (eth0, eth1) können nach dem Neu-Flashen oder Neustart vertauscht sein, die MAC nicht."""
         out = {}
         try:
             for n in sorted(os.listdir("/sys/class/net")):
@@ -6093,7 +5620,6 @@ class SettingsTransfer:
         return out
 
     def _iface_map(self, doc):
-        """Welche Namen aus der Sicherung heißen auf dieser Box anders? {alter Name: neuer Name}, über gleiche MAC-Adresse (nur Karten, die es hier gibt)."""
         old = doc.get("ifaces")
         if not isinstance(old, dict):
             return {}
@@ -6106,7 +5632,6 @@ class SettingsTransfer:
 
     @staticmethod
     def _remap_ifaces(doc, m):
-        """Kopie der Sicherung mit den Kartennamen nach m (gleichzeitig ersetzt, damit ein Tausch eth0 <-> eth1 klappt)."""
         d = json.loads(json.dumps(doc))
         r = lambda n: m.get(n, n) if isinstance(n, str) else n
         for c in d.get("cameras", []) if isinstance(d.get("cameras"), list) else []:
@@ -6132,7 +5657,6 @@ class SettingsTransfer:
         return d
 
     def clean(self, doc):
-        """Alle Teile der Einstellungen prüfen. Gibt (geprüfte Teile, Bericht) zurück; ein ungültiger Teil fällt mit Begründung heraus."""
         clean, report, labels = {}, [], dict(SETTINGS_SECTIONS)
         self.iface_map = self._iface_map(doc)
         if self.iface_map:
@@ -6190,13 +5714,11 @@ class SettingsTransfer:
         return {"ok": True, "encrypted": encrypted, "created": str(doc.get("created", ""))[:32], "box_version": str(doc.get("box_version", ""))[:16],
                 "secrets": doc.get("secrets") is True, "sections": report, "has_backup": os.path.isfile(self.backup_path)}
 
-    # ------------------------------------------------------------------ Einspielen
     def _guard(self):
         if self.send._active():
             raise ValueError("Es wird gerade gesendet. Bitte zuerst die Sendung beenden, dann einspielen.")
 
     def _write_backup(self):
-        """Der Stand vor dem Einspielen (ohne die WLAN-Netze, die der Helfer führt), nur für den Benutzer pipbox lesbar."""
         doc = self.make_document(True)
         os.makedirs(self.backup_dir, mode=0o700, exist_ok=True)
         tmp = self.backup_path + ".tmp"
@@ -6206,7 +5728,6 @@ class SettingsTransfer:
         os.replace(tmp, self.backup_path)
 
     def apply(self, raw, password=None, sections=None):
-        """Die gewählten Teile einspielen. Gibt {"ok": True, "results": [{id, label, ok, message}], "backup": bool} zurück."""
         self._guard()
         doc, _ = self.read_document(raw, password)
         return self._apply_doc(doc, sections)
@@ -6218,7 +5739,7 @@ class SettingsTransfer:
             raise ValueError("Nichts zum Einspielen gewählt")
         results, labels = [], dict(SETTINGS_SECTIONS)
         total = len(wanted)
-        self.progress = {"state": "running", "done": 0, "total": total, "label": ""}          # zuerst wird der Stand davor gesichert
+        self.progress = {"state": "running", "done": 0, "total": total, "label": ""}
         try:
             self._write_backup()
             for i, sid in enumerate(wanted):
@@ -6226,11 +5747,11 @@ class SettingsTransfer:
                 try:
                     msg = getattr(self, "_apply_" + sid)(clean[sid])
                     results.append({"id": sid, "label": labels[sid], "ok": True, "message": msg})
-                except Exception as e:                                  # ein Teil darf nie die anderen oder die Oberfläche mitnehmen
+                except Exception as e:
                     results.append({"id": sid, "label": labels[sid], "ok": False, "message": str(e) or type(e).__name__})
         finally:
             self.progress = {"state": "done", "done": total, "total": total, "label": ""}
-        if self.iface_map:                                                          # die Netzwerkkarten heißen hier anders: gesagt wird es, damit niemand rätselt
+        if self.iface_map:
             results.insert(0, {"id": "ifaces", "label": "Netzwerkkarten", "ok": True,
                                "message": "Namen der Netzwerkkarten anhand der MAC-Adressen angepasst: %s" % ", ".join("%s → %s" % (a, b) for a, b in sorted(self.iface_map.items()))})
         if "cameras" in wanted and "dji" in wanted:
@@ -6241,8 +5762,6 @@ class SettingsTransfer:
         return {"ok": True, "results": results, "backup": True}
 
     def _restore_camera_names(self, cams):
-        """Die Namen der Kameraliste aus der Sicherung gelten (auch für DJI-Kameras): Beim Einspielen der DJI-Kameras gibt der DJI-Dienst der Kamera in der Liste
-        sonst seinen eigenen Namen zurück, und ein in der Liste vergebener Name ginge verloren."""
         want = {c["key"]: c["name"] for c in cams}
         with self.cams.lock:
             changed = False
@@ -6255,7 +5774,6 @@ class SettingsTransfer:
                 self.cams.save()
 
     def restore(self):
-        """Den Stand vor dem letzten Einspielen wiederherstellen."""
         self._guard()
         try:
             with open(self.backup_path) as f:
@@ -6339,7 +5857,7 @@ class SettingsTransfer:
     def _apply_twitch(self, d):
         if self.twitch is None:
             raise RuntimeError("Die Akku-Warnung ist hier nicht verfügbar")
-        self.twitch.set(dict({k: d[k] for k in ("channel", "login", "threshold", "message", "only_live")}, enabled=False))      # erst die Werte, dann ggf. einschalten
+        self.twitch.set(dict({k: d[k] for k in ("channel", "login", "threshold", "message", "only_live")}, enabled=False))
         if not d["enabled"]:
             return "Akku-Warnung: Einstellungen eingespielt (aus)"
         try:
@@ -6365,8 +5883,6 @@ class SettingsTransfer:
 
 
 def client_wifi_list():
-    """WLAN-Schnittstellen, in denen die Box nur Gast ist (verbunden mit einem fremden Netz, nicht der eigene Hotspot): [{"iface", "ip"}].
-    NetworkManager: Typ wifi, verbunden, Modus der Verbindung nicht "ap". Bei jedem Fehler leer (dann wird nichts gesperrt)."""
     def run(args):
         try:
             return subprocess.run(args, capture_output=True, text=True, timeout=4).stdout.strip()
@@ -6379,7 +5895,7 @@ def client_wifi_list():
             continue
         conn = parts[3].replace("\x00", ":")
         if run(["nmcli", "-g", "802-11-wireless.mode", "connection", "show", conn]) == "ap":
-            continue                                                    # der eigene Hotspot der Box
+            continue
         ip = run(["nmcli", "-g", "IP4.ADDRESS", "dev", "show", parts[0]]).split("/")[0].split("\n")[0]
         if ip:
             out.append({"iface": parts[0], "ip": ip})
@@ -6387,12 +5903,9 @@ def client_wifi_list():
 
 
 class SupportCases:
-    """Issue #13: Probleme und Wünsche aus der Box melden. Die Box sendet selbst nichts (dafür bräuchte sie einen GitHub-Schlüssel mit Schreibrechten, und der
-    ließe sich aus der öffentlichen Software auslesen); sie bereitet das Formular auf GitHub vor. Hier steht nur die Liste "Meine Fälle": je Problem und
-    je Wunsch eine Nummer (IRL-XXXXXX, ohne Bezug zu Person oder Box), Art, Titel, Zeit und "erledigt" (gilt nur auf der Box). Datei <state>/support-cases.json."""
-    KEEP = 1000                                                      # Fälle bleiben erhalten (Nachwelt); die Liste wächst erst nach 1000 Einträgen nicht weiter (je Eintrag rund 200 Byte)
-    DELETE_WINDOW = 30 * 60.0                                       # Fälle bleiben erhalten (Nachwelt); nur kurz nach dem Anlegen lässt sich ein Eintrag entfernen (Issue #64)
-    ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"                 # ohne I, L, O, 0, 1: nicht zu verwechseln
+    KEEP = 1000
+    DELETE_WINDOW = 30 * 60.0
+    ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
     ID_RE = re.compile(r"^IRL-[A-HJKMNP-Z2-9]{6}$")
     TITLE_MAX = 100
 
@@ -6430,10 +5943,9 @@ class SupportCases:
 
     def list(self):
         with self.lock:
-            return [dict(c, kind="feature" if c.get("kind") == "feature" else "issue") for c in reversed(self.cases)]       # ältere Einträge ohne Art sind Probleme
+            return [dict(c, kind="feature" if c.get("kind") == "feature" else "issue") for c in reversed(self.cases)]
 
     def create(self, title, kind="issue", cid=None):
-        """Neuen Fall anlegen. Mit cid legt die Oberfläche die Nummer selbst fest (sie steht schon im Link zu GitHub); sie muss gültig und frei sein."""
         if kind not in ("issue", "feature"):
             raise ValueError("Ungültige Anfrage")
         t = self.clean_title(title)
@@ -6453,8 +5965,6 @@ class SupportCases:
             return dict(case)
 
     def delete(self, cid):
-        """Einen Eintrag nur aus der Liste nehmen, und nur in den ersten DELETE_WINDOW Sekunden nach dem Anlegen (zum Beispiel, wenn man das Formular nicht abgeschickt hat).
-        Ein Issue auf GitHub wird nie angefasst."""
         if not isinstance(cid, str) or not self.ID_RE.match(cid):
             raise ValueError("Ungültige Anfrage")
         with self.lock:
@@ -6480,10 +5990,6 @@ class SupportCases:
 
 
 class ExtraAddress:
-    """Feste Zusatzadresse für ein LAN-Kabel (Issue #65): neben der DHCP-Adresse vom Router eine zweite, feste Adresse, gebunden an die **MAC-Adresse** der
-    Netzkarte. Dieser Dienst hat keine Root-Rechte: Er prüft die Eingabe, legt eine Auslösedatei an (netaddr-request) und wartet auf das Ergebnis des Root-Helfers
-    pipbox-netaddr.py (der prüft alles noch einmal, setzt die Adresse und legt ein Skript in /etc/network/if-up.d ab, das sie bei jedem Hochfahren der Karte
-    wiedersetzt). Voraussetzung: ein getrennter Adressraum, das Netz darf sich nicht mit dem einer anderen Netzkarte überschneiden (prüft der Helfer)."""
     CONF = "/etc/pipbox/extra-ip.json"
     STATUS = "/run/pipbox-netaddr/status.json"
     UNIT = "/etc/systemd/system/pipbox-netaddr.path"
@@ -6500,7 +6006,6 @@ class ExtraAddress:
 
     @classmethod
     def check(cls, mac, addr, prefix):
-        """Eingabe prüfen (der Helfer prüft noch einmal); wirft ValueError mit einem lesbaren Text."""
         import ipaddress
         if not isinstance(mac, str) or not cls.MAC_RE.match(mac):
             raise ValueError("Ungültige MAC-Adresse")
@@ -6520,7 +6025,6 @@ class ExtraAddress:
         return str(a)
 
     def cards(self):
-        """Verkabelte, echte Netzkarten: [{"name", "mac", "addrs": ["192.168.1.5/24", ...]}]."""
         out = []
         try:
             names = sorted(os.listdir(self.SYS_NET))
@@ -6606,10 +6110,6 @@ class ExtraAddress:
 
 
 class UiAccess:
-    """Schalter "Oberfläche über fremde WLANs sperren" (Issue #25): Die Oberfläche läuft unverschlüsselt (HTTP). In einem WLAN, in dem die Box nur
-    Gast ist, liest dort jeder mit. Ist der Schalter an, werden Verbindungen auf der Adresse eines solchen WLANs ohne Antwort getrennt. Ethernet,
-    der eigene Hotspot, USB und Tailscale bleiben erreichbar. Aus der Aussperrung heraus: per Ethernet/Tailscale ausschalten oder die Datei
-    ui-access.json im Zustandsordner löschen. Standard: aus (sonst könnte sich sperren, wer die Box nur per WLAN erreicht)."""
     TTL = 5.0
 
     def __init__(self, path, demo=False, lister=None):
@@ -6636,7 +6136,6 @@ class UiAccess:
             return list(self._cache[1])
 
     def refuses(self, local_ip):
-        """Soll eine Verbindung auf dieser eigenen Adresse abgewiesen werden?"""
         return bool(self.block and local_ip and any(c["ip"] == local_ip for c in self.clients()))
 
     def status(self, local_ip=None):
@@ -6662,9 +6161,6 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 def client_origin(peer, forwarded=False):
-    """Woher kommt die Anfrage? "lokal": Heimnetz, Router-WLAN, Hotspot der Box (private Adressen) und die Box selbst. "extern": über Tailscale (eigene
-    Adresse aus 100.64.0.0/10 oder über den Tailscale-Proxy auf dieser Box, erkennbar an X-Forwarded-For), über einen öffentlichen Link (Funnel) oder von einer
-    öffentlichen Adresse. Das entscheidet über die Vorschau (sie kostet Upload, den die Sendung braucht)."""
     try:
         a = ipaddress.ip_address(str(peer).split("%")[0])
     except ValueError:
@@ -6679,9 +6175,6 @@ def client_origin(peer, forwarded=False):
 
 
 class PreviewAccess:
-    """Vorschau von außen (Wunsch des Nutzers): Jede Vorschau braucht rund 1,7 Mbit/s Upload. Von außen (Tailscale, öffentlicher Link) ist sie deshalb
-    **standardmäßig aus**; der Nutzer kann sie im Heimnetz erlauben. Dann nur **klein** (EXT_WIDTH × EXT_FPS) und für **einen** Zuschauer zugleich, damit
-    der Upload für die Sendung bleibt. Lokal bleibt alles wie bisher. Datei: preview-access.json im Zustandsordner (Rechte 0600)."""
     EXT_WIDTH = 320
     EXT_FPS = 10
     EXT_MAX = 1
@@ -6718,7 +6211,6 @@ class PreviewAccess:
         return origin != "extern" or self.external
 
     def acquire(self, origin):
-        """Platz für eine Vorschau reservieren: lokal immer (die Vorschau selbst begrenzt auf zwei), von außen nur, wenn erlaubt und noch frei."""
         if origin != "extern":
             return True
         with self.lock:
@@ -6734,9 +6226,6 @@ class PreviewAccess:
 
 
 def source_allowed(ip):
-    """Darf diese Adresse die Oberfläche erreichen? Nur eigene und private Netze: Loopback (Tailscale-Proxy), private Adressbereiche, Link-Local,
-    Carrier-Grade-NAT (100.64.0.0/10, dort liegt auch Tailscale) und IPv6-ULA. Eine öffentliche Quelladresse heißt: die Oberfläche hängt
-    versehentlich im Internet (z. B. Portfreigabe, Modem mit öffentlicher Adresse); gedacht ist "nur privat erreichbar"."""
     try:
         a = ipaddress.ip_address(ip.split("%")[0])
     except ValueError:
@@ -6747,8 +6236,6 @@ def source_allowed(ip):
 
 
 class LimitedHTTPServer(ThreadingHTTPServer):
-    """ThreadingHTTPServer mit Grenzen (Issue #25): höchstens MAX_CONN Verbindungen zugleich, davon höchstens PER_IP je Absender (ein einzelner
-    Client mit lauter halb offenen Anfragen sperrt so nicht alle anderen aus), und keine Quelladressen aus dem öffentlichen Internet."""
     daemon_threads = True
     request_queue_size = 64
     MAX_CONN = 64
@@ -6763,7 +6250,7 @@ class LimitedHTTPServer(ThreadingHTTPServer):
         self._senders = {}
         self._total = 0
 
-    LOOPBACK_CONN = 48        # vom Tailscale-Proxy (Serve/Funnel): davor nur diese Obergrenze, danach zählt der echte Absender aus X-Forwarded-For
+    LOOPBACK_CONN = 48
 
     def verify_request(self, request, client_address):
         ip = client_address[0]
@@ -6771,7 +6258,7 @@ class LimitedHTTPServer(ThreadingHTTPServer):
             return False
         loop = self.is_loopback(ip)
         ua = self.ui_access
-        if ua is not None and ua.block:                                   # über fremde WLANs (Gast-WLAN der Box) nicht erreichbar
+        if ua is not None and ua.block:
             try:
                 if ua.refuses(request.getsockname()[0]):
                     return False
@@ -6789,7 +6276,6 @@ class LimitedHTTPServer(ThreadingHTTPServer):
         return ip in ("127.0.0.1", "::1")
 
     def claim_sender(self, ip):
-        """Hinter dem Proxy: den echten Absender zählen (höchstens PER_IP offene Verbindungen). Wahr, wenn noch Platz ist."""
         with self._conn_lock:
             if self._senders.get(ip, 0) >= self.PER_IP:
                 return False
@@ -6805,8 +6291,6 @@ class LimitedHTTPServer(ThreadingHTTPServer):
                 self._senders.pop(ip, None)
 
     def handle_error(self, request, client_address):
-        """Ein Gegenüber, das die Verbindung abbricht oder zu langsam ist (Issue #25), ist kein Fehler des Dienstes: kein Traceback im Journal
-        (sonst wird das Protokoll bei vielen abgeschnittenen Anfragen unlesbar)."""
         exc = sys.exc_info()[1]
         if isinstance(exc, (ConnectionError, TimeoutError, socket.timeout)) or (isinstance(exc, OSError) and exc.errno in (9, 32, 54, 104)):
             return
@@ -6827,8 +6311,6 @@ class LimitedHTTPServer(ThreadingHTTPServer):
 
 
 def scene_swap(pipeline, cams, send, with_key=None):
-    """Hauptbild gegen ein kleines Bild tauschen (Oberfläche und Controller-Tasten). Ohne Angabe das erste kleine Bild.
-    Gibt die Antwort der Schnittstelle zurück oder löst ValueError mit einem lesbaren Text aus."""
     if with_key is not None and (not isinstance(with_key, str) or not KEY_RE.match(with_key)):
         raise ValueError("Kamera unbekannt")
     target = with_key or pipeline.cfg.get("pip")
@@ -6838,8 +6320,8 @@ def scene_swap(pipeline, cams, send, with_key=None):
     shown = pipeline.swap_main_pip(with_key)
     if send.always_live() or send.swap_live():
         note = "Getauscht, ohne Unterbrechung."
-        moved = PipelineStore.view_values(pipeline.cfg)[1] != old_audio                  # eine Facecam nimmt ihren Ton mit
-        if shown or moved:             # das kleine Bild der bisherigen Hauptkamera war ausgeblendet gespeichert und ist jetzt sichtbar
+        moved = PipelineStore.view_values(pipeline.cfg)[1] != old_audio
+        if shown or moved:
             hide, aud = PipelineStore.view_values(pipeline.cfg)
             cur = send.view_state()
             if not (send.view_live() and send.apply_view(hide, aud, bool(cur and cur["mute"]))):
@@ -6850,9 +6332,6 @@ def scene_swap(pipeline, cams, send, with_key=None):
 
 
 def controller_action(fn, pipeline, cams, send):
-    """Funktion einer Controller-Taste ausführen. Bild-Funktionen tauschen immer das Hauptbild: „Kleines Bild N“ holt die Kamera,
-    die gerade dort ist, ins Hauptbild (die bisherige Hauptkamera nimmt ihren Platz ein; nochmal drücken tauscht zurück); „Hauptbild“
-    holt die Kamera mit der Rolle Hauptbild der Kameraliste zurück. Ton: stumm schalten (an/aus) und zur nächsten Tonquelle."""
     cfg = pipeline.cfg
     if fn in ("pip1", "pip2", "pip3"):
         key = cfg.get({"pip1": "pip", "pip2": "pip2", "pip3": "pip3"}[fn])
@@ -6875,9 +6354,9 @@ def controller_action(fn, pipeline, cams, send):
 class Handler(BaseHTTPRequestHandler):
     ERR_NO_ACCOUNT = "Zum Schreiben und Moderieren bitte in diesem Browser bei Twitch anmelden (Zuschauer oder Moderator)"
     ERR_NOT_MOD = "Moderieren dürfen nur der Streamer und Moderatoren dieses Kanals"
-    timeout = 15              # eine Verbindung, die so lange nichts sendet, wird beendet (Issue #25: halb offene Anfragen blieben ewig offen)
-    BODY_SECONDS = 15.0       # so lange darf der Inhalt einer Anfrage insgesamt brauchen (nicht nur je Teilstück)
-    REQUEST_SECONDS = 15.0    # Gesamtfrist für Kopfzeilen und Inhalt zusammen; danach wird die Verbindung getrennt (ein Byte alle paar Sekunden hielt sie offen)
+    timeout = 15
+    BODY_SECONDS = 15.0
+    REQUEST_SECONDS = 15.0
     _timer = None
     _claimed = None
 
@@ -6894,7 +6373,6 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def request_read(self):
-        """Die Anfrage ist vollständig gelesen: Gesamtfrist beenden (Antworten schreiben hat seine eigene Zeitgrenze je Teilstück)."""
         t = self._timer
         if t is not None:
             t.cancel()
@@ -6912,7 +6390,7 @@ class Handler(BaseHTTPRequestHandler):
     def parse_request(self):
         ok = super().parse_request()
         if ok and self.client_address[0] in ("127.0.0.1", "::1") and hasattr(self.server, "claim_sender"):
-            real = self.ip()                                           # Anfrage vom Proxy: den echten Absender zählen
+            real = self.ip()
             if real not in ("127.0.0.1", "::1"):
                 if not self.server.claim_sender(real):
                     self.send_error(429, "Zu viele Verbindungen")
@@ -6945,8 +6423,6 @@ class Handler(BaseHTTPRequestHandler):
         return (self.headers.get("Host") or "box").split(":")[0]
 
     def ip(self):
-        """Adresse des Gegenübers. Kommt die Anfrage vom Tailscale-Proxy auf dieser Box (Serve/Funnel), zählt die Adresse, die der
-        Proxy als letzte in X-Forwarded-For angehängt hat: So sperren fehlgeschlagene Anmeldungen einzelne Absender und nicht alle."""
         peer = self.client_address[0]
         if peer in ("127.0.0.1", "::1"):
             last = (self.headers.get("X-Forwarded-For", "") or "").split(",")[-1].strip()
@@ -6958,11 +6434,9 @@ class Handler(BaseHTTPRequestHandler):
         return peer
 
     def origin(self):
-        """"lokal" oder "extern" (siehe client_origin): beim Tailscale-Proxy auf dieser Box kommt die Anfrage von 127.0.0.1 mit X-Forwarded-For."""
         return client_origin(self.client_address[0], bool(self.headers.get("X-Forwarded-For")))
 
     def local_ip(self):
-        """Eigene Adresse, auf der diese Verbindung ankam (welches Netz der Box)."""
         try:
             return self.connection.getsockname()[0]
         except (OSError, AttributeError):
@@ -6991,11 +6465,10 @@ class Handler(BaseHTTPRequestHandler):
         self.request_read()
         out = json.loads(data or b"{}")
         if not isinstance(out, dict):
-            raise ValueError("Ungültige Anfrage")                 # alle Routen erwarten ein Objekt
+            raise ValueError("Ungültige Anfrage")
         return out
 
     def read_body(self, n):
-        """Liest n Bytes, insgesamt höchstens BODY_SECONDS lang (ein Absender, der alle paar Sekunden ein Byte schickt, hält sonst die Verbindung offen)."""
         end = time.monotonic() + self.BODY_SECONDS
         buf = b""
         while len(buf) < n:
@@ -7003,7 +6476,7 @@ class Handler(BaseHTTPRequestHandler):
             if left <= 0:
                 raise ValueError("Die Anfrage kam zu langsam")
             conn = getattr(self, "connection", None)
-            if conn is None:                                      # ohne Verbindung (Tests mit nachgestellter Anfrage): einfach lesen
+            if conn is None:
                 return self.rfile.read(n)
             conn.settimeout(left)
             try:
@@ -7016,7 +6489,6 @@ class Handler(BaseHTTPRequestHandler):
         return buf
 
     def preview_stream(self):
-        """Motion-JPEG des gesendeten Bildes (Issue #52): multipart/x-mixed-replace, durchgereicht vom Vorschau-Dienst, bis der Browser geht, die Zeit um ist oder die Sendung endet."""
         pv = self.preview
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if not pv:
@@ -7024,11 +6496,11 @@ class Handler(BaseHTTPRequestHandler):
         org = self.origin()
         pa = self.previewaccess
         if not pa.allowed(org):
-            return self.reply(403, {"error": "extern"})                           # von außen nicht freigegeben
+            return self.reply(403, {"error": "extern"})
         if not self.send._active():
             return self.reply(503, {"error": "off"})
         if not pa.acquire(org):
-            return self.reply(429, {"error": "busy"})                             # von außen höchstens ein Zuschauer
+            return self.reply(429, {"error": "busy"})
         try:
             return self._preview_stream(pv, q, org)
         finally:
@@ -7039,7 +6511,7 @@ class Handler(BaseHTTPRequestHandler):
             fmt = (q.get("fmt") or ["mp4"])[0]
             fmt = fmt if fmt in pipbox_preview.FORMATS else "mp4"
             fps, width, long = (q.get("fps") or [30])[0], (q.get("w") or [640])[0], (q.get("long") or [""])[0] == "1"
-            if org == "extern":                                                   # von außen immer klein und kurz: der Upload bleibt für die Sendung
+            if org == "extern":
                 try:
                     fps = min(int(fps), self.previewaccess.EXT_FPS)
                     width = min(int(width), self.previewaccess.EXT_WIDTH)
@@ -7071,9 +6543,9 @@ class Handler(BaseHTTPRequestHandler):
                     started = True
                 self.wfile.write(data)
                 self.wfile.flush()
-                pipbox_preview.TRAFFIC.add(lip, len(data))               # für die Anzeige des Uploads (siehe Sampler.net_bytes)
+                pipbox_preview.TRAFFIC.add(lip, len(data))
         except OSError:
-            pass                                       # Browser weg oder Dienst still: Verbindung zum Dienst schließen beendet die Vorschau dort
+            pass
         finally:
             try:
                 up.close()
@@ -7108,7 +6580,6 @@ class Handler(BaseHTTPRequestHandler):
     I18N_RE = re.compile(r"^/i18n/([a-z]{2,3}|languages)\.json$")
 
     def i18n_file(self, path):
-        """Übersetzungsdateien der Seite (Issue #24): /i18n.js und /i18n/<Sprache>.json aus web/. Öffentlich (die Anmeldeseite braucht sie), keine Geheimnisse."""
         if path == "/i18n.js":
             name, ctype = "i18n.js", "application/javascript; charset=utf-8"
         else:
@@ -7128,14 +6599,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(200, body.encode(), "text/html; charset=utf-8")
 
     def conn_labels(self):
-        """Namen hinter den Schnittstellen (Status, Sendewege): eigene Namen der Verbindungen, bei WLAN-Karten ohne eigenen Namen der Name des Sticks."""
         base = dict(self.wifi.labels()) if self.wifi else {}
         base.update(self.names.conn_names() if self.names else {})
         return base
 
     def metrics_data(self, light=False):
-        """Messwerte der Statusseite (Prozessor, Netz, Kameras, Sendewege, Meldungen): Quelle von /api/metrics und der Statistik-Freigabe. light: ohne das, was nur die Seite braucht
-        (welche Kamera gerade im Bild ist), spart Rechenzeit bei der Statistik."""
         m = self.sampler.sample()
         try:
             m["alerts"] = list(m.get("alerts") or []) + self.usbwatch.alerts()
@@ -7143,7 +6611,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
         m["cameras"] = self.cams.listing(self.host(), self.djisvc.host_for_key)
         parked = set()
-        try:                                                           # bewusst ausgeschaltete Kameras: im Bildaufbau deaktiviert oder DJI getrennt
+        try:
             pc = self.pipeline.cfg
             inactive = set(pc.get("inactive") or []) if pc.get("type") == "pip" else set()
             parked = inactive | self.djisvc.parked_keys()
@@ -7161,7 +6629,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
         extras = self.djisvc.camera_extras()
         for c in m["cameras"]:
-            c.update(extras.get(c["key"], {}))             # Akkustand der DJI-Kameras (Status, Kameras)
+            c.update(extras.get(c["key"], {}))
         m["uplinks"] = uplink_states(((self.srtla.data or {}).get("settings") or {}).get("uplinks") or [])
         m["conn_names"] = self.conn_labels()
         pic = None if light else self.send.picture()
@@ -7174,26 +6642,24 @@ class Handler(BaseHTTPRequestHandler):
         for c in m["cameras"]:
             if c.get("state") == "live" and not c.get("fps"):
                 if c["key"] in measured:
-                    c["fps"], c["fps_measured"] = measured[c["key"]], True        # von belacoder am Mischer gemessen (Kameras ohne Metadaten, zum Beispiel Handys)
+                    c["fps"], c["fps_measured"] = measured[c["key"]], True
                     continue
                 f = self.djisvc.fps_for_key(c["key"])
                 if f:
-                    c["fps"], c["fps_set"] = float(f), True      # eingestellt, nicht gemessen
+                    c["fps"], c["fps_set"] = float(f), True
                 elif self.fpsprobe and c["key"] != HDMI_KEY:
-                    p = self.fpsprobe.get(c["key"])              # noch nicht gesendet: kurz den Stream lesen und Bilder zählen (im Hintergrund, der Wert erscheint beim nächsten Abruf)
+                    p = self.fpsprobe.get(c["key"])
                     if p:
                         c["fps"], c["fps_measured"] = p, True
         return m
 
     @classmethod
     def stats_snapshot_now(cls):
-        """Schnappschuss der Statistik ohne Anfrage (für den Statistik-Server): dieselben Werte wie die Statusseite, eine Sekunde zwischengespeichert."""
         h = object.__new__(cls)
-        h.headers = {}                                    # host() nimmt dann "box"
+        h.headers = {}
         return cls.statsshare.snapshot(lambda: build_stats_snapshot(h.metrics_data(light=True), {"active": h.send.live_fast()}, h.conn_labels(), h.statsshare.groups()))
 
     def stats_status(self):
-        """Einstellungen und Zustand der öffentlichen Statistik für die Oberfläche (mit den fertigen Adressen, wenn die Freigabe steht)."""
         st = self.statsshare.status()
         rs = self.remote.status()
         st.update(installed=rs["installed"], connected=rs["connected"], busy=rs["state"] == "working", state=rs["state"], message=rs["message"], hint_url=rs["hint_url"],
@@ -7205,7 +6671,6 @@ class Handler(BaseHTTPRequestHandler):
         return st
 
     def stats_widget(self):
-        """statistik.html zum Herunterladen, mit der öffentlichen WebSocket-Adresse schon eingetragen (nur angemeldet)."""
         st = self.stats_status()
         if not st["ws_url"]:
             return self.reply(409, {"error": "Die öffentliche Statistik ist nicht freigegeben"})
@@ -7225,13 +6690,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/auth":
             out = {"configured": self.auth.configured, "mode": self.auth.mode, "authed": self.authed()}
             if self.auth.mode == "demo":
-                out["demo_password"] = Auth.DEMO_PASSWORD     # nur in der Vorschau: die Anmeldeseite füllt es vor
+                out["demo_password"] = Auth.DEMO_PASSWORD
             return self.reply(200, out)
         if path == "/api/swprogress":
             return self.reply(200, self.swupdate.progress_public())
         if not self.authed():
             return self.reply(401, {"error": "nicht angemeldet"})
-        if path in ("/chat.js", "/chat.css"):                                  # Code und Aussehen des Chats stehen in eigenen Dateien (web/chat.js, web/chat.css)
+        if path in ("/chat.js", "/chat.css"):
             body = read(os.path.join(WEB_DIR, path[1:]), "")
             return self.send_bytes(200, body.encode(), "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css; charset=utf-8")
         if path == "/api/statsshare":
@@ -7247,9 +6712,9 @@ class Handler(BaseHTTPRequestHandler):
             if not self.preview:
                 return self.reply(200, {"available": False, "why": "missing", "origin": org})
             if not self.previewaccess.allowed(org):
-                return self.reply(200, {"available": False, "why": "extern", "origin": org})         # von außen nicht freigegeben
+                return self.reply(200, {"available": False, "why": "extern", "origin": org})
             if not self.send._active():
-                return self.reply(200, {"available": False, "why": "off", "origin": org})            # ohne Sendung gar nicht erst den Dienst wecken
+                return self.reply(200, {"available": False, "why": "off", "origin": org})
             st = self.preview.status()
             st["origin"] = org
             if org == "extern":
@@ -7310,7 +6775,7 @@ class Handler(BaseHTTPRequestHandler):
                                     "now": int(time.time()), "delete_window": int(self.support.DELETE_WINDOW)})
         if path == "/api/update":
             try:
-                self.updates.auto_check(present=True)       # Wer die Seite öffnet, soll gleich wissen, ob es Updates gibt (einmal je Start, still)
+                self.updates.auto_check(present=True)
             except Exception as e:
                 print("auto_check (Anmeldung):", e)
             return self.reply(200, self.updates.status())
@@ -7336,7 +6801,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 since = 0
             out = self.chatreader.poll(since)
-            out["account"] = self.twitchaccounts.status(self.headers.get("x-pb-owner", ""))              # die Lage dieses Browsers (Streamer, Moderator oder nur Lesen)
+            out["account"] = self.twitchaccounts.status(self.headers.get("x-pb-owner", ""))
             out["events"] = self.chatevents.status() if getattr(self, "chatevents", None) else {"state": "aus", "types": [], "error": ""}
             return self.reply(200, out)
         if path == "/api/hdmi":
@@ -7396,7 +6861,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("enabled muss wahr oder falsch sein")
                 self.statsshare.update(None, d.get("groups"), d.get("new_token") is True)
                 if en is True:
-                    self.remote.request("stats_on", True, True)               # scheitert mit Meldung, wenn Tailscale nicht verbunden ist: dann bleibt die Freigabe aus
+                    self.remote.request("stats_on", True, True)
                     self.statsshare.update(True)
                 elif en is False:
                     self.statsshare.update(False)
@@ -7464,7 +6929,7 @@ class Handler(BaseHTTPRequestHandler):
                 key, act = d.get("key"), d.get("active")
                 c = self.pipeline.cfg
                 if act is False and c.get("type") == "pip" and key and c.get("audio") in ("pip", "pip2", "pip3") and c.get(c["audio"]) == key and key != c.get("main"):
-                    self.send.change_view(audio="main")        # lag der Ton auf der Kamera, geht er zuerst zum Hauptbild; erst danach wird ihr Zweig gestoppt (sonst bleibt der Ton tot)
+                    self.send.change_view(audio="main")
                 self.pipeline.set_active(key, act)
                 return self.reply(200, {"ok": True})
             if path == "/api/pipeline/swap":
@@ -7477,18 +6942,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, dict(self.send.change_view(audio=aud), ok=True, facecam=self.pipeline.cfg.get("facecam", "")))
             if path == "/api/pipeline":
                 before = dict(self.pipeline.cfg)
-                before["styles"] = clean_styles(before.get("styles"))        # eine unveränderte Einstellung ohne Stile gilt nicht als Änderung
+                before["styles"] = clean_styles(before.get("styles"))
                 self.pipeline.set(d, [c["key"] for c in self.cams.cams])
                 restarted, note = (False, "")
                 if self.pipeline.cfg != before and self.send.always_live() and always_compatible(before, self.pipeline.cfg):
-                    # "alle Kameras immer bereit": der Sende-Dienst liest die Einstellung und übernimmt Zuordnung und Verzögerung selbst; Ansicht und Ton stellt pbctl
                     hide, aud = PipelineStore.view_values(self.pipeline.cfg)
                     cur = self.send.view_state()
                     if (hide, aud) != PipelineStore.view_values(before):
                         self.send.apply_view(hide, aud, bool(cur and cur["mute"]))
                     return self.reply(200, {"ok": True, "restarted": False, "note": "Gespeichert. Die Änderung gilt sofort, ohne Neustart."})
                 if self.pipeline.cfg != before and view_only_change(before, self.pipeline.cfg):
-                    # nur "Bild einblenden" und/oder die Tonquelle geändert: im Betrieb ohne Neustart übernehmen, wenn die Sendekette das kann
                     hide, aud = PipelineStore.view_values(self.pipeline.cfg)
                     audio_changed = before.get("audio") != self.pipeline.cfg.get("audio")
                     cur = self.send.view_state()
@@ -7549,15 +7012,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply(400, {"error": str(e)})
             if path == "/api/uiaccess":
                 return self.reply(200, self.uiaccess.set(d.get("block_client_wifi"), self.local_ip()))
-            if path == "/api/previewaccess":                                   # auch über Tailscale änderbar (Wunsch des Nutzers, Anmeldung ist ohnehin nötig): ein Streamer unterwegs schaltet es selbst ein
+            if path == "/api/previewaccess":
                 return self.reply(200, dict(self.previewaccess.set(d.get("external")), origin=self.origin()))
             if path == "/api/twitch/login":
                 act = d.get("action")
                 key = d.get("owner") or self.headers.get("x-pb-owner", "")
                 if act == "start":
-                    if d.get("as") in ("mod", "user"):                            # eigenes Konto (Moderator oder Zuschauer): getrennt vom Konto des Streamers
+                    if d.get("as") in ("mod", "user"):
                         self.twitchsessions.start(key, mod=d.get("as") == "mod")
-                    else:                                                         # Konto des Streamers: nur das eingetragene Konto (Kanal) oder das schon angemeldete der Box
+                    else:
                         name = self.twitchaccounts.streamer_name()
                         if not name:
                             return self.reply(400, {"error": TwitchLogin.ERR_NO_CHANNEL})
@@ -7583,7 +7046,7 @@ class Handler(BaseHTTPRequestHandler):
                 key = d.get("owner") or self.headers.get("x-pb-owner", "")
                 role, acct = self.twitchaccounts.pick(key)
                 if role in ("mod", "user"):
-                    self.twitchsessions.logout(key)                               # nur die eigene Anmeldung; das Konto des Streamers bleibt
+                    self.twitchsessions.logout(key)
                 elif role == "owner":
                     self.twitchlogin.logout()
                 else:
@@ -7598,7 +7061,7 @@ class Handler(BaseHTTPRequestHandler):
                 if act == "logout":
                     r = self.twitchbot.logout()
                     with self.twitch.lock:
-                        self.twitch.tries.clear()                              # Versuche neu starten; ohne Bot gilt wieder das Hauptkonto oder der Token von Hand
+                        self.twitch.tries.clear()
                     return self.reply(200, r)
                 return self.reply(400, {"error": "Ungültige Anfrage"})
             if path == "/api/chat/mod":
@@ -7674,11 +7137,11 @@ class Handler(BaseHTTPRequestHandler):
         if not m or not self.cams.remove(m.group(1)):
             return self.reply(404, {"error": "nicht gefunden"})
         if cam and cam.get("key") == HDMI_KEY and self.hdmi:
-            self.hdmi.on_camera_removed()                    # die Kamera "HDMI" ist weg: die Einspeisung ausschalten
+            self.hdmi.on_camera_removed()
         if cam:
-            self.cams.forget(cam.get("key"))                 # ein noch sendender Stream kommt nicht von selbst zurück
+            self.cams.forget(cam.get("key"))
             if getattr(self, "djisvc", None):
-                self.djisvc.remove_for_key(cam.get("key"))   # eine DJI-Kamera auch aus dem Kamera-Dienst nehmen, sonst trägt ihn die Box gleich wieder ein
+                self.djisvc.remove_for_key(cam.get("key"))
         self.reply(200, {"ok": True})
 
 
@@ -7687,7 +7150,7 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8780)
     ap.add_argument("--demo", action="store_true", help="Beispielwerte statt /proc")
-    ap.add_argument("--allow-public", action="store_true", help=argparse.SUPPRESS)      # auch öffentliche Quelladressen annehmen (sonst nur Loopback und private Netze, Issue #25)
+    ap.add_argument("--allow-public", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--state", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "state"),
                     help="Ordner für Passwort-Hash und Kameraliste")
     ap.add_argument("--bela-config", default="", help="belaUI config.json: BELABOX-Passwort mitbenutzen")
@@ -7698,19 +7161,19 @@ def main():
     Handler.updates = Updates(args.state, args.demo)
     if not args.demo:
         threading.Thread(target=Handler.updates.auto_loop, daemon=True).start()
-    Handler.djisvc = None  # unten gesetzt, sobald Kameraliste existiert
+    Handler.djisvc = None
     Handler.auth = Auth(args.state, args.bela_config or None,
-                        demo=args.demo and args.host in ("127.0.0.1", "::1", "localhost"))   # Demo-Passwort nur auf dem eigenen Rechner
+                        demo=args.demo and args.host in ("127.0.0.1", "::1", "localhost"))
     Handler.cams = CameraStore(os.path.join(args.state, "cameras.json"), args.rtmp_app, args.rtmp_stat_url, args.demo)
     Handler.outages = OutageWatch()
     Handler.usbwatch = UsbWatch(os.path.join(args.state, "usb-events.json"), demo=args.demo)
     Handler.support = SupportCases(os.path.join(args.state, "support-cases.json"))
     Handler.sampler = Sampler(args.demo)
-    Handler.sampler.sample()  # Startwerte für Ratenberechnung
+    Handler.sampler.sample()
     Handler.srtla = SrtlaStore(os.path.join(args.state, "srtla.json"))
     Handler.pipeline = PipelineStore(os.path.join(args.state, "pipeline.json"))
     Handler.send = SendControl(args.state, Handler.srtla, Handler.pipeline, Handler.cams, args.demo)
-    Handler.preview = pipbox_preview.Client() if pipbox_preview and not args.demo else None          # die Vorschau macht ein eigener Dienst (pipbox-preview.service), der Webserver reicht nur durch
+    Handler.preview = pipbox_preview.Client() if pipbox_preview and not args.demo else None
     Handler.swupdate = SwUpdate(args.state, args.demo, Handler.send)
     if not args.demo:
         threading.Thread(target=Handler.swupdate.auto_loop, daemon=True).start()
@@ -7737,10 +7200,10 @@ def main():
     Handler.djisvc = DjiService(args.state, Handler.cams, args.rtmp_app, args.rtmp_port, args.demo)
     Handler.djisvc.pipeline = Handler.pipeline
     Handler.ckeys = controller_keys.ControllerKeys(args.state, lambda fn: controller_action(fn, Handler.pipeline, Handler.cams, Handler.send), demo=args.demo)
-    Handler.ckeys.start()                                   # liest die Tasten gekoppelter Controller (Menü "Controller-Tasten")
+    Handler.ckeys.start()
     Handler.transfer = SettingsTransfer(args.state, Handler.cams, Handler.pipeline, Handler.srtla, Handler.autostart, Handler.names, Handler.djisvc,
                                         Handler.wifi, Handler.send, args.demo)
-    def chat_sources():                                           # Quelladressen der gewählten Sendewege, in der Reihenfolge der Einstellung
+    def chat_sources():
         ups = list(((Handler.srtla.data or {}).get("settings") or {}).get("uplinks") or [])
         ips = {x["iface"]: x["ip"] for x in iface_ips() if x.get("ip")}
         return [ips[u] for u in ups if u in ips]
@@ -7749,18 +7212,18 @@ def main():
     if not args.demo:
         mem = IfaceMemory(os.path.join(args.state, "iface-macs.json"))
         try:
-            mem.reconcile(Handler.srtla, Handler.netchoice, Handler.cams, Handler.wifi, Handler.names)          # gleich beim Start, bevor jemand sendet
+            mem.reconcile(Handler.srtla, Handler.netchoice, Handler.cams, Handler.wifi, Handler.names)
         except Exception as e:
             print("iface_macs:", type(e).__name__, flush=True)
         threading.Thread(target=mem.run, args=(Handler.srtla, Handler.netchoice, Handler.cams, Handler.wifi, Handler.names), daemon=True).start()
     Handler.twitch = TwitchNotifier(TwitchStore(os.path.join(args.state, "twitch.json")), Handler.djisvc, Handler.cams, Handler.send, chat=TwitchChat(paths=Handler.chatpaths), demo=args.demo)
-    Handler.sysalerts = SysAlerts(os.path.join(args.state, "sysalerts.json"), Handler.twitch, Handler.sampler, demo=args.demo)       # Systemwarnungen im Twitch-Chat (gleicher Bot wie die Akku-Warnung)
+    Handler.sysalerts = SysAlerts(os.path.join(args.state, "sysalerts.json"), Handler.twitch, Handler.sampler, demo=args.demo)
     Handler.twitchlogin = TwitchLogin(os.path.join(args.state, "twitch-login.json"), demo=args.demo, paths=Handler.chatpaths)
-    Handler.twitch.store.account = Handler.twitchlogin                                # angemeldetes Konto ersetzt Bot-Konto und Token von Hand
+    Handler.twitch.store.account = Handler.twitchlogin
     Handler.twitchbot = TwitchBotLogin(os.path.join(args.state, "twitch-bot-login.json"), demo=args.demo, paths=Handler.chatpaths)
-    Handler.twitchsessions = ModSessions(args.state, demo=args.demo, paths=Handler.chatpaths)         # eigene Anmeldungen der Moderatoren, je Browser
-    Handler.twitchaccounts = TwitchAccounts(Handler.twitchlogin, Handler.twitchsessions, store=Handler.twitch.store)             # (check folgt, sobald chatmod da ist)
-    Handler.twitch.store.bot = Handler.twitchbot                                      # angemeldetes Bot-Konto schreibt die Akku-Meldung (nur sie)
+    Handler.twitchsessions = ModSessions(args.state, demo=args.demo, paths=Handler.chatpaths)
+    Handler.twitchaccounts = TwitchAccounts(Handler.twitchlogin, Handler.twitchsessions, store=Handler.twitch.store)
+    Handler.twitch.store.bot = Handler.twitchbot
     if not args.demo:
         threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
         threading.Thread(target=Handler.twitchbot.keep, daemon=True).start()
@@ -7768,10 +7231,10 @@ def main():
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
     Handler.chathelix = HelixChat(Handler.twitchlogin, Handler.chatmod)
     Handler.chatsender = TwitchSender(Handler.twitch.store, chat=TwitchChat(paths=Handler.chatpaths), demo_reader=Handler.chatreader if args.demo else None, mod=Handler.chatmod, helix=Handler.chathelix)
-    Handler.twitchaccounts.check = Handler.chatmod.is_moderator                                          # ob ein angemeldeter Moderator im Kanal wirklich einer ist
+    Handler.twitchaccounts.check = Handler.chatmod.is_moderator
     Handler.chatevents = TwitchEvents(Handler.twitch.store, Handler.twitchlogin, Handler.chatmod, Handler.chatreader, paths=Handler.chatpaths)
     if not args.demo:
-        Handler.chatreader.events = Handler.chatevents       # liest den Kanal der Twitch-Karte (dieselben Einstellungen)
+        Handler.chatreader.events = Handler.chatevents
     Handler.hdmi = HdmiService(args.state, Handler.cams, args.demo)
     Handler.transfer.hdmi, Handler.transfer.twitch = Handler.hdmi, Handler.twitch.store
     if not args.demo:
@@ -7782,7 +7245,7 @@ def main():
         while True:
             try:
                 Handler.cams.auto_add()
-            except Exception as e:  # nie den Dienst beenden
+            except Exception as e:
                 print("auto_add:", e)
             time.sleep(3)
     threading.Thread(target=watcher, daemon=True).start()
