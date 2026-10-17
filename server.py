@@ -6902,7 +6902,7 @@ class Handler(BaseHTTPRequestHandler):
             st = self.pipeline.status(self.cams.listing(""))
             st["live"] = {"main": self.send.delay_live(), "pips": self.send.delay_live_pips()}
             st["privacy_available"] = bool(re.search(r"-test\d+$", self.swupdate.version))
-            if st.get("config", {}).get("privacy"):
+            if st.get("config", {}).get("privacy") and st.get("config", {}).get("type") != "pip":      # nur mit einer Kamera läuft der Dienst
                 st["privacy_state"] = privacy_status()
             return self.reply(200, st)
         if path == "/api/send":
