@@ -1,9 +1,4 @@
 #!/bin/sh
-# Baut belacoder (BELABOX/belacoder, Commit ccce9ca, GPL-3.0) mit den Patches aus diesem Ordner (Regler, Stall-Wächter, Kennzahlen-Datei).
-# Installiert nach /opt/pipbox/bin/belacoder (das Original aus dem BELABOX-Paket bleibt unter /usr/bin unberührt und dient
-# als Rückfall). Braucht gcc, git, patch und Internet; die Header für GStreamer und GLib lädt das Skript wie gst/build.sh
-# in ein temporäres Verzeichnis, die Header für SRT bringt das BELABOX-Paket libsrt mit. Als root ausführen.
-# BELACODER_OUT=/anderer/Ordner installiert dorthin (zum Testen), BELACODER_DEBUG=1 baut mit Debug-Ausgabe der Reglerwerte.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${BELACODER_OUT:-/opt/pipbox/bin}
@@ -24,17 +19,11 @@ git checkout --quiet "$COMMIT"
 patch -p1 --quiet < "$HERE/belacoder-jitter-tolerant.patch"
 patch -p1 --quiet < "$HERE/belacoder-stall-output.patch"
 patch -p1 --quiet < "$HERE/belacoder-stats.patch"
-# Kamera-Zweige im laufenden Betrieb
 patch -p1 --quiet < "$HERE/belacoder-live-feeds.patch"
-# Bildkopie
 patch -p1 --quiet < "$HERE/belacoder-frame-copy.patch"
-# Größenwechsel ohne Aussetzer
 patch -p1 --quiet < "$HERE/belacoder-no-reconfigure.patch"
-# Ton nach Kameraausfall
 patch -p1 --quiet < "$HERE/belacoder-audio-eos.patch"
-# Verzögerung der Kameras
 patch -p1 --quiet < "$HERE/belacoder-feed-shift.patch"
-# Schnellere Regelung bei Stau
 patch -p1 --quiet < "$HERE/belacoder-fast-decrease.patch"
 DBG=""
 [ "${BELACODER_DEBUG:-0}" = 1 ] && DBG="-DDEBUG=1"
@@ -42,8 +31,7 @@ gcc -O2 -Wall $DBG -DVERSION=\"${COMMIT%${COMMIT#???????}}-jt2-sb12-eos-sh-fd\" 
   -I"$R/usr/include/gstreamer-1.0" -I"$R/usr/lib/aarch64-linux-gnu/gstreamer-1.0/include" \
   -I"$R/usr/include/glib-2.0" -I"$R/usr/lib/aarch64-linux-gnu/glib-2.0/include" -I/usr/include/srt \
   -l:libgstapp-1.0.so.0 -l:libgstbase-1.0.so.0 -l:libgstreamer-1.0.so.0 -l:libgobject-2.0.so.0 -l:libglib-2.0.so.0 -lsrt -ldl
-# Einmalige Sicherung der Fassung davor (nur wenn noch keine da ist): Rückweg mit "mv -f belacoder.vor-stallpatch belacoder"
 if [ -x "$OUT/belacoder" ] && [ ! -e "$OUT/belacoder.vor-stallpatch" ]; then cp -p "$OUT/belacoder" "$OUT/belacoder.vor-stallpatch"; fi
 install -m 755 belacoder.new "$OUT/belacoder.new"
-mv -f "$OUT/belacoder.new" "$OUT/belacoder"      # ersetzen statt überschreiben: ein laufender Encoder bleibt heil
+mv -f "$OUT/belacoder.new" "$OUT/belacoder"
 echo "belacoder gebaut: $OUT/belacoder"
