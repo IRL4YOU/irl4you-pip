@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.67
+- Standardwerte der Systemwarnungen im Chat angepasst.
+
 ## 1.0.66
 - DJI Osmo Pocket 4 Pro wird erkannt und wie die Pocket 4 angesteuert (nach Moblin, ungetestet an der Kamera).
 

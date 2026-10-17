@@ -2550,7 +2550,7 @@ class TwitchNotifier:
 
 
 class SysAlerts:
-    METRICS = (("temp", "CPU-Temperatur", "°C", 3, (40, 100), 75), ("cpu", "CPU-Auslastung", "%", 5, (20, 100), 90), ("ram", "RAM-Auslastung", "%", 5, (20, 100), 90))
+    METRICS = (("temp", "CPU-Temperatur", "°C", 3, (40, 100), 65), ("cpu", "CPU-Auslastung", "%", 5, (20, 100), 75), ("ram", "RAM-Auslastung", "%", 5, (20, 100), 60))
     DEFAULT_ALERT = "Warnung: {Name} bei {Wert} (Grenze {Grenze})"
     DEFAULT_OK = "{Name} wieder normal ({Wert})"
     DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK,

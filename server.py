@@ -6070,7 +6070,7 @@ class ExtraAddress:
         if self.demo:
             f = self.fake
             return {"installed": True, "enabled": f["enabled"], "mac": f["mac"], "addr": f["addr"], "prefix": f["prefix"], "present": f["enabled"], "error": "",
-                    "cards": [{"name": "eth0", "mac": "aa:bb:cc:00:11:22", "addrs": ["192.168.1.20/24"]}, {"name": "eth1", "mac": "aa:bb:cc:00:11:33", "addrs": ["192.168.178.195/24"]}]}
+                    "cards": [{"name": "eth0", "mac": "aa:bb:cc:00:11:22", "addrs": ["192.168.1.20/24"]}, {"name": "eth1", "mac": "aa:bb:cc:00:11:33", "addrs": ["192.168.50.20/24"]}]}
         c = self._conf()
         cards = self.cards()
         present = bool(c) and any(x["mac"] == c["mac"] and "%s/%d" % (c["addr"], c["prefix"]) in x["addrs"] for x in cards)
