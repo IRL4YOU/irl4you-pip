@@ -1,10 +1,3 @@
-"""Tasten der Bluetooth-Controller: lesen und mit Funktionen der Box verbinden (läuft in der Oberfläche, server.py).
-
-Ein gekoppelter Controller (siehe controllers.py, Liste in controllers.json) legt unter Linux ein Eingabegerät an (/dev/input/eventN), dessen
-`Uniq` seine Bluetooth-Adresse ist. Dieses Modul sucht die Geräte der gekoppelten Controller (/proc/bus/input/devices), liest die Tastendrücke und
-führt die zugeordnete Funktion aus. Welche Tasten ein Controller kann, steht in den Fähigkeiten des Geräts; sie werden gemerkt, damit die Liste
-auch erscheint, wenn der Controller gerade aus ist. Zuordnung und Tastenliste liegen in <state>/controller-keys.json.
-"""
 import json
 import os
 import re
@@ -13,27 +6,24 @@ import struct
 import threading
 import time
 
-EVENT = struct.Struct("llHHi")           # struct input_event (64 Bit): Zeit, Art, Code, Wert
+EVENT = struct.Struct("llHHi")
 EV_KEY = 1
 EV_ABS = 3
-VIRTUAL_MAX = 0x310                      # Codes ab 0x300 sind keine Tasten des Geräts, sondern Achsen, die wie Tasten gelten (Trigger, Steuerkreuz)
+VIRTUAL_MAX = 0x310
 VK_LT, VK_RT, VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT = 0x300, 0x301, 0x302, 0x303, 0x304, 0x305
-# Xbox- und andere Gamepads melden LT/RT und das Steuerkreuz als Achsen: ABS_Z/ABS_BRAKE, ABS_RZ/ABS_GAS, ABS_HAT0X/ABS_HAT0Y
 TRIGGERS = {2: VK_LT, 10: VK_LT, 5: VK_RT, 9: VK_RT}
 HATS = {16: (VK_LEFT, VK_RIGHT), 17: (VK_UP, VK_DOWN)}
-TRIGGER_AT = 0.4                         # ein Trigger gilt ab 40 % Weg als gedrückt
-# übliche Belegung eines Gamepads (Xbox): gezeigt, solange der Controller noch nie verbunden war und seine Tasten unbekannt sind
+TRIGGER_AT = 0.4
 GAMEPAD = (0x130, 0x131, 0x133, 0x134, 0x136, 0x137, VK_LT, VK_RT, 0x13A, 0x13B, 0x13C, 0x13D, 0x13E, VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT)
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 DEMO_ADDR = "E4:11:22:33:44:55"
-DEBOUNCE = 0.25                          # Sekunden: ein Druck zählt einmal, auch wenn das Gerät ihn doppelt meldet
+DEBOUNCE = 0.25
 
-# Funktionen, die sich an eine Taste legen lassen (Kennung -> Text der Oberfläche)
 FUNCTIONS = (("main", "Hauptbild"), ("pip1", "Kleines Bild 1"), ("pip2", "Kleines Bild 2"), ("pip3", "Kleines Bild 3"),
              ("mute", "Aktuelle Tonquelle stumm schalten"), ("audio_next", "Zur nächsten Tonquelle wechseln"))
 FUNCTION_IDS = tuple(k for k, _ in FUNCTIONS)
 
-NAMES = {                                # Namen wie auf einer Tastatur oder einem Gamepad, in allen Sprachen gleich
+NAMES = {
     0x130: "A", 0x131: "B", 0x132: "C", 0x133: "X", 0x134: "Y", 0x135: "Z", 0x136: "LB", 0x137: "RB", 0x138: "LT", 0x139: "RT",
     0x13A: "Select", 0x13B: "Start", 0x13C: "Mode", 0x13D: "L3", 0x13E: "R3",
     0x220: "D-pad up", 0x221: "D-pad down", 0x222: "D-pad left", 0x223: "D-pad right",
@@ -58,13 +48,12 @@ for _i in range(10):
     NAMES[59 + _i] = "F%d" % (_i + 1)
 NAMES[87], NAMES[88] = "F11", "F12"
 for _i in range(1, 17):
-    NAMES[0x2C0 + _i - 1] = "Button %d" % _i                  # BTN_TRIGGER_HAPPY1 ...
+    NAMES[0x2C0 + _i - 1] = "Button %d" % _i
 for _i in range(10):
-    NAMES[0x100 + _i] = "Button %d" % _i                      # BTN_0 ... BTN_9
+    NAMES[0x100 + _i] = "Button %d" % _i
 
 
 def trigger_ranges(fd):
-    """Größter Wert der Trigger-Achsen eines Eingabegeräts (EVIOCGABS), {} wenn das nicht geht (kein Linux, keine Achse)."""
     out = {}
     try:
         import fcntl
@@ -83,7 +72,6 @@ def trigger_ranges(fd):
 
 
 def virtual_keys(abs_codes):
-    """Achsen eines Geräts, die wie Tasten behandelt werden: LT/RT aus den Trigger-Achsen, Steuerkreuz aus den Hat-Achsen."""
     out = {v for a, v in TRIGGERS.items() if a in abs_codes}
     for a, (lo, hi) in HATS.items():
         if a in abs_codes:
@@ -96,7 +84,6 @@ def key_name(code):
 
 
 def parse_devices(text):
-    """/proc/bus/input/devices -> [{"name", "uniq", "event": "eventN" oder "", "keys": {Codes}}] (eine Zeile je Eingabegerät)."""
     out = []
     for block in re.split(r"\n\s*\n", text):
         d = {"name": "", "uniq": "", "event": "", "keys": set(), "abs": set()}
@@ -118,7 +105,6 @@ def parse_devices(text):
 
 
 def parse_bitmask(s):
-    """Hex-Wörter (64 Bit, das höchste zuerst, durch Leerzeichen getrennt) -> Menge der gesetzten Bits."""
     bits = set()
     words = s.split()
     for i, w in enumerate(reversed(words)):
@@ -138,20 +124,19 @@ class ControllerKeys:
         self.controllers_path = controllers_path or os.path.join(state_dir, "controllers.json")
         self.act, self.proc, self.dev_dir, self.demo = act, proc, dev_dir, demo
         self.lock = threading.Lock()
-        self.data = {}                     # Adresse -> {"keys": [Codes], "map": {"Code": Funktion}}
+        self.data = {}
         self.last = {"addr": "", "code": 0, "ts": 0.0}
-        self.fds = {}                      # Pfad -> (Datei, Adresse)
-        self.present = {}                  # Adresse -> True, wenn ein Eingabegerät da ist
-        self.errors = []                   # letzte Meldungen (Rechte, Fehler)
+        self.fds = {}
+        self.present = {}
+        self.errors = []
         self._last_act = {}
-        self._down = {}                    # (Adresse, virtuelle Taste) -> gerade gedrückt (Trigger und Steuerkreuz sind Achsen)
-        self.absmax = {}                   # Adresse -> {Achse: größter Wert} der Trigger-Achsen
+        self._down = {}
+        self.absmax = {}
         self._stop = threading.Event()
         self.load()
-        if demo:                           # Vorschau: ein Beispiel-Controller mit den Tasten eines Gamepads
+        if demo:
             self.data.setdefault(DEMO_ADDR, {"keys": [0x130, 0x131, 0x133, 0x134, 0x136, 0x137, 0x138, 0x139, 0x13A, 0x13B], "map": {}})
 
-    # -- Dateien
     def load(self):
         try:
             with open(self.path, encoding="utf-8") as f:
@@ -173,7 +158,6 @@ class ControllerKeys:
         os.replace(tmp, self.path)
 
     def paired(self):
-        """{Adresse: Name} der gekoppelten Controller (Liste des Bluetooth-Dienstes)."""
         if self.demo:
             return {DEMO_ADDR: "Mini Controller"}
         try:
@@ -183,7 +167,6 @@ class ControllerKeys:
             return {}
         return {a.upper(): str((c or {}).get("name", "")) or a for a, c in (d.get("controllers") or {}).items() if MAC_RE.match(a)} if isinstance(d, dict) else {}
 
-    # -- Zuordnung
     def set_map(self, addr, code, fn):
         addr = str(addr).upper()
         if not MAC_RE.match(addr) or addr not in self.paired():
@@ -201,7 +184,6 @@ class ControllerKeys:
             self.save()
 
     def forget(self, addrs):
-        """Zuordnungen von Controllern entfernen, die nicht mehr gekoppelt sind."""
         with self.lock:
             gone = [a for a in self.data if a not in addrs]
             for a in gone:
@@ -209,15 +191,14 @@ class ControllerKeys:
             if gone:
                 self.save()
 
-    # -- Anzeige
     def snapshot(self):
         names = self.paired()
         if not self.demo and os.path.exists(self.controllers_path):
-            self.forget(set(names))                                # entfernte Controller: Zuordnung vergessen (nur, wenn die Liste lesbar ist)
+            self.forget(set(names))
         out = []
         for addr, name in sorted(names.items(), key=lambda kv: kv[1].lower()):
             e = self.data.get(addr, {"keys": [], "map": {}})
-            assumed = not e["keys"]                                  # noch nie verbunden: die übliche Gamepad-Belegung zeigen
+            assumed = not e["keys"]
             keys = GAMEPAD if assumed else e["keys"]
             out.append({"addr": addr, "name": name, "present": self.demo or bool(self.present.get(addr)), "assumed": assumed,
                         "keys": [{"code": c, "name": key_name(c)} for c in keys], "map": dict(e["map"])})
@@ -225,9 +206,7 @@ class ControllerKeys:
         last["age"] = round(time.time() - last["ts"], 1) if last["ts"] else None
         return {"controllers": out, "functions": [{"id": k, "name": v} for k, v in FUNCTIONS], "last": last, "error": self.errors[-1] if self.errors else ""}
 
-    # -- Lesen
     def _scan(self):
-        """Eingabegeräte der gekoppelten Controller suchen, neue öffnen, verschwundene schließen, Tastenlisten merken."""
         names = self.paired()
         try:
             with open(self.proc, encoding="utf-8", errors="replace") as f:
@@ -281,7 +260,6 @@ class ControllerKeys:
                 self.handle_event(addr, EV_KEY, vk, 1)
 
     def handle_abs(self, addr, code, value):
-        """Trigger (ab 40 % Weg gedrückt, erst unter 20 % wieder losgelassen) und Steuerkreuz als Tasten behandeln."""
         if code in TRIGGERS:
             vk = TRIGGERS[code]
             top = self.absmax.get(addr, {}).get(code) or 255
@@ -293,7 +271,6 @@ class ControllerKeys:
             self._edge(addr, hi, value > 0)
 
     def handle_event(self, addr, etype, code, value):
-        """Ein Ereignis eines Controllers; nur das Drücken einer Taste zählt (nicht Loslassen und nicht Wiederholen)."""
         if etype != EV_KEY or value != 1:
             return None
         now = time.time()
@@ -337,7 +314,7 @@ class ControllerKeys:
                     data = f.read(EVENT.size * 32)
                 except BlockingIOError:
                     continue
-                except OSError:                                       # Gerät verschwunden (Controller aus)
+                except OSError:
                     for p, (g, _) in list(self.fds.items()):
                         if g is f:
                             self.fds.pop(p)

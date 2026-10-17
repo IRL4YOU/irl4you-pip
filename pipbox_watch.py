@@ -1,29 +1,16 @@
-"""Wächter für die Sendekette (Issue #51): erkennt zwei Hänger von belacoder, schreibt vor dem Neustart ein Diagnosepaket und startet belacoder neu.
-
-Bekannte Hänger (8. und 9. Oktober 2026 auf der eigenen Box, 9. Oktober bei powerswissi, Issue #51):
-  "stats"  Die Statistikdatei von belacoder (einmal je Sekunde) steht still, der Prozess lebt weiter (futex_wait). Der Mischer blockiert nach
-           "Feed … stopped (switched off)": Nach der Statistik steht auch die Steuerung (Befehle für Kameras, Bildaufbau) still.
-  "dstate" Threads von belacoder hängen im Kernel (Zustand D, "2 Prozesse blockiert (D-State)" in der Oberfläche), vermutlich im Treiber des Hardware-
-           Dekoders; dabei fiel bei powerswissi die Bitrate auf etwa 0,8 Mbit/s (Issue #51, Kommentar vom 9. Oktober 17:10 Ortszeit).
-  "feed"   Eine Kamera sendet bei nginx mit Bild, der Regler hält ihren Zweig für laufend (Zustand 3), aber im Mischer kommen seit Sekunden keine
-           Bilder an (in_fN und dmx_fN gleich 0). Der Encoder gibt dann nur noch das letzte Bild mit etwa 1,3 Mbit/s aus ("hängender Upload").
-Die Ursache steckt im Zweigneustart des Mischers (belacoder/belacoder-live-feeds.patch, feed_stop/feed_start) und ist noch nicht gefunden.
-Bis dahin hilft nur ein Neustart von belacoder. Dieser Wächter macht ihn selbst und sichert vorher, was zur Ursache führt: alle Threads von belacoder mit
-Zustand, Wartestelle im Kernel (wchan) und CPU-Zeit, die Statistik, die letzten Ereignisse und was nginx je Platz meldet. Das Paket enthält keine
-Schlüssel und keine Adressen (nur Plätze), liegt in /var/lib/pipbox/hang-diagnose.txt und steht in den Protokollen der Oberfläche."""
 import collections
 import os
 import re
 import time
 
-STALE_S = 15.0           # so lange darf die Statistikdatei von belacoder alt sein
-START_GRACE_S = 30.0     # nach dem Start von belacoder: so lange wird nichts bewertet (die Zweige laufen erst an)
-DSTATE_S = 12.0          # so lange darf ein Thread von belacoder im Zustand D (Kernel, nicht unterbrechbar) bleiben
-FEED_DEAD_S = 25.0       # so lange darf ein Zweig, dessen Kamera mit Bild sendet, ohne Bilder bleiben
-SOFT_WINDOW_S = 300.0    # hängt derselbe Zweig innerhalb dieser Zeit nach dem Zurücksetzen noch einmal, wird belacoder neu gestartet
-COOLDOWN_S = 90.0        # nach einem Eingriff mindestens so lange Ruhe
-MAX_PER_HOUR = 4         # mehr Eingriffe je Stunde macht der Wächter nicht (ein Dauerfehler wäre sonst eine Neustartschleife)
-REPORT_KEEP = 6          # so viele Pakete bleiben
+STALE_S = 15.0
+START_GRACE_S = 30.0
+DSTATE_S = 12.0
+FEED_DEAD_S = 25.0
+SOFT_WINDOW_S = 300.0
+COOLDOWN_S = 90.0
+MAX_PER_HOUR = 4
+REPORT_KEEP = 6
 REPORT_MARK = "===== HÄNGER "
 REPORT_FILE = "hang-diagnose.txt"
 
@@ -32,7 +19,6 @@ FEED = re.compile(r"\bfeed_sbf(\d)=(\d)")
 
 
 def parse_live(text):
-    """Aus der ersten Zeile der Statistik von belacoder: {"in": {Platz: Bilder je Sekunde}, "dmx": …, "dec": …, "vr": …, "feed": {Platz: Zustand}}."""
     out = {"in": {}, "dmx": {}, "dec": {}, "vr": {}, "feed": {}}
     for m in FPS.finditer(text or ""):
         out[m.group(1)][int(m.group(2))] = float(m.group(3))
@@ -42,27 +28,22 @@ def parse_live(text):
 
 
 class HangWatch:
-    """Die Entscheidung, ohne Prozesse und Dateien (testbar mit gestellten Uhren)."""
 
     def __init__(self, clock=time.monotonic, wall=time.time):
         self.clock, self.wall = clock, wall
         self.started = None
         self.dead = {}
         self.dstate_since = None
-        self.acted = collections.deque()          # Zeiten (monotonic) der Eingriffe
-        self.soft = {}                            # Platz -> Zeit, zu der nur sein Zweig zurückgesetzt wurde
+        self.acted = collections.deque()
+        self.soft = {}
 
     def started_now(self):
-        """belacoder wurde (neu) gestartet."""
         self.started = self.clock()
         self.soft = {}
         self.dead = {}
         self.dstate_since = None
 
     def check(self, stats_mtime, line, expected, d_threads=0):
-        """None oder {"kind": "stats"|"dstate"|"feed", "slot": Platz|None, "text": …}. d_threads: Zahl der Threads von belacoder im Zustand D.
-        stats_mtime: Änderungszeit der Statistikdatei (Wanduhr) oder None; line: ihre erste Zeile; expected: {Platz: True} für Kameras, die mit Bild
-        senden und deren Zweig der Regler für laufend hält (Zustand 3)."""
         now = self.clock()
         if self.started is None or now - self.started < START_GRACE_S:
             return None
@@ -92,8 +73,6 @@ class HangWatch:
         return None
 
     def soft_ok(self, hit):
-        """Hängt genau EIN Zweig (alle anderen liefern Bilder), wird zuerst nur dieser Zweig zurückgesetzt (`feed sbfN off`, der Regler startet ihn wieder), statt belacoder und damit
-        die Sendung für alle neu zu starten. Hängen mehrere Zweige oder derselbe noch einmal innerhalb von SOFT_WINDOW_S, bleibt es beim Neustart von belacoder."""
         if hit.get("kind") != "feed" or hit.get("slot") is None or set(self.dead) != {hit["slot"]}:
             return False
         t = self.soft.get(hit["slot"])
@@ -104,7 +83,6 @@ class HangWatch:
         self.dead.pop(slot, None)
 
     def allow(self):
-        """Darf jetzt eingegriffen werden (Ruhezeit, höchstens MAX_PER_HOUR je Stunde)?"""
         now = self.clock()
         while self.acted and now - self.acted[0] > 3600:
             self.acted.popleft()
@@ -117,8 +95,6 @@ class HangWatch:
         self.dead = {}
         self.dstate_since = None
 
-
-# ----------------------------------------------------------------------------------------------------------------------- Diagnosepaket
 
 def _read(path, limit=400):
     try:
@@ -142,7 +118,7 @@ def _thread_sample(pid, proc):
             continue
         f = m.group(3).split()
         try:
-            cpu = int(f[11]) + int(f[12])             # utime + stime (Felder 14 und 15 der Datei)
+            cpu = int(f[11]) + int(f[12])
         except (IndexError, ValueError):
             cpu = 0
         out[tid] = {"name": m.group(1), "state": m.group(2), "cpu": cpu, "wchan": _read(f"{base}/{tid}/wchan", 80) or "-"}
@@ -150,13 +126,10 @@ def _thread_sample(pid, proc):
 
 
 def d_state_threads(pid, proc="/proc"):
-    """Zahl der Threads dieses Prozesses im Zustand D (wartet im Kernel, nicht unterbrechbar)."""
     return sum(1 for t in _thread_sample(pid, proc).values() if t["state"] == "D")
 
 
 def blocked_tasks(proc="/proc", limit=12):
-    """Alle Threads im Zustand D im ganzen System (Prozessname, Wartestelle, oberste Zeilen des Kernel-Stapels, falls lesbar) und der Zähler der Oberfläche
-    (procs_blocked aus /proc/stat). Der Kernel-Stapel nennt die Funktion, in der der Thread hängt (zum Beispiel im Treiber des Hardware-Dekoders)."""
     rows = []
     try:
         pids = [d for d in os.listdir(proc) if d.isdigit()]
@@ -184,8 +157,6 @@ def blocked_tasks(proc="/proc", limit=12):
 
 
 def thread_table(pid, proc="/proc", sleep=time.sleep, interval=1.0):
-    """Alle Threads des Prozesses: Name, Zustand (R läuft, S wartet, D wartet im Kernel), Wartestelle im Kernel, CPU-Ticks im Messzeitraum.
-    Namen kommen von GStreamer (<Element>:src), sie nennen die Zweige (sbf0_…) und enthalten keine Schlüssel."""
     a = _thread_sample(pid, proc)
     sleep(interval)
     b = _thread_sample(pid, proc)
@@ -197,7 +168,6 @@ def thread_table(pid, proc="/proc", sleep=time.sleep, interval=1.0):
 
 
 def build_report(hit, pid, uptime_s, live_text, events, slots, proc="/proc", sleep=time.sleep, wall=time.time):
-    """Das Paket als Text. slots: [(Platz, "Bild WxH, Ton ja/nein", Zustand des Zweigs)]. Nur Zahlen und Namen von Elementen, nie Schlüssel oder Adressen."""
     parts = [
         "%s%s UTC · %s" % (REPORT_MARK, time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(wall())), hit["text"]),
         "Art: %s | belacoder läuft seit %d s" % (hit["kind"], int(uptime_s)),
@@ -216,7 +186,6 @@ def build_report(hit, pid, uptime_s, live_text, events, slots, proc="/proc", sle
 
 
 def write_report(directory, text, keep=REPORT_KEEP, name=REPORT_FILE, limit=60000):
-    """Hängt das Paket an die Datei an und behält die letzten `keep` Pakete (und höchstens `limit` Zeichen je Datei). True bei Erfolg."""
     path = os.path.join(directory, name)
     try:
         with open(path, encoding="utf-8", errors="replace") as f:

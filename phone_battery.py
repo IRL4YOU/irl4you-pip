@@ -1,13 +1,3 @@
-"""Akkustand von Handys per Bluetooth (Teil des Bluetooth-Dienstes pipbox-dji, dji_daemon.py).
-
-Das Handy wird einmal gekoppelt (die Box ist dafür zwei Minuten sichtbar). Danach holt die Box alle 10 Minuten kurz den Akkustand und trennt
-wieder: Sie verbindet sich als Freisprecheinrichtung (HFP) mit dem Handy, fragt die Anzeigen ab (AT+CIND, bei iPhones zusätzlich
-AT+IPHONEACCEV) und schließt die Verbindung. Eine Dauerverbindung gibt es nicht. Android meldet den Akku in Fünfteln (0 bis 5, also
-20-%-Schritte), ein iPhone in Zehnteln (0 bis 9).
-
-Läuft im Dienst als Benutzer pipbox: Kopplung über D-Bus (BlueZ, dbus-fast), Abfrage über einen RFCOMM-Anschluss (Python-Socket), den Kanal
-liefert sdptool. Die gekoppelten Handys stehen in <state>/phones.json (Name, Akkustand, Zeit, Fehler); die Kopplung selbst verwaltet BlueZ.
-"""
 import asyncio
 import json
 import logging
@@ -22,32 +12,28 @@ try:
     from dbus_fast import BusType, Variant
     from dbus_fast.aio import MessageBus
     from dbus_fast.service import ServiceInterface, method
-except ImportError:      # ohne dbus-fast (Tests, Vorschau) gibt es keine Kopplung, die Abfrage selbst geht trotzdem
+except ImportError:
     MessageBus = BusType = Variant = ServiceInterface = method = None
 
 log = logging.getLogger("pipbox-dji")
 
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
-INTERVAL = 600             # Sekunden zwischen zwei Abfragen eines Handys
-RETRY = 120                # nach einem Fehler früher noch einmal
-PAIR_SECONDS = 120         # so lange ist die Box beim Koppeln sichtbar
+INTERVAL = 600
+RETRY = 120
+PAIR_SECONDS = 120
 CONNECT_TIMEOUT = 15
 IO_TIMEOUT = 8
 SDP_TIMEOUT = 25
 BLUEZ = "org.bluez"
 AGENT_PATH = "/pipbox/phone_agent"
-HFP_AG = "111f"            # Dienstkennung "Handsfree Audio Gateway": so nennt sich ein Handy, das Freisprechgeräte bedient
+HFP_AG = "111f"
 
 
 class PhoneError(Exception):
-    """Fehler mit einem Text, der dem Nutzer angezeigt werden kann."""
+    pass
 
-
-# -- Abfrage ----------------------------------------------------------------------------------------------------------------------------
 
 def parse_sdp_channel(text):
-    """RFCOMM-Kanal des Freisprechdienstes aus der Ausgabe von `sdptool search HFAG`, sonst None. Ein Handy kann mehrere Einträge haben
-    (Freisprechgerät und Audio Gateway); es zählt der mit der Klasse 0x111f."""
     for block in re.split(r"\n\s*\n|(?=Service Name:)", text):
         if re.search(r"\(0x%s\)" % HFP_AG, block, re.I):
             m = re.search(r"Channel:\s*(\d+)", block)
@@ -57,7 +43,6 @@ def parse_sdp_channel(text):
 
 
 def find_channel(addr, hci=None, run=subprocess.run):
-    """Fragt das Handy nach dem Kanal seines Freisprechdienstes."""
     cmd = ["sdptool"] + (["-i", hci] if hci else []) + ["search", "--bdaddr", addr, "HFAG"]
     try:
         out = run(cmd, capture_output=True, text=True, timeout=SDP_TIMEOUT)
@@ -75,7 +60,6 @@ def find_channel(addr, hci=None, run=subprocess.run):
 
 
 class _AtLink:
-    """Zeilenweises Lesen und Schreiben der AT-Befehle über einen Socket."""
 
     def __init__(self, sock, timeout=IO_TIMEOUT):
         self.sock, self.timeout, self.buf = sock, timeout, b""
@@ -84,8 +68,6 @@ class _AtLink:
         self.sock.sendall(cmd.encode("ascii") + b"\r")
 
     def lines(self, until_ok=True, wait=None):
-        """Zeilen bis OK oder ERROR (until_ok) bzw. so lange, wie wait Sekunden vergehen. Gibt (Zeilen, Ergebnis) zurück,
-        Ergebnis "OK", "ERROR" oder None."""
         out, end = [], time.monotonic() + (wait if wait is not None else self.timeout)
         while True:
             while True:
@@ -113,12 +95,10 @@ class _AtLink:
 
 
 def parse_cind_names(line):
-    """('service',(0,1)),('battchg',(0,5)) ... aus der Antwort auf AT+CIND=? -> [(Name, größter Wert), ...] in der Reihenfolge der Anzeigen."""
     return [(n.lower(), int(hi)) for n, hi in re.findall(r'\("([^"]+)",\(\s*\d+\s*[-,]\s*(\d+)\s*\)\)', line)]
 
 
 def parse_iphone_level(line):
-    """+IPHONEACCEV: 2,1,7,2,0 -> 7 (Schlüssel 1 ist der Akkustand von 0 bis 9), sonst None."""
     m = re.match(r"\+IPHONEACCEV:\s*([\d,\s]+)", line)
     if not m:
         return None
@@ -133,8 +113,6 @@ def parse_iphone_level(line):
 
 
 def hfp_battery(sock, timeout=IO_TIMEOUT):
-    """Der Ablauf einer Freisprechverbindung (SLC) bis zu den Anzeigen, dann der Akkustand in Prozent.
-    Gibt {"percent": int, "steps": int} zurück (steps: Auflösung, 5 bei Android, 9 beim iPhone)."""
     link = _AtLink(sock, timeout)
     link.send("AT+BRSF=0")
     _, res = link.lines()
@@ -153,9 +131,9 @@ def hfp_battery(sock, timeout=IO_TIMEOUT):
         raise PhoneError("Das Handy meldet seinen Akkustand nicht")
     hi = names[idx][1] or 5
     percent, steps = round(max(0, min(vals[idx], hi)) * 100 / hi), hi
-    link.send("AT+CMER=3,0,0,1")                 # beendet den Aufbau; einige Handys melden Anzeigen erst danach
+    link.send("AT+CMER=3,0,0,1")
     extra, _ = link.lines(until_ok=False, wait=1.0)
-    link.send("AT+XAPL=ABCD-1234-0100,2")        # nur iPhones antworten darauf, sie melden dann den Akku in Zehnteln
+    link.send("AT+XAPL=ABCD-1234-0100,2")
     more, _ = link.lines(until_ok=False, wait=1.2)
     for r in extra + more:
         lvl = parse_iphone_level(r)
@@ -165,7 +143,7 @@ def hfp_battery(sock, timeout=IO_TIMEOUT):
         if m and int(m.group(1)) == idx + 1 and steps != 9:
             percent = round(max(0, min(int(m.group(2)), hi)) * 100 / hi)
     try:
-        link.send("AT+CMER=3,0,0,0")             # Anzeigen wieder abbestellen, dann wird getrennt
+        link.send("AT+CMER=3,0,0,0")
     except OSError:
         pass
     return {"percent": percent, "steps": steps}
@@ -185,13 +163,12 @@ def connect_rfcomm(addr, channel, adapter_mac=None):
 
 
 def read_battery(addr, hci=None, adapter_mac=None, channel=None, connect=connect_rfcomm, find=find_channel):
-    """Holt den Akkustand eines gekoppelten Handys. Gibt {"percent", "steps", "channel"} zurück oder löst PhoneError aus."""
     if channel is None:
         channel = find(addr, hci)
     try:
         s = connect(addr, channel, adapter_mac)
     except OSError as e:
-        if e.errno in (111, 13, 1):                    # abgewiesen: nicht (mehr) gekoppelt oder der Dienst ist am Handy aus
+        if e.errno in (111, 13, 1):
             raise PhoneError("Das Handy hat die Verbindung abgewiesen. Eventuell Handy in der Box entfernen und neu koppeln")
         raise PhoneError("Das Handy ist nicht erreichbar. Ist Bluetooth am Handy an und das Handy nah genug an der Box?")
     try:
@@ -209,11 +186,8 @@ def read_battery(addr, hci=None, adapter_mac=None, channel=None, connect=connect
     return res
 
 
-# -- Kopplung (D-Bus) -------------------------------------------------------------------------------------------------------------------
-
 if ServiceInterface is not None:
     class PairAgent(ServiceInterface):
-        """Bestätigt jede Kopplung während der zwei Minuten, in denen die Box sichtbar ist (ohne Eingabe: Handy und Box bestätigen nur)."""
 
         def __init__(self):
             super().__init__("org.bluez.Agent1")
@@ -256,25 +230,22 @@ if ServiceInterface is not None:
 
 
 def _prop(v):
-    """Wert einer dbus-fast-Eigenschaft (Variant) oder eines einfachen Werts."""
     return getattr(v, "value", v)
 
 
 class Phones:
-    """Die Liste der Handys, die Kopplung und der 10-Minuten-Takt. snapshot() liefert das, was die Oberfläche zeigt."""
 
     def __init__(self, state_dir, hci=lambda: None, adapter_mac=lambda hci: None, busy=lambda: False, taken=lambda: (), reader=read_battery):
         self.path = os.path.join(state_dir, "phones.json")
         self.hci, self.adapter_mac, self.busy, self.taken, self.reader = hci, adapter_mac, busy, taken, reader
         self.phones = {}
-        self.due = {}                 # Adresse -> Zeitpunkt (time.monotonic) der nächsten Abfrage
+        self.due = {}
         self.reading = set()
         self.pair = {"active": False, "until": 0.0, "message": "", "found": ""}
         self._pair_task = None
         self.lock = threading.Lock()
         self.load()
 
-    # Dateien
     def load(self):
         try:
             with open(self.path, encoding="utf-8") as f:
@@ -287,7 +258,7 @@ class Phones:
                                              "steps": p.get("steps") if p.get("steps") in (5, 9) else None, "ts": float(p.get("ts") or 0),
                                              "error": str(p.get("error", ""))[:200], "channel": p.get("channel") if isinstance(p.get("channel"), int) else None}
         for addr in self.phones:
-            self.due[addr] = time.monotonic() + 15      # kurz nach dem Start einmal, gestaffelt
+            self.due[addr] = time.monotonic() + 15
 
     def save(self):
         tmp = self.path + ".tmp"
@@ -296,7 +267,6 @@ class Phones:
             json.dump({"phones": self.phones}, f, ensure_ascii=False)
         os.replace(tmp, self.path)
 
-    # Anzeige
     def snapshot(self):
         now = time.time()
         phones = []
@@ -306,9 +276,7 @@ class Phones:
         left = max(0, int(self.pair["until"] - time.monotonic())) if self.pair["active"] else 0
         return {"phones": phones, "phone_pairing": {"active": self.pair["active"], "left": left, "message": self.pair["message"]}}
 
-    # Abfrage
     async def read(self, addr):
-        """Holt den Akkustand eines Handys jetzt und merkt sich das Ergebnis (oder den Fehler)."""
         addr = addr.upper()
         p = self.phones.get(addr)
         if p is None or addr in self.reading:
@@ -323,10 +291,10 @@ class Phones:
             log.info("Handy %s: Akku %d %%", addr, res["percent"])
         except PhoneError as e:
             p.update(error=str(e))
-            p["channel"] = None                  # beim nächsten Mal den Kanal neu erfragen
+            p["channel"] = None
             self.due[addr] = time.monotonic() + RETRY
             log.info("Handy %s: %s", addr, e)
-        except Exception as e:                   # nie den Dienst gefährden
+        except Exception as e:
             p.update(error="Unerwarteter Fehler beim Lesen des Akkustands")
             self.due[addr] = time.monotonic() + RETRY
             log.warning("Handy %s: %r", addr, e)
@@ -338,7 +306,6 @@ class Phones:
                 log.warning("phones.json: %s", e)
 
     async def run(self):
-        """Alle 10 Minuten ein Handy nach dem anderen. Während einer Kamerasuche oder Kopplung wird nichts abgefragt."""
         while True:
             await asyncio.sleep(5)
             if self.busy() or self.pair["active"]:
@@ -355,7 +322,6 @@ class Phones:
         self.due.pop(addr, None)
         self.save()
 
-    # Kopplung
     async def start_pairing(self):
         if self.pair["active"]:
             return

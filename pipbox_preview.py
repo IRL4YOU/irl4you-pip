@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""Vorschau des Sendebilds (Issue #52).
-
-Zeigt das Bild, das wirklich gesendet wird: das fertig gemischte und kodierte Bild, nicht einzelne Kameras. Dazu liest ein kurzlebiger Prozess die
-SRT-Datenpakete mit, die belacoder lokal an srtla_send schickt (127.0.0.1:9100, unverschlüsselt), ordnet sie, entpackt den MPEG-TS-Strom, dekodiert ihn
-mit dem Hardware-Dekoder, kodiert es klein (640x360) wieder mit dem Hardware-Kodierer als H.264 und schickt es als fragmentiertes MP4 (fMP4) an den Browser, der es per
-Media Source Extensions abspielt: flüssig mit 30 Bildern pro Sekunde bei rund 1,5 Mbit/s. Für Browser ohne diese Technik gibt es als Ausweichlösung Motion-JPEG
-(multipart/x-mixed-replace).
-
-Die Sendekette wird dabei nicht angefasst (kein Abzweig in der Pipeline, kein Eingriff in belacoder): Ein Seitenzweig vor dem Encoder ließ den
-Mischer abbrechen, hier wird nur mitgelesen. Ohne Zuschauer läuft nichts. Eine Vorschau endet, wenn der Browser die Verbindung schließt, nach
-MAX_SECONDS oder wenn der Sender stoppt.
-
-Gemessen auf der Box (Orange Pi 5 Plus, 1080p30 HEVC, 640x360, 30 Bilder/s): H.264 rund 1,7 Mbit/s, Motion-JPEG 3 bis 7 Mbit/s; die Sendung bleibt unberührt.
-
-Rechte: Der Webserver läuft als Benutzer pipbox und darf weder rohe Pakete lesen noch den Hardware-Dekoder benutzen (/dev/mpp_service gehört root). Die Arbeit macht darum ein
-eigener kleiner Dienst (pipbox-preview.service, Aufruf: pipbox_preview.py --serve) nur mit dem Recht CAP_NET_RAW. Er wird von systemd erst gestartet, wenn jemand die Vorschau
-öffnet (pipbox-preview.socket), und beendet sich nach IDLE_EXIT Sekunden ohne Zuschauer. Der Webserver spricht über einen Unix-Socket (Gruppe pipbox, Modus 0660) mit ihm:
-eine JSON-Zeile hin, eine JSON-Zeile zurück, danach (nur bei "stream") die Motion-JPEG-Daten, bis eine Seite schließt."""
 import ctypes
 import json
 import os
@@ -29,29 +11,29 @@ import sys
 import threading
 import time
 
-LISTEN_PORT = 9100                # belacoder -> srtla_send (wie in pipbox_send.py)
+LISTEN_PORT = 9100
 SOCKET = "/run/pipbox-preview.sock"
 SEND_STATUS = "/run/pipbox-send/status.json"
-IDLE_EXIT = 60                    # der Dienst beendet sich nach so vielen Sekunden ohne Zuschauer (systemd startet ihn bei der nächsten Anfrage neu)
-MAX_REQUEST = 512                 # längste Anfragezeile in Byte
-MAX_SECONDS = 600                 # eine Vorschau endet nach 10 Minuten, die Seite fragt dann "Weiter ansehen?"
-LONG_SECONDS = 24 * 3600            # mit dem Häkchen "dauerhaft" in der Oberfläche (je Browser): so lange, danach startet die Seite von selbst neu
-MAX_VIEWERS = 2                   # gleichzeitige Vorschauen (jede kostet rund 18 % eines Kerns)
-CHECK_EVERY = 3.0                 # so oft wird geprüft, ob der Sender noch läuft
-FIRST_FRAME_WAIT = 12.0           # bis zum ersten Bild: Schlüsselbild abwarten (alle 2 s), dann dekodieren
-REORDER_WINDOW = 48               # so viele Pakete warten auf ein verspätetes (SRT wiederholt verlorene Pakete); danach wird die Lücke übersprungen
+IDLE_EXIT = 60
+MAX_REQUEST = 512
+MAX_SECONDS = 600
+LONG_SECONDS = 24 * 3600
+MAX_VIEWERS = 2
+CHECK_EVERY = 3.0
+FIRST_FRAME_WAIT = 12.0
+REORDER_WINDOW = 48
 BOUNDARY = "pbframe"
 FORMATS = ("mp4", "mjpeg")
-H264_BITRATE = 1_500_000          # Bit/s des Videos zum Browser (640x360, 30 Bilder/s)
-FRAGMENT_FRAMES = 6               # so viele Bilder je Häppchen (6 = 0,2 s): kleine Verzögerung, die Seite spielt am aktuellen Ende ab
+H264_BITRATE = 1_500_000
+FRAGMENT_FRAMES = 6
 FPS_RANGE = (1, 30)
 WIDTH_RANGE = (160, 1280)
 SO_ATTACH_FILTER = 26
-SKF_AD_PKTTYPE = 0xfffff004       # BPF: Paketart (auf lo gibt es jedes Paket als ausgehende und als eingehende Kopie)
+SKF_AD_PKTTYPE = 0xfffff004
 
 
 class Unavailable(Exception):
-    """Die Vorschau lässt sich gerade nicht starten (Text für die Oberfläche)."""
+    pass
 
 
 class Busy(Unavailable):
@@ -67,20 +49,18 @@ def clamp(v, lo, hi, default):
 
 
 def bpf_program(port):
-    """Klassischer BPF-Filter: nur UDP-Pakete an den Zielport, keine Fragmente, nicht die ausgehende Kopie auf lo.
-    Der Kernel wirft alles andere weg (RTMP-Ströme der Kameras laufen auch über lo und würden sonst Rechenzeit kosten)."""
     ins = [
-        (0x30, 0, 0, 9),                  # ldb [9]       Protokoll
-        (0x15, 0, 8, 17),                 # jeq 17        UDP, sonst verwerfen
-        (0x28, 0, 0, 6),                  # ldh [6]       Fragment-Feld
-        (0x45, 6, 0, 0x1fff),             # jset 0x1fff   Fragment: verwerfen
-        (0xb1, 0, 0, 0),                  # ldxb 4*([0]&0xf)   Länge des IP-Kopfs
-        (0x48, 0, 0, 2),                  # ldh [x+2]     Zielport
-        (0x15, 0, 3, port),               # jeq port      sonst verwerfen
-        (0x20, 0, 0, SKF_AD_PKTTYPE),     # ld pkt_type
-        (0x15, 1, 0, 4),                  # jeq OUTGOING  ausgehende Kopie verwerfen
-        (0x06, 0, 0, 0x40000),            # annehmen
-        (0x06, 0, 0, 0),                  # verwerfen
+        (0x30, 0, 0, 9),
+        (0x15, 0, 8, 17),
+        (0x28, 0, 0, 6),
+        (0x45, 6, 0, 0x1fff),
+        (0xb1, 0, 0, 0),
+        (0x48, 0, 0, 2),
+        (0x15, 0, 3, port),
+        (0x20, 0, 0, SKF_AD_PKTTYPE),
+        (0x15, 1, 0, 4),
+        (0x06, 0, 0, 0x40000),
+        (0x06, 0, 0, 0),
     ]
     return b"".join(struct.pack("HBBI", c, jt, jf, k) for c, jt, jf, k in ins), len(ins)
 
@@ -93,23 +73,20 @@ def attach_filter(sock, port):
 
 
 def srt_data(pkt):
-    """(Folgenummer, TS-Nutzdaten) eines SRT-Datenpakets aus einem IPv4/UDP-Paket, sonst None (Steuerpaket, verschlüsselt, zu kurz)."""
     if len(pkt) < 36 or pkt[0] >> 4 != 4 or pkt[9] != 17:
         return None
     pl = pkt[(pkt[0] & 15) * 4 + 8:]
     if len(pl) < 16 + 188:
         return None
     w0, w1 = struct.unpack("!II", pl[:8])
-    if w0 & 0x80000000:                            # Steuerpaket (Handshake, ACK, NAK, Keepalive)
+    if w0 & 0x80000000:
         return None
-    if (w1 >> 27) & 3:                             # verschlüsselt: nicht lesbar
+    if (w1 >> 27) & 3:
         return None
     return w0, pl[16:]
 
 
 class Reorder:
-    """Bringt SRT-Datenpakete in die richtige Reihenfolge. SRT sendet verlorene Pakete später noch einmal; solche Wiederholungen füllen Lücken.
-    Ein Paket, das länger als REORDER_WINDOW Pakete fehlt, wird aufgegeben (der Dekoder fängt sich am nächsten Schlüsselbild)."""
 
     def __init__(self, window=REORDER_WINDOW):
         self.window = window
@@ -121,7 +98,7 @@ class Reorder:
         out = []
         if self.nxt is None:
             self.nxt = seq
-        if ((seq - self.nxt) & 0x7fffffff) > 0x3fffffff:      # zu alt (schon ausgegeben oder aufgegeben, oder die zweite Kopie)
+        if ((seq - self.nxt) & 0x7fffffff) > 0x3fffffff:
             return out
         self.buf[seq] = payload
         while self.nxt in self.buf:
@@ -137,13 +114,11 @@ class Reorder:
 
 
 def detect_codec(pipeline_text):
-    """h265 oder h264, je nachdem, welchen Encoder die Sendekette benutzt (steht in der Pipeline-Datei)."""
     t = (pipeline_text or "").lower()
     return "h265" if ("265" in t or "hevc" in t) else "h264"
 
 
 def big_cpus(cpu_dir="/sys/devices/system/cpu"):
-    """Nummern der schnellen Kerne (big.LITTLE über cpu_capacity), [] wenn alle gleich schnell sind (wie pipbox_live.big_cpus, ohne dessen Abhängigkeiten)."""
     cap = {}
     try:
         for d in os.listdir(cpu_dir):
@@ -162,7 +137,6 @@ def big_cpus(cpu_dir="/sys/devices/system/cpu"):
 
 
 def sending_now(path=SEND_STATUS, now=time.time):
-    """Läuft der Sender? Der Sende-Dienst schreibt seinen Zustand alle 2 s nach /run/pipbox-send/status.json (jünger als 15 s, nicht im Beenden)."""
     try:
         with open(path) as f:
             st = json.load(f)
@@ -172,7 +146,6 @@ def sending_now(path=SEND_STATUS, now=time.time):
 
 
 def little_cpus(big):
-    """Alle Kerne außer den schnellen: dort läuft die Vorschau, damit die schnellen für die Sendung frei bleiben."""
     try:
         n = os.cpu_count() or 0
     except Exception:
@@ -181,9 +154,6 @@ def little_cpus(big):
 
 
 def gst_argv(codec, fps, width, cpus=None, fmt="mjpeg"):
-    """Kommandozeile des Dekoders: TS von stdin, nach stdout entweder H.264 als Byte-Strom (fmt "mp4", daraus macht Fmp4 das fragmentierte MP4) oder Motion-JPEG
-    (fmt "mjpeg"). Der Tonzweig läuft ohne Warten, sonst blockiert er tsdemux, solange das Video noch auf das erste Schlüsselbild wartet. Kleiner machen mit
-    der einfachsten Methode (nearest-neighbour): das ist rund fünfmal billiger als bilinear."""
     width = width - width % 2
     height = (width * 9 // 16) - ((width * 9 // 16) % 2)
     pre = ["taskset", "-c", ",".join(map(str, cpus))] if cpus and shutil.which("taskset") else []
@@ -199,7 +169,6 @@ def gst_argv(codec, fps, width, cpus=None, fmt="mjpeg"):
                  ["t.", "!", "audio/x-opus", "!", "queue", "leaky=downstream", "!", "fakesink", "sync=false", "async=false"]
 
 
-# ---- fragmentiertes MP4 aus einem H.264-Byte-Strom (Annex B), ohne GStreamer-Muxer: mp4mux lieferte im Live-Betrieb keine Häppchen
 def _box(typ, *parts):
     body = b"".join(parts)
     return struct.pack(">I4s", 8 + len(body), typ) + body
@@ -213,7 +182,6 @@ _MATRIX = struct.pack(">9I", 0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x4000000
 
 
 def init_segment(sps, pps, width, height, timescale=90000):
-    """ftyp + moov für einen H.264-Videostrom (sps und pps ohne Startcode)."""
     ftyp = _box(b"ftyp", b"isom", struct.pack(">I", 512), b"isomiso6avc1mp41")
     avcc = _box(b"avcC", bytes([1, sps[1], sps[2], sps[3], 0xFF, 0xE1]), struct.pack(">H", len(sps)), sps, bytes([1]), struct.pack(">H", len(pps)), pps)
     avc1 = _box(b"avc1", bytes(6), struct.pack(">H", 1), bytes(16), struct.pack(">HH", width, height), struct.pack(">II", 0x00480000, 0x00480000), bytes(4),
@@ -232,7 +200,6 @@ def init_segment(sps, pps, width, height, timescale=90000):
 
 
 def media_segment(seq, decode_time, samples):
-    """moof + mdat; samples: [(Bytes im AVCC-Format, Dauer, Schlüsselbild)]."""
     trun_rows = b"".join(struct.pack(">III", dur, len(data), 0x02000000 if key else 0x01010000) for data, dur, key in samples)
     mfhd = _full(b"mfhd", 0, 0, struct.pack(">I", seq))
     tfhd = _full(b"tfhd", 0, 0x020000, struct.pack(">I", 1))
@@ -246,8 +213,6 @@ def media_segment(seq, decode_time, samples):
 
 
 class Fmp4:
-    """Macht aus dem H.264-Byte-Strom (Annex B, wie ihn der Kodierer liefert) ein fragmentiertes MP4: zuerst Init-Segment, dann alle FRAGMENT_FRAMES Bilder ein
-    Häppchen. Beginnt am ersten Schlüsselbild mit SPS und PPS, die Bilder haben feste Dauer (fps). feed(bytes) gibt die fertigen Stücke zurück."""
 
     def __init__(self, fps=30, width=640, height=360, frames=FRAGMENT_FRAMES):
         self.fps, self.width, self.height, self.frames = fps, width, height, frames
@@ -261,19 +226,17 @@ class Fmp4:
         self.dur = 90000 // fps
 
     def feed(self, data):
-        """Neue Bytes des Byte-Stroms; Rückgabe: Liste fertiger Stücke (Init-Segment, Häppchen). Die letzte NAL-Einheit bleibt liegen, bis die nächste beginnt."""
         self.buf += data
         out = []
         starts = self._starts()
         if len(starts) >= 2:
             for a, b in zip(starts, starts[1:]):
-                nal = self.buf[a:b - 3].rstrip(b"\x00")           # b - 3: vor dem Startcode; ein vierter Nullbyte des Startcodes gehört nicht zur Einheit
+                nal = self.buf[a:b - 3].rstrip(b"\x00")
                 out += self._nal(nal)
-            self.buf = self.buf[starts[-1] - 3:]                        # die unfertige Einheit behält ihren Startcode
+            self.buf = self.buf[starts[-1] - 3:]
         return out
 
     def _starts(self):
-        """Stellen direkt hinter den Startcodes (00 00 01)."""
         i, res = 0, []
         while True:
             j = self.buf.find(b"\x00\x00\x01", i)
@@ -289,7 +252,7 @@ class Fmp4:
         out = []
         if t in (6, 7, 8, 9) and self.au_slice:
             out += self._emit()
-        elif t in (1, 5) and self.au_slice and len(nal) > 1 and nal[1] & 0x80:      # first_mb_in_slice == 0: ein neues Bild beginnt
+        elif t in (1, 5) and self.au_slice and len(nal) > 1 and nal[1] & 0x80:
             out += self._emit()
         if t == 7:
             self.sps = nal
@@ -336,11 +299,9 @@ class Preview:
 
     @staticmethod
     def limit(long=False):
-        """Höchstdauer einer Vorschau: 10 Minuten, mit "long" (Häkchen in der Oberfläche) 24 Stunden."""
         return LONG_SECONDS if long else MAX_SECONDS
 
     def status(self, sending):
-        """Für die Oberfläche: kann eine Vorschau starten, und wenn nicht, warum nicht."""
         why = None
         if not shutil.which("gst-launch-1.0"):
             why = "gst"
@@ -365,7 +326,6 @@ class Preview:
             self.viewers = max(0, self.viewers - 1)
 
     def open_capture(self):
-        """Raw-Socket auf lo, nur UDP an den Zielport (Filter im Kernel)."""
         try:
             sock = socket.socket(socket.AF_PACKET, socket.SOCK_DGRAM, socket.htons(0x0003))
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 * 1024 * 1024)
@@ -384,8 +344,6 @@ class Preview:
             raise Unavailable("gst: %s" % e)
 
     def stream(self, write, fps, width, still_sending, max_seconds=MAX_SECONDS, ready=None, gone=None, fmt="mjpeg"):
-        """Läuft, bis der Browser geht (write löst OSError aus), die Zeit um ist oder der Sender stoppt. write(bytes) gibt Daten an den Browser,
-        still_sending() sagt, ob der Sender noch läuft, ready() wird einmal aufgerufen, sobald alles gestartet ist, gone() sagt, ob die Gegenseite schon weg ist (auch ohne dass gerade Daten fließen). Rückgabe: Grund des Endes ("client", "zeit", "sender", "kein-bild", "fehler")."""
         fps = clamp(fps, *FPS_RANGE, 30)
         width = clamp(width, *WIDTH_RANGE, 640)
         self._acquire()
@@ -396,7 +354,7 @@ class Preview:
             proc = self.spawn(fps, width, fmt)
             mux = Fmp4(fps, width - width % 2, (width * 9 // 16) - ((width * 9 // 16) % 2)) if fmt == "mp4" else None
             if ready is not None:
-                ready()                                    # Mitlesen und Dekoder laufen: ab hier kommen Daten (oder "kein-bild")
+                ready()
 
             def feed():
                 ro = Reorder()
@@ -454,7 +412,7 @@ class Preview:
                     break
                 try:
                     for chunk in (mux.feed(data) if mux else [data]):
-                        first = True                      # erst wenn etwas für den Browser fertig ist (beim MP4 nach dem ersten Schlüsselbild)
+                        first = True
                         write(chunk)
                 except OSError:
                     reason = "client"
@@ -490,7 +448,6 @@ class Preview:
 
 
 def iface_addrs(names):
-    """IPv4-Adresse je Netzwerkschnittstelle ({Name: Adresse}); was keine hat, fehlt."""
     out = {}
     try:
         import fcntl
@@ -500,7 +457,7 @@ def iface_addrs(names):
     try:
         for n in names:
             try:
-                out[n] = socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack("256s", n[:15].encode()))[20:24])      # SIOCGIFADDR
+                out[n] = socket.inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack("256s", n[:15].encode()))[20:24])
             except OSError:
                 pass
     finally:
@@ -509,7 +466,6 @@ def iface_addrs(names):
 
 
 def default_route_iface(path="/proc/net/route"):
-    """Schnittstelle der Standardroute (kleinste Metrik), sonst None."""
     best = None
     try:
         with open(path) as f:
@@ -525,12 +481,8 @@ def default_route_iface(path="/proc/net/route"):
 
 
 class Traffic:
-    """Verkehr der Vorschau zum Browser. Er steht sonst im Upload-Zähler der Netzwerkkarte (/proc/net/dev) und verfälscht die Anzeige der Sendung
-    (3 Mbit/s zusätzlich bei voller Bildrate). Der Webserver meldet, was er je Verbindung (lokale Adresse) an den Browser schickt; adjust() zieht das
-    samt Aufschlag für Netzwerkköpfe von der Schnittstelle ab, die diese Adresse hat. Kommt der Browser über einen Proxy auf der Box (Tailscale, Adresse
-    127.0.0.1) oder ist die Adresse unbekannt, gilt die Schnittstelle der Standardroute."""
-    TX_FACTOR = 1.046          # Ethernet 14 + IP 20 + TCP 32 Byte je 1448 Byte Nutzdaten
-    RX_FACTOR = 0.01           # Bestätigungen des Browsers (gemessen 0,9 %)
+    TX_FACTOR = 1.046
+    RX_FACTOR = 0.01
 
     def __init__(self, addrs=None, default=None):
         self.lock = threading.Lock()
@@ -542,7 +494,6 @@ class Traffic:
             self.by_ip[ip or ""] = self.by_ip.get(ip or "", 0) + nbytes
 
     def adjust(self, net):
-        """net: {Schnittstelle: (rx, tx)} aus /proc/net/dev; zurück dasselbe ohne den Verkehr der Vorschau."""
         with self.lock:
             snap = dict(self.by_ip)
         if not snap:
@@ -564,7 +515,6 @@ TRAFFIC = Traffic()
 
 
 def read_line(sock, limit=MAX_REQUEST):
-    """Eine Zeile (bis \\n) byteweise lesen, damit danach die Nutzdaten unberührt im Socket bleiben. Zu lang oder zu früh geschlossen: ValueError."""
     out = b""
     while True:
         c = sock.recv(1)
@@ -578,7 +528,6 @@ def read_line(sock, limit=MAX_REQUEST):
 
 
 def peer_gone(conn):
-    """Hat die Gegenseite die Verbindung geschlossen? Ohne zu warten (select), denn recv() mit MSG_DONTWAIT wartet bei einem Socket mit Zeitgrenze trotzdem bis zu ihr."""
     try:
         if not select.select([conn], [], [], 0)[0]:
             return False
@@ -588,8 +537,6 @@ def peer_gone(conn):
 
 
 class Service:
-    """Der Dienst hinter dem Unix-Socket: nimmt Anfragen vom Webserver an. Anfragen: {"cmd": "status"} und {"cmd": "stream", "fps", "w", "long"}.
-    Antwort immer zuerst eine JSON-Zeile: Status, {"ok": true} oder {"error": Grund}; bei "stream" folgen danach die Bilddaten."""
 
     def __init__(self, preview, sending=sending_now, idle=IDLE_EXIT):
         self.pv, self.sending, self.idle = preview, sending, idle
@@ -598,7 +545,6 @@ class Service:
         self.last = time.monotonic()
 
     def serve(self, lsock):
-        """Annehmen, bis IDLE_EXIT Sekunden lang niemand mehr da ist; dann Rückkehr (der Dienst endet, systemd startet ihn bei der nächsten Anfrage)."""
         lsock.settimeout(1.0)
         while True:
             try:
@@ -652,7 +598,7 @@ class Service:
         try:
             fmt = req.get("fmt") if req.get("fmt") in FORMATS else "mp4"
             self.pv.stream(conn.sendall, req.get("fps"), req.get("w"), self.sending, max_seconds=self.pv.limit(req.get("long") is True), gone=lambda: peer_gone(conn), fmt=fmt,
-                           ready=lambda: (self._send(conn, {"ok": True}), conn.settimeout(15)))        # Schreibzeit je Stück: ein Browser, der nicht liest, hält den Platz höchstens 15 s
+                           ready=lambda: (self._send(conn, {"ok": True}), conn.settimeout(15)))
         except Busy:
             self._send(conn, {"error": "busy"})
         except Unavailable:
@@ -660,7 +606,6 @@ class Service:
 
 
 class Client:
-    """Der Webserver: fragt den Dienst über den Unix-Socket. Ist er nicht erreichbar (nicht installiert, Socket fehlt), gilt "nicht verfügbar"."""
 
     def __init__(self, path=SOCKET, timeout=5.0):
         self.path, self.timeout = path, timeout
@@ -688,7 +633,6 @@ class Client:
             return {"available": False, "why": "missing"}
 
     def open(self, fps, width, long=False, fmt="mp4"):
-        """(Socket, Kopfzeile) einer Vorschau; bei einem Fehler des Dienstes (Socket, Kopfzeile mit "error") ist der Socket None. OSError, wenn der Dienst fehlt."""
         s = self._call({"cmd": "stream", "fps": clamp(fps, *FPS_RANGE, 30), "w": clamp(width, *WIDTH_RANGE, 640), "long": bool(long), "fmt": fmt if fmt in FORMATS else "mp4"})
         try:
             head = json.loads(read_line(s, 4096))
@@ -702,7 +646,6 @@ class Client:
 
 
 def listen_socket(path=SOCKET):
-    """Der Socket von systemd (Socket-Aktivierung, Dateinummer 3), sonst (Handstart zum Testen) selbst angelegt mit Gruppe pipbox und Modus 0660."""
     if os.environ.get("LISTEN_PID") == str(os.getpid()) and os.environ.get("LISTEN_FDS") == "1":
         return socket.socket(fileno=3)
     try:

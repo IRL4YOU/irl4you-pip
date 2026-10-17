@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Root-Helfer: Auslöser für den Sende-Dienst (nur die Stichworte start, stop und restart)."""
 import os
 import subprocess
 import sys

@@ -1,9 +1,3 @@
-"""Bluetooth-Controller (Mini-Tastenfelder, Gamepads, Fernauslöser) der Box (Teil des Bluetooth-Dienstes pipbox-dji, dji_daemon.py).
-
-Die Oberfläche kann in der Nähe suchen (Liste mit Name und Signalstärke), ein Gerät aus der Liste koppeln und gekoppelte Controller mit
-Zustand (verbunden oder getrennt) und Akku zeigen. Die Tasten selbst legt Linux als Eingabegerät an (BlueZ, HID); Funktionen hinter den Tasten
-folgen später. Kopplung, Suche und Zustand laufen über D-Bus (BlueZ, dbus-fast); gemerkt werden die Controller in <state>/controllers.json.
-"""
 import asyncio
 import json
 import logging
@@ -20,11 +14,11 @@ BLUEZ = pb.BLUEZ
 SCAN_SECONDS = 12
 PAIR_TIMEOUT = 40
 REFRESH = 5
-HID_UUID = "00001812"        # HID over GATT; klassische Tastaturen und Gamepads melden dazu die Geräteklasse "Peripheral"
+HID_UUID = "00001812"
 
 
 class ControllerError(Exception):
-    """Fehler mit einem Text, der dem Nutzer angezeigt werden kann."""
+    pass
 
 
 def _prop(v):
@@ -32,26 +26,22 @@ def _prop(v):
 
 
 def is_input_device(dev):
-    """Sieht das Gerät nach einem Controller aus (Eingabegerät)? dev: Eigenschaften von org.bluez.Device1 (einfache Werte)."""
     if any(str(u).lower().startswith(HID_UUID) for u in (dev.get("UUIDs") or [])):
         return True
     if str(dev.get("Icon", "")).startswith("input-"):
         return True
     cls = dev.get("Class")
-    if isinstance(cls, int) and (cls >> 8) & 0x1F == 5:           # Hauptklasse 5: Peripheral (Tastatur, Maus, Gamepad)
+    if isinstance(cls, int) and (cls >> 8) & 0x1F == 5:
         return True
     app = dev.get("Appearance")
-    return isinstance(app, int) and 0x03C0 <= app <= 0x03FF         # Appearance "HID" (Tastatur, Maus, Gamepad, Fernbedienung ...)
+    return isinstance(app, int) and 0x03C0 <= app <= 0x03FF
 
 
 def plain(props):
-    """Eigenschaften eines BlueZ-Objekts ohne dbus-Hülle."""
     return {k: _prop(v) for k, v in (props or {}).items()}
 
 
 def scan_results(objects, known=(), only_inputs=True):
-    """Aus dem BlueZ-Zustand die Liste der Geräte, die gerade gesehen werden (RSSI vorhanden), stärkstes Signal zuerst.
-    objects: {Pfad: {Schnittstelle: Eigenschaften}}; known: Adressen, die nicht erscheinen sollen (Kameras, Handys, schon gekoppelte)."""
     out, skip = [], {str(a).upper() for a in known}
     for ifs in objects.values():
         d = ifs.get("org.bluez.Device1")
@@ -66,14 +56,13 @@ def scan_results(objects, known=(), only_inputs=True):
             continue
         name = str(d.get("Alias") or d.get("Name") or "").strip()
         if name.replace("-", ":").upper() == addr:
-            name = ""                                   # BlueZ nennt namenlose Geräte nach ihrer Adresse
+            name = ""
         out.append({"addr": addr, "name": name, "rssi": int(d["RSSI"]), "input": inp, "paired": bool(d.get("Paired", False))})
     out.sort(key=lambda r: (not r["input"], -r["rssi"]))
     return out
 
 
 def live_state(objects, addrs):
-    """{Adresse: {"connected": bool, "battery": int oder None}} der gekoppelten Controller nach dem Zustand von BlueZ."""
     want, res = {a.upper() for a in addrs}, {}
     for ifs in objects.values():
         d = ifs.get("org.bluez.Device1")
@@ -96,7 +85,7 @@ class Controllers:
         self.live = {}
         self.found = []
         self.scan = {"active": False, "until": 0.0, "message": ""}
-        self.pairing = ""                # Adresse, die gerade gekoppelt wird
+        self.pairing = ""
         self.message = ""
         self._scan_task = None
         self.load()
@@ -129,14 +118,12 @@ class Controllers:
         return {"controllers": ctl, "ctrl_found": found, "ctrl_scan": {"active": self.scan["active"], "left": left, "message": self.scan["message"]},
                 "ctrl_message": self.message}
 
-    # -- Zustand von BlueZ
     async def _objects(self, bus):
         intro = await bus.introspect(BLUEZ, "/")
         om = bus.get_proxy_object(BLUEZ, "/", intro).get_interface("org.freedesktop.DBus.ObjectManager")
         return await om.call_get_managed_objects()
 
     async def run(self):
-        """Alle paar Sekunden den Zustand (verbunden, Akku) der gekoppelten Controller aus BlueZ lesen."""
         bus = None
         while True:
             await asyncio.sleep(REFRESH)
@@ -157,7 +144,6 @@ class Controllers:
                     pass
                 bus = None
 
-    # -- Suche
     async def start_scan(self):
         if self.scan["active"]:
             return
@@ -200,9 +186,7 @@ class Controllers:
                 pass
             self.scan["active"] = False
 
-    # -- Koppeln
     async def pair(self, addr):
-        """Koppelt ein Gerät aus der Suchliste, vertraut ihm und verbindet es. Löst ControllerError mit lesbarem Text aus."""
         addr = addr.upper()
         if pb.MessageBus is None:
             raise ControllerError("Die Bluetooth-Bibliothek (dbus-fast) fehlt. install.sh erneut ausführen (braucht Internet).")
