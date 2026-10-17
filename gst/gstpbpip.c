@@ -183,7 +183,7 @@ static void pb_pip_sink_init(PbPipSink *self) {
 
 /* ------------------------------------------------------------------ pbpipmix */
 
-/* PB_POS_BEGIN  (wird von tools/test_corner_pos.py einzeln übersetzt und geprüft) */
+/* PB_POS_BEGIN */
 /* Position des kleinen Bildes: 0 oben links, 1 oben rechts, 2 unten links, 3 unten rechts, 4 unten Mitte,
  * 5 frei: fx/fy in Promille des Verschiebewegs (0 = Rand links/oben, 1000 = Rand rechts/unten), das Bild bleibt immer im Bild */
 static void pb_pos(guint corner, gint mw, gint mh, gint pw, gint ph, gint margin, gint fx, gint fy, gint *x, gint *y) {
@@ -213,7 +213,7 @@ static void pb_pos(guint corner, gint mw, gint mh, gint pw, gint ph, gint margin
 }
 /* PB_POS_END */
 
-/* PB_DRAW_BEGIN  (wird von tools/test_pbdraw.py zusammen mit PB_POS einzeln übersetzt und geprüft: reine Ganzzahlrechnung ohne GStreamer) */
+/* PB_DRAW_BEGIN */
 /* Gestaltung eines kleinen Bildes: Beschnitt, Deckkraft, Rahmen mit Eckenrundung.
  *
  * Das kleine Bild ist NV12, dicht gepackt (Stride = Breite): erst die Y-Ebene, dann die UV-Ebene. Das Hauptbild wird in
