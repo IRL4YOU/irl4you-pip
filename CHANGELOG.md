@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.73
+- GPU steht in den Prozessor-Details und in der Statistik ganz unten.
+
 ## 1.0.72
 - NPU-Auslastung in den Prozessor-Details und in der Statistik.
 - Update-Karte: Test für das Verpixeln einschaltbar, mit Rückweg auf die stabile Version.
