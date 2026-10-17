@@ -83,7 +83,10 @@ if __name__ == "__main__":
     info = {"w": 1920, "h": 1080}
 
     size = HDR + NREC * REC_DT.itemsize
-    fdb = os.open(BOX, os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        fdb = os.open(BOX, os.O_RDWR)
+    except FileNotFoundError:
+        fdb = os.open(BOX, os.O_RDWR | os.O_CREAT, 0o666)
     os.fchmod(fdb, 0o666)
     os.ftruncate(fdb, size)
     bm = mmap.mmap(fdb, size)
