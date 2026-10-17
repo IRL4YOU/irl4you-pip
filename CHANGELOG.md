@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.72
+- NPU-Auslastung in den Prozessor-Details und in der Statistik.
+- Update-Karte: Test für das Verpixeln einschaltbar, mit Rückweg auf die stabile Version.
+- Anzeige der Sendewege robuster.
+
 ## 1.0.71
 - Vier neue Designs (Menü-Einstellungen, Design, je Ansicht Desktop oder Mobil): **Kompakt Standard** (dichtes Layout von Kompakt in den Farben des Standard-Designs), **Kontrast Plus** (Schwarz, Weiß, Gelb, große Schrift, dicke Rahmen, große Knöpfe, für schlechtes Sehen), **Cockpit** (dunkles Instrumentenbrett mit Zahlen in Schreibmaschinenschrift, große Werte, Kacheln) und **Mischpult** (Hardware-Optik mit Geräteblenden, Tasten, leuchtenden LED-Punkten und Pegelketten, dunkel und hell).
 
