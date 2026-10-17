@@ -100,6 +100,7 @@ PY
     install -m 644 "$HERE/install/pipbox-preview.service" /etc/systemd/system/pipbox-preview.service
     install -m 644 "$HERE/pipbox_always.py" /opt/pipbox/pipbox_always.py
     install -m 755 "$HERE/install/pipbox_health.py" /opt/pipbox/pipbox_health.py
+    install -m 755 "$HERE/install/pipbox-npu.py" /opt/pipbox/pipbox-npu.py
     install -m 644 "$HERE/VERSION" /opt/pipbox/VERSION
     install -m 755 "$HERE/install/pipbox-swupdate.py" /opt/pipbox/pipbox-swupdate.py
     install -m 644 "$HERE/install/pipbox-swupdate.service" /etc/systemd/system/pipbox-swupdate.service
@@ -160,6 +161,7 @@ PY
     install -m 644 "$HERE/install/pipbox-power.service" /etc/systemd/system/pipbox-power.service
     install -m 644 "$HERE/install/pipbox-power.path" /etc/systemd/system/pipbox-power.path
     install -m 644 "$HERE/install/pipbox-health.service" /etc/systemd/system/pipbox-health.service
+    install -m 644 "$HERE/install/pipbox-npu.service" /etc/systemd/system/pipbox-npu.service
     install -m 644 "$HERE/web/index.html" /opt/pipbox/web/index.html
     install -m 644 "$HERE/web/login.html" /opt/pipbox/web/login.html
     install -m 644 "$HERE/web/statistik.html" /opt/pipbox/web/statistik.html
@@ -227,8 +229,13 @@ PY
     if [ "$dji_changed" = 1 ] || ! systemctl is-active --quiet pipbox-dji.service; then systemctl restart pipbox-dji.service; fi
     if [ "$hdmi_changed" = 1 ] || ! systemctl is-active --quiet pipbox-hdmi.service; then systemctl restart pipbox-hdmi.service; fi
     systemctl restart pipbox-health.service 2>/dev/null || true
-    systemctl enable --now pipbox-update.path pipbox-send-ctl.path pipbox-health.service pipbox-swupdate.path pipbox-remote.path pipbox-remote-heal.timer pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-netaddr.path pipbox-logs.path pipbox-ssh.path pipbox-btdriver.timer pipbox-btdriver.path pipbox-wlandriver.timer pipbox-btchip.path pipbox-btchip.service pipbox-arp.service pipbox-logrotate.timer
+    systemctl restart pipbox-npu.service 2>/dev/null || true
+    systemctl enable --now pipbox-update.path pipbox-send-ctl.path pipbox-health.service pipbox-npu.service pipbox-swupdate.path pipbox-remote.path pipbox-remote-heal.timer pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-netaddr.path pipbox-logs.path pipbox-ssh.path pipbox-btdriver.timer pipbox-btdriver.path pipbox-wlandriver.timer pipbox-btchip.path pipbox-btchip.service pipbox-arp.service pipbox-logrotate.timer
     systemctl enable --now pipbox-preview.socket
+    if [ -f "$HERE/install/install-testteile.sh" ]; then
+      echo "PIPBOX-STEP testteile"
+      sh "$HERE/install/install-testteile.sh" "$HERE" || echo "WARNUNG: Die Testfunktionen konnten nicht eingerichtet werden."
+    fi
     systemctl try-restart pipbox-preview.service 2>/dev/null || true
     systemctl try-restart pipbox-arp.service 2>/dev/null || true
     systemctl restart pipbox.service
@@ -244,8 +251,8 @@ PY
     [ -x /opt/pipbox/pipbox-arp.py ] && python3 /opt/pipbox/pipbox-arp.py uninstall || true
     [ -x /opt/pipbox/pipbox-btchip.py ] && python3 /opt/pipbox/pipbox-btchip.py uninstall || true
     [ -x /opt/pipbox/pipbox-btdriver.py ] && python3 /opt/pipbox/pipbox-btdriver.py uninstall || true
-    systemctl disable --now pipbox-arp.service pipbox-btchip.path pipbox-btchip.service pipbox-btdriver.timer pipbox-btdriver.path pipbox-wlandriver.timer pipbox-funnel-guard.timer pipbox-send.service pipbox-hdmi.service pipbox-send-ctl.path pipbox-update.path pipbox-swupdate.path pipbox-remote.path pipbox-remote-heal.timer pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-netaddr.path pipbox-logs.path pipbox-ssh.path pipbox-health.service pipbox.service pipbox-dji.service pipbox-logrotate.timer || true
-    rm -f /etc/systemd/system/pipbox-send.service /etc/systemd/system/pipbox-send-ctl.service /etc/systemd/system/pipbox-send-ctl.path /etc/systemd/system/pipbox.service /etc/systemd/system/pipbox-dji.service /etc/systemd/system/pipbox-hdmi.service /etc/systemd/system/pipbox-update.service /etc/systemd/system/pipbox-update.path /etc/systemd/system/pipbox-swupdate.service /etc/systemd/system/pipbox-swupdate.path /etc/systemd/system/pipbox-remote.service /etc/systemd/system/pipbox-remote.path /etc/systemd/system/pipbox-remote-heal.service /etc/systemd/system/pipbox-remote-heal.timer /etc/systemd/system/tailscaled.service.d/pipbox-order.conf /etc/systemd/system/pipbox-wifi.service /etc/systemd/system/pipbox-wifi.path /etc/systemd/system/pipbox-power.service /etc/systemd/system/pipbox-power.path /etc/systemd/system/pipbox-health.service /etc/systemd/system/pipbox-logmode.service /etc/systemd/system/pipbox-logmode.path /etc/systemd/system/pipbox-netaddr.service /etc/systemd/system/pipbox-netaddr.path /etc/systemd/system/pipbox-logs.service /etc/systemd/system/pipbox-logs.path /etc/systemd/system/pipbox-ssh.service /etc/systemd/system/pipbox-ssh.path /etc/systemd/system/pipbox-funnel-guard.service /etc/systemd/system/pipbox-funnel-guard.timer /etc/systemd/system/pipbox-btchip.service /etc/systemd/system/pipbox-btchip.path /etc/udev/rules.d/81-pipbox-btchip.rules /opt/pipbox/pipbox-btchip.py /etc/systemd/system/pipbox-arp.service /opt/pipbox/pipbox-arp.py /etc/systemd/system/pipbox-btdriver.service /etc/systemd/system/pipbox-btdriver.timer /etc/systemd/system/pipbox-btdriver.path /etc/udev/rules.d/80-pipbox-btdriver.rules
+    systemctl disable --now pipbox-arp.service pipbox-btchip.path pipbox-btchip.service pipbox-btdriver.timer pipbox-btdriver.path pipbox-wlandriver.timer pipbox-funnel-guard.timer pipbox-send.service pipbox-hdmi.service pipbox-send-ctl.path pipbox-update.path pipbox-swupdate.path pipbox-remote.path pipbox-remote-heal.timer pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-netaddr.path pipbox-logs.path pipbox-ssh.path pipbox-health.service pipbox-npu.service pipbox-privacy.service pipbox.service pipbox-dji.service pipbox-logrotate.timer || true
+    rm -f /etc/systemd/system/pipbox-send.service /etc/systemd/system/pipbox-send-ctl.service /etc/systemd/system/pipbox-send-ctl.path /etc/systemd/system/pipbox.service /etc/systemd/system/pipbox-dji.service /etc/systemd/system/pipbox-hdmi.service /etc/systemd/system/pipbox-update.service /etc/systemd/system/pipbox-update.path /etc/systemd/system/pipbox-swupdate.service /etc/systemd/system/pipbox-swupdate.path /etc/systemd/system/pipbox-remote.service /etc/systemd/system/pipbox-remote.path /etc/systemd/system/pipbox-remote-heal.service /etc/systemd/system/pipbox-remote-heal.timer /etc/systemd/system/tailscaled.service.d/pipbox-order.conf /etc/systemd/system/pipbox-wifi.service /etc/systemd/system/pipbox-wifi.path /etc/systemd/system/pipbox-power.service /etc/systemd/system/pipbox-power.path /etc/systemd/system/pipbox-health.service /etc/systemd/system/pipbox-npu.service /opt/pipbox/pipbox-npu.py /etc/systemd/system/pipbox-privacy.service /opt/pipbox/pipbox-privacy.py /etc/systemd/system/pipbox-logmode.service /etc/systemd/system/pipbox-logmode.path /etc/systemd/system/pipbox-netaddr.service /etc/systemd/system/pipbox-netaddr.path /etc/systemd/system/pipbox-logs.service /etc/systemd/system/pipbox-logs.path /etc/systemd/system/pipbox-ssh.service /etc/systemd/system/pipbox-ssh.path /etc/systemd/system/pipbox-funnel-guard.service /etc/systemd/system/pipbox-funnel-guard.timer /etc/systemd/system/pipbox-btchip.service /etc/systemd/system/pipbox-btchip.path /etc/udev/rules.d/81-pipbox-btchip.rules /opt/pipbox/pipbox-btchip.py /etc/systemd/system/pipbox-arp.service /opt/pipbox/pipbox-arp.py /etc/systemd/system/pipbox-btdriver.service /etc/systemd/system/pipbox-btdriver.timer /etc/systemd/system/pipbox-btdriver.path /etc/udev/rules.d/80-pipbox-btdriver.rules
     rmdir /etc/systemd/system/tailscaled.service.d 2>/dev/null || true
     systemctl disable --now pipbox-preview.socket pipbox-preview.service 2>/dev/null || true
     rm -f /etc/systemd/system/pipbox-preview.socket /etc/systemd/system/pipbox-preview.service

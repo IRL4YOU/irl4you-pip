@@ -25,8 +25,9 @@ INSTALL = "/opt/pipbox"
 UNIT_DIR = "/etc/systemd/system"
 LOCK = "/run/pipbox-swupdate.lock"
 URL = "https://codeload.github.com/IRL4YOU/irl4you-pip/tar.gz/refs/heads/main"
+TEST_URL = "https://codeload.github.com/IRL4YOU/irl4you-pip/tar.gz/refs/heads/test"
 TAG_URL = "https://codeload.github.com/IRL4YOU/irl4you-pip/tar.gz/refs/tags/v{}"
-MODES = ("install", "rollback", "switch")
+MODES = ("install", "rollback", "switch", "test", "stable")
 KEEP = 5
 MAX_BYTES = 8 * 1024 * 1024
 MAX_FILES = 300
@@ -35,6 +36,9 @@ MAX_TOTAL = 20 * 1024 * 1024
 REQUIRED = ("VERSION", "server.py", "dji.py", "dji_daemon.py", "phone_battery.py", "controllers.py", "controller_keys.py", "hdmi_daemon.py", "install/pipbox-hdmi.service", "pipbox_send.py", "pipbox_send_ctl.py",
             "web/index.html", "web/login.html", "web/i18n.js", "web/i18n/languages.json", "install/install.sh", "gst/gstpbpip.c", "gst/build.sh")
 VERSION_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}(-[a-z0-9.]{1,16})?$")
+TEST_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}-test\d{1,3}$")
+TEST_PARTS = ("/etc/systemd/system/pipbox-privacy.service", f"{INSTALL}/pipbox-privacy.py", f"{INSTALL}/gst/libgstpbpixel.so",
+              f"{INSTALL}/gst-src/gstpbpixel.c")
 
 
 class Refuse(Exception):
@@ -174,7 +178,7 @@ def safe_extract(data, dest):
     return n
 
 
-def validate(tree, local, wanted=None):
+def validate(tree, local, wanted=None, channel=None):
     for f in REQUIRED:
         if not os.path.isfile(os.path.join(tree, f)):
             raise Refuse(f"Pflichtdatei fehlt im Archiv: {f}")
@@ -183,7 +187,17 @@ def validate(tree, local, wanted=None):
         if not text.lstrip().lower().startswith("<!doctype html") or "IRL4YOU" not in text or "</html>" not in text.lower():
             raise Refuse(f"Die Seite im Archiv ist beschädigt: {page}")
     new = read(f"{tree}/VERSION")
-    if wanted is None:
+    if channel == "test":
+        if not TEST_RE.match(new):
+            raise Refuse(f"Das ist keine Testversion (Archiv {new})")
+        if new == local:
+            raise Refuse(f"Testversion {new} ist schon installiert")
+    elif channel == "stable":
+        if "-" in new:
+            raise Refuse(f"Das ist keine stabile Version (Archiv {new})")
+        if new == local:
+            raise Refuse(f"Version {new} ist schon installiert")
+    elif wanted is None:
         if vkey(new) <= vkey(local):
             raise Refuse(f"Keine neuere Version (installiert {local}, Archiv {new})")
     elif new != wanted:
@@ -293,6 +307,8 @@ def restore(ver, reason="", note="Zurück auf"):
     for f in os.listdir(f"{src}/units"):
         shutil.copy2(f"{src}/units/{f}", os.path.join(UNIT_DIR, f))
     status(progress=60)
+    if not TEST_RE.match(ver):
+        remove_test_parts()
     subprocess.run(["systemctl", "daemon-reload"])
     subprocess.run(["systemctl", "restart", "pipbox.service"])
     if dji_changed:
@@ -315,6 +331,17 @@ def restore(ver, reason="", note="Zurück auf"):
            else "Wechsel fehlgeschlagen: die Oberfläche startet nicht. Bitte per SSH prüfen.")
 
 
+def remove_test_parts():
+    subprocess.run(["systemctl", "disable", "--now", "pipbox-privacy.service"], capture_output=True)
+    for f in TEST_PARTS:
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+    shutil.rmtree(f"{INSTALL}/privacy", ignore_errors=True)
+    subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+
+
 def rollback(reason=""):
     cur = local_version()
     prev = [v for v in list_backups() if v != cur]
@@ -331,8 +358,10 @@ INSTALL_STEPS = {
     "srtla": (78, "Prüfe den SRTLA-Sender (wird neu gebaut, wenn er sich geändert hat)"),
     "belacoder": (88, "Prüfe den Encoder (wird neu gebaut, wenn er sich geändert hat)"),
     "start": (95, "Starte die Dienste neu"),
+    "testteile": (96, "Richte die Testfunktionen ein (das dauert einige Minuten)"),
 }
 INSTALL_TIMEOUT = 900
+INSTALL_TIMEOUT_TEST = 2400
 
 
 def run_install(tmp):
@@ -346,7 +375,7 @@ def run_install(tmp):
             os.killpg(p.pid, 9)
         except OSError:
             p.kill()
-    timer = threading.Timer(INSTALL_TIMEOUT, too_long)
+    timer = threading.Timer(INSTALL_TIMEOUT_TEST if os.path.exists(f"{tmp}/install/install-testteile.sh") else INSTALL_TIMEOUT, too_long)
     timer.start()
     tail = []
     try:
@@ -365,13 +394,14 @@ def run_install(tmp):
     return (-9 if killed else p.returncode), tail
 
 
-def install(version=None):
+def install(version=None, channel=None):
     if sending() and not IGNORE_SENDING:
         raise Refuse("Es wird gerade gesendet. Bitte zuerst die Übertragung beenden.")
     local = local_version()
     status(state="installing", step="Lade die neue Version von GitHub", message="", frm=local, to=version or "", progress=2)
     try:
-        data = download(URL if version is None else TAG_URL.format(version), lambda pct: status(progress=2 + pct * 18 // 100))
+        url = TEST_URL if channel == "test" else (URL if version is None else TAG_URL.format(version))
+        data = download(url, lambda pct: status(progress=2 + pct * 18 // 100))
     except urllib.error.HTTPError as e:
         raise Refuse(f"Version {version} gibt es auf GitHub nicht (Antwort {e.code})" if version else f"GitHub antwortet mit {e.code}")
     tmp = f"/var/tmp/pipbox-swupdate-{os.getpid()}"
@@ -379,7 +409,7 @@ def install(version=None):
     try:
         status(step="Prüfe das Archiv", progress=22)
         n = safe_extract(data, tmp)
-        new = validate(tmp, local, version)
+        new = validate(tmp, local, version, channel)
         log(f"Archiv ok: {n} Dateien, Version {new} (installiert {local})")
         status(step="Sichere die jetzige Version", to=new, progress=30)
         backup(local, do_prune=False)
@@ -390,6 +420,8 @@ def install(version=None):
             log("Installation fehlgeschlagen, rolle zurück")
             restore(local, f"Installation fehlgeschlagen (Code {rc})")
             return
+        if channel == "stable":
+            remove_test_parts()
         prune()
         status(state="done", step="", version=new, message=f"Version {new} ist installiert.", progress=100)
         log(f"Update auf {new} abgeschlossen")
@@ -437,6 +469,8 @@ def main():
     try:
         if mode == "install":
             install()
+        elif mode in ("test", "stable"):
+            install(channel=mode)
         elif mode == "rollback":
             rollback()
         else:
