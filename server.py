@@ -83,6 +83,20 @@ THERMAL_NAMES = {"soc-thermal": "SoC", "bigcore0-thermal": "Große Kerne 4–5",
                  "littlecore-thermal": "Kleine Kerne 0–3", "center-thermal": "Mitte", "gpu-thermal": "GPU", "npu-thermal": "NPU"}
 
 
+NPU_FILE = "/run/pipbox-npu"
+
+
+def npu_load():
+    try:
+        d = json.loads(read(NPU_FILE, "") or "")
+        cores = [max(0, min(100, int(c))) for c in d["cores"]][:8]
+        if cores and abs(time.time() - float(d["t"])) < 15:
+            return {"load_pct": max(cores), "cores": cores}
+    except (ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
 def devfreq_loads():
     out = {}
     try:
@@ -90,12 +104,18 @@ def devfreq_loads():
     except OSError:
         return out
     for n in names:
-        if "gpu" not in n:
+        if "gpu" not in n and "npu" not in n:
             continue
         raw = (read(f"/sys/class/devfreq/{n}/load", "") or "").strip()
         m = re.match(r"^(\d+)@(\d+)Hz$", raw)
-        if m:
+        if not m:
+            continue
+        if "gpu" in n:
             out["gpu"] = {"load_pct": int(m.group(1)), "mhz": int(m.group(2)) // 1000000}
+        else:
+            real = npu_load()
+            if real:
+                out["npu"] = {"load_pct": real["load_pct"], "mhz": int(m.group(2)) // 1000000, "cores": real["cores"]}
     return out
 
 
@@ -574,7 +594,8 @@ class Sampler:
         out["details"] = {
             "temps": [{"name": n, "c": round(temp + d + random.uniform(-0.4, 0.4), 1)} for n, d in
                       (("SoC", 0), ("Große Kerne 4–5", 2), ("Große Kerne 6–7", 1.5), ("Kleine Kerne 0–3", -3), ("Mitte", 0), ("GPU", -5), ("NPU", -6))],
-            "accel": {"gpu": {"load_pct": int(12 + 8 * math.sin(t / 5)), "mhz": 600}},
+            "accel": {"gpu": {"load_pct": int(12 + 8 * math.sin(t / 5)), "mhz": 600},
+                      "npu": {"load_pct": int(30 + 20 * math.sin(t / 7)), "mhz": 1000, "cores": [int(30 + 20 * math.sin(t / 7)), int(10 + 8 * math.sin(t / 4)), 0]}},
             "disk": {"total_gb": 62.8, "free_gb": 55.5, "used_gb": 4.6, "used_pct": 8.7},
             "send": {"fps": 29.9, "bitrate_kbps": 9800, "rtt_ms": round(38 + 6 * math.sin(t / 9), 1), "send_mbps": round(9.7 + random.uniform(-0.5, 0.5), 2),
                      "snd_buf_pkts": int(30 + 20 * random.random()), "snd_buf_ms": int(25 + 15 * random.random()), "loss_total": 37,
@@ -714,7 +735,7 @@ def uplink_states(selected):
         return {}
     last = {}
     for ln in lines:
-        m = re.match(r"\S+ links: (\S+) srtt=(-?\d+)ms .*? (genutzt|reserve) ", ln)
+        m = re.match(r"\S+ links: (\S+) (?:stall=\d+ )?srtt=(-?\d+)ms .*? (genutzt|reserve) ", ln)
         if m:
             last[m.group(1)] = (int(m.group(2)), m.group(3))
     by_ip = {o["ip"]: o["iface"] for o in iface_ips()}
@@ -3207,9 +3228,10 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
 
         def accel(k):
             v = acc.get(k)
-            return {"load_pct": num(v.get("load_pct"), 0), "mhz": num(v.get("mhz"), 0)} if isinstance(v, dict) else None
+            return {"load_pct": num(v.get("load_pct"), 0), "mhz": num(v.get("mhz"), 0),
+                    "cores": [num(c, 0) for c in (v.get("cores") or [])[:8]] if isinstance(v.get("cores"), list) else None} if isinstance(v, dict) else None
         out["cores"] = {"load": [num(c) for c in (cpu.get("cores") or [])[:16]], "freq_mhz": [num(f, 0) for f in (cpu.get("freq_mhz") or [])[:16]],
-                        "gpu": accel("gpu")}
+                        "gpu": accel("gpu"), "npu": accel("npu")}
     if groups.get("disk"):
         k = det.get("disk")
         out["disk"] = {x: num(k.get(x), 1) for x in ("used_gb", "free_gb", "total_gb", "used_pct")} if isinstance(k, dict) else None
@@ -4255,7 +4277,7 @@ class SwUpdate:
     RETRY_AFTER_ERROR = 30 * 60
     EARLY_SECONDS = 30 * 60
     RETRY_EARLY = 3 * 60
-    RAW = "https://raw.githubusercontent.com/IRL4YOU/irl4you-pip/main/"
+    RAW = "https://raw.githubusercontent.com/IRL4YOU/irl4you-pip/%s/"
     API = "https://api.github.com/repos/IRL4YOU/irl4you-pip/releases?per_page=30"
     STATUS = "/run/pipbox-swupdate/status.json"
     BACKUP = "/var/lib/pipbox-backup"
@@ -4276,11 +4298,18 @@ class SwUpdate:
         self.fake = {}
         self.fake_t0 = 0.0
 
-    CONTENTS = "https://api.github.com/repos/IRL4YOU/irl4you-pip/contents/%s?ref=main"
+    CONTENTS = "https://api.github.com/repos/IRL4YOU/irl4you-pip/contents/%s?ref=%s"
 
-    def _get(self, name, limit):
+    @property
+    def channel(self):
+        return "test" if re.search(r"-test\d+$", self.version) else "stable"
+
+    def _vget(self, name, limit, ref):
+        return self._get(name, limit) if ref == "main" else self._get(name, limit, ref)
+
+    def _get(self, name, limit, ref="main"):
         last = None
-        for url, extra in ((self.CONTENTS % name, {"Accept": "application/vnd.github.raw+json"}), (self.RAW + name, {})):
+        for url, extra in ((self.CONTENTS % (name, ref), {"Accept": "application/vnd.github.raw+json"}), ((self.RAW % ref) + name, {})):
             try:
                 req = urllib.request.Request(url, headers=dict(extra, **{"User-Agent": "irl4you-box"}))
                 with urllib.request.urlopen(req, timeout=8) as r:
@@ -4311,15 +4340,15 @@ class SwUpdate:
             out = v if out is None or v < out else out
         return out
 
-    def _changelog(self, current=None):
-        text = self._get("CHANGELOG.md", self.CHANGELOG_MAX)
+    def _changelog(self, current=None, ref="main"):
+        text = self._vget("CHANGELOG.md", self.CHANGELOG_MAX, ref)
         oldest = self._oldest(text)
         m = re.match(r"^(\d+)\.(\d+)\.(\d+)", current or "")
         cur = tuple(int(x) for x in m.groups()) if m else None
         need = current is None or cur is None or (oldest is not None and cur < oldest)
         if need:
             try:
-                text = text.rstrip("\n") + "\n\n" + self._get(b"CHANGELOG-Archiv.md".decode(), self.CHANGELOG_MAX)
+                text = text.rstrip("\n") + "\n\n" + self._vget(b"CHANGELOG-Archiv.md".decode(), self.CHANGELOG_MAX, ref)
             except OSError:
                 pass
         return text
@@ -4361,17 +4390,24 @@ class SwUpdate:
                 return {"checked_at": None}
         res = {"checked_at": int(time.time())}
         if self.demo:
-            res.update(latest="0.9.1", notes="## 0.9.1 (Demo)\n- Beispiel für eine neue Version.")
+            res.update(latest="0.9.1", notes="## 0.9.1 (Demo)\n- Beispiel für eine neue Version.", test_latest="0.9.2-test1")
         else:
             try:
-                v = self._get("VERSION", 64).strip()
+                ref = "test" if self.channel == "test" else "main"
+                v = self._vget("VERSION", 64, ref).strip()
                 if not VERSION_RE.match(v):
                     raise ValueError("ungültige Versionsnummer")
                 res["latest"] = v
+                other = "main" if ref == "test" else "test"
+                try:
+                    o = self._vget("VERSION", 64, other).strip()
+                    res["test_latest" if other == "test" else "stable_latest"] = o if VERSION_RE.match(o) else ""
+                except (OSError, TypeError):
+                    pass
                 if vkey(v) < vkey(self.version):
                     res["latest"], res["stale"] = self.version, True
                 try:
-                    res["notes"] = self._sections_since(self._changelog(self.version), self.version)
+                    res["notes"] = self._sections_since(self._changelog(self.version, ref), self.version)
                 except OSError:
                     res["notes"] = ""
             except (OSError, ValueError):
@@ -4509,11 +4545,16 @@ class SwUpdate:
         out["versions"] = self.versions(force)
         out["sending"] = False if self.demo else bool(belacoder_running() or self.send._active())
         out["helper_installed"] = self.demo or os.path.exists("/etc/systemd/system/pipbox-swupdate.path")
+        out["channel"] = self.channel
+        out["test_latest"] = chk.get("test_latest", "") if self.channel == "stable" else (latest or "")
+        out["stable_latest"] = chk.get("stable_latest", "") if self.channel == "test" else (latest or "")
         return out
 
     def request(self, action, confirm, version=None, older=False):
-        if action not in ("install", "rollback", "switch"):
+        if action not in ("install", "rollback", "switch", "test", "stable"):
             raise ValueError("Unbekannte Aktion")
+        if action == "install" and self.channel == "test":
+            action = "test"
         if confirm is not True:
             raise ValueError("Bestätigung fehlt")
         st = self.status()
@@ -4525,6 +4566,10 @@ class SwUpdate:
             raise ValueError("Ein Update läuft bereits")
         if action == "install" and not st["newer"]:
             raise ValueError("Es gibt keine neuere Version")
+        if action == "test" and (not re.search(r"-test\d+$", st["test_latest"] or "") or (self.channel == "test" and not st["newer"])):
+            raise ValueError("Es gibt keine neuere Testversion")
+        if action == "stable" and self.channel != "test":
+            raise ValueError("Es läuft keine Testversion")
         if action == "rollback" and not st["backup_version"]:
             raise ValueError("Es gibt keine gesicherte Version")
         if action == "switch":
