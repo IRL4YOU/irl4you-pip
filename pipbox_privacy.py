@@ -87,8 +87,11 @@ if __name__ == "__main__":
         fdb = os.open(BOX, os.O_RDWR)
     except FileNotFoundError:
         fdb = os.open(BOX, os.O_RDWR | os.O_CREAT, 0o666)
-    os.fchmod(fdb, 0o666)
-    os.ftruncate(fdb, size)
+    try:
+        os.fchmod(fdb, 0o666)
+        os.ftruncate(fdb, size)
+    except PermissionError:
+        pass
     bm = mmap.mmap(fdb, size)
     struct.pack_into("<IIII", bm, 0, 0x50424258, 0, 0, 0)
 
