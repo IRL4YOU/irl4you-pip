@@ -113,6 +113,8 @@ PY
     install -m 644 "$HERE/install/tailscaled-pipbox-order.conf" /etc/systemd/system/tailscaled.service.d/pipbox-order.conf
     systemctl disable --now pipbox-funnel-guard.timer 2>/dev/null || true
     rm -f /etc/systemd/system/pipbox-funnel-guard.service /etc/systemd/system/pipbox-funnel-guard.timer
+    mkdir -p /etc/dhcp/dhclient-exit-hooks.d
+    install -m 644 "$HERE/install/pipbox-fallback-route" /etc/dhcp/dhclient-exit-hooks.d/pipbox-fallback-route
     install -d /opt/pipbox/btusb-src
     for f in btusb.c btintel.h btbcm.h btrtl.h COPYING README.md; do install -m 644 "$HERE/bluetooth-src/$f" "/opt/pipbox/btusb-src/$f"; done
     install -m 755 "$HERE/install/pipbox-btdriver.py" /opt/pipbox/pipbox-btdriver.py
@@ -248,6 +250,7 @@ PY
     systemctl disable --now pipbox-preview.socket pipbox-preview.service 2>/dev/null || true
     rm -f /etc/systemd/system/pipbox-preview.socket /etc/systemd/system/pipbox-preview.service
     rm -f /etc/apt/apt.conf.d/99pipbox-nginx
+    rm -f /etc/dhcp/dhclient-exit-hooks.d/pipbox-fallback-route
     rm -f /etc/systemd/system/pipbox-logrotate.service /etc/systemd/system/pipbox-logrotate.timer
     NGX=/etc/nginx/modules-available/99-belabox-rtmp.conf
     if [ -f "$NGX.vor-pipbox" ]; then

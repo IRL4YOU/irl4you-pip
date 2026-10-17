@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.69
+- Jede Internetverbindung per DHCP bekommt einen eigenen Weg für die Box selbst (Tailscale, Updates, Zeit): Ein neuer DHCP-Hook (`pipbox-fallback-route`) trägt für jede Netzkarte eine zweite Standardroute mit schlechterer Priorität ein. Fällt die erste Karte aus (zum Beispiel Kabelwackler), nimmt die Box die nächste, statt ohne Internet zu bleiben. Die Sendewege ändert das nicht. Es wird nicht geprüft, ob eine Verbindung wirklich Internet hat. Wirksam nach dem nächsten Anmelden der Karten per DHCP (spätestens nach einem Neustart).
+
 ## 1.0.68
 - „Immer Mobil“ zeigt die Handy-Ansicht jetzt auch am Rechner.
 
