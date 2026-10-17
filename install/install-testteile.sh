@@ -16,7 +16,7 @@ if [ ! -f "$D/modelle/yolox_s_fp16.rknn" ] || [ ! -f "$D/modelle/plate_raw_fp16.
   if [ -f "$HERE/privacy-modelle/yolox_s_fp16.rknn" ] && [ -f "$HERE/privacy-modelle/plate_raw_fp16.rknn" ]; then
     install -m 644 "$HERE"/privacy-modelle/*.rknn "$D/modelle/"
   else
-    python3 - "$DATA_URL" "$DATA_SHA" "$D/modelle" <<'P' || echo "WARNUNG: Die Daten für die Testfunktion konnten nicht geladen werden."
+    python3 - "$DATA_URL" "$DATA_SHA" "$D/modelle" <<'P' || { echo "WARNUNG: Die Daten für die Testfunktion konnten nicht geladen werden."; exit 1; }
 import hashlib, io, sys, tarfile, urllib.request
 url, sha, dest = sys.argv[1:4]
 req = urllib.request.Request(url, headers={"User-Agent": "irl4you-box-update"})
@@ -28,7 +28,7 @@ if len(data) > 120 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != sha:
     raise SystemExit("Prüfsumme stimmt nicht")
 with tarfile.open(fileobj=io.BytesIO(data)) as t:
     for m in t:
-        if m.isfile() and "/" not in m.name and m.name.endswith(".rknn"):
+        if m.isfile() and "/" not in m.name and not m.name.startswith("._") and m.name.endswith(".rknn"):
             open(dest + "/" + m.name, "wb").write(t.extractfile(m).read())
 P
   fi
@@ -40,12 +40,25 @@ open("/usr/lib/librknnrt.so.new", "wb").write(urllib.request.urlopen(sys.argv[1]
 os.replace("/usr/lib/librknnrt.so.new", "/usr/lib/librknnrt.so")
 P
 fi
-if [ ! -x "$D/venv/bin/python" ] || ! "$D/venv/bin/python" -c "import cv2, numpy, rknnlite.api" 2>/dev/null; then
-  python3 -m venv "$D/venv" 2>/dev/null || { apt-get install -y python3-venv >/dev/null 2>&1 && python3 -m venv "$D/venv"; } || { echo "WARNUNG: Python-Umgebung konnte nicht angelegt werden."; exit 0; }
-  "$D/venv/bin/python" -m pip install --quiet --upgrade pip >/dev/null 2>&1
-  "$D/venv/bin/python" -m pip install --quiet numpy opencv-python-headless psutil ruamel.yaml fast-histogram \
-    "$RAW/rknn-toolkit-lite2/packages/rknn_toolkit_lite2-$RT_VER-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl" \
-    || echo "WARNUNG: Python-Pakete für die Testfunktion konnten nicht installiert werden."
+mkvenv() {
+  rm -rf "$D/venv"
+  python3 -m venv "$D/venv" >/dev/null 2>&1 && return 0
+  rm -rf "$D/venv"
+  python3 -m venv --without-pip "$D/venv" >/dev/null 2>&1 || return 1
+  python3 - "$D/get-pip.py" <<'P' || return 1
+import sys, urllib.request
+open(sys.argv[1], "wb").write(urllib.request.urlopen("https://bootstrap.pypa.io/get-pip.py", timeout=60).read())
+P
+  "$D/venv/bin/python" "$D/get-pip.py" -q >/dev/null 2>&1
+  r=$?
+  rm -f "$D/get-pip.py"
+  return $r
+}
+if ! "$D/venv/bin/python" -c "import cv2, numpy, rknnlite.api" 2>/dev/null; then
+  mkvenv || { echo "WARNUNG: Python-Umgebung konnte nicht angelegt werden."; exit 1; }
+  "$D/venv/bin/python" -m pip install --quiet numpy==1.26.4 opencv-python-headless==4.11.0.86 psutil ruamel.yaml fast-histogram \
+    "$RAW/rknn-toolkit-lite2/packages/rknn_toolkit_lite2-$RT_VER-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl" >/dev/null 2>&1 || true
+  "$D/venv/bin/python" -c "import cv2, numpy, rknnlite.api" 2>/dev/null || { echo "WARNUNG: Python-Pakete für die Testfunktion konnten nicht installiert werden."; exit 1; }
 fi
 id -nG pipbox | grep -qw video || usermod -aG video,render pipbox 2>/dev/null || true
 systemctl daemon-reload
