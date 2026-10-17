@@ -1,10 +1,4 @@
 #!/bin/sh
-# IRL4YOU BOX: Komplett-Einrichtung auf einer BELABOX (zum Beispiel auf einer frisch geflashten Karte).
-#   1. Grundsystem aktualisieren: nur ein Fortschrittsbalken, die Paketliste steht im Protokoll (so wie die Update-Funktion von belaUI: apt-get update, dist-upgrade).
-#   2. Zusatzpaket installieren (install/install.sh): eine Zeile je Schritt.
-#   3. Ergebnis: "Alles fehlerfrei installiert" oder die Hinweise, die es gab.
-# Aufruf: sudo sh install/setup.sh [--ohne-systemupdate]
-# Das vollständige Protokoll (alles, was apt und install.sh ausgeben) liegt in install-ausgabe.txt im Ordner des aufrufenden Benutzers.
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 SKIP_SYS=0
@@ -19,7 +13,6 @@ LOG="${PB_LOG:-$H/install-ausgabe.txt}"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 VERSION=$(cat "$HERE/VERSION" 2>/dev/null || echo "?")
 TTY=0; [ -t 1 ] && TTY=1
-# Farben nur am Bildschirm (nicht in Dateien) und nicht bei NO_COLOR
 COL=0; { [ "$TTY" = 1 ] || [ "${PB_COLOR:-0}" = 1 ]; } && [ -z "${NO_COLOR:-}" ] && COL=1
 if [ "$COL" = 1 ]; then
   C_RST=$(printf '\033[0m'); C_OK=$(printf '\033[1;32m'); C_LINK=$(printf '\033[1;4;36m'); C_WARN=$(printf '\033[1;30;43m'); C_BOLD=$(printf '\033[1m')
@@ -27,11 +20,9 @@ else
   C_RST=""; C_OK=""; C_LINK=""; C_WARN=""; C_BOLD=""
 fi
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
-# Liste der noch aktualisierbaren Pakete (nur Namen)
 upgradable() { LC_ALL=C apt list --upgradable 2>/dev/null | sed -n 's#^\([^/]*\)/.*#\1#p'; }
 
 say() { printf '%s\n' "$*"; }
-# Fortschrittsbalken: bar <Prozent> <Text>. Am Bildschirm eine Zeile, die sich aktualisiert; in einer Datei oder Pipe nur Zeilen bei vollen 10 Prozent.
 LASTP=-1
 bar() {
   p=$1; t=$2; [ "$p" -gt 100 ] && p=100; [ "$p" -lt 0 ] && p=0
@@ -54,7 +45,6 @@ say "IRL4YOU BOX: Komplett-Einrichtung (Version $VERSION)"
 say "Das vollständige Protokoll: $LOG"
 say ""
 
-# --- Vorprüfungen -------------------------------------------------------------------------------------------------------------------------------
 if systemctl is-active --quiet pipbox-send.service 2>/dev/null || pgrep -x belacoder >/dev/null 2>&1; then
   say "Die Box sendet gerade. Bitte erst die Sendung beenden und dann noch einmal starten."; exit 1
 fi
@@ -62,9 +52,7 @@ if ! wget -q --spider --timeout=10 https://github.com 2>/dev/null; then
   say "Kein Internet auf der Box (github.com nicht erreichbar). Bitte Netzwerk prüfen und noch einmal starten."; exit 1
 fi
 
-# --- Schritt 1: Grundsystem ---------------------------------------------------------------------------------------------------------------------
 NEED_REBOOT=0
-# apt mit Fortschritt: apt_run <Anfangstext> <Argumente von apt-get ...>. apt schreibt seinen Fortschritt auf Dateikennung 3 (Status-Fd), alles andere ins Protokoll.
 apt_run() {
   label=$1; shift
   rc="$TMP/rc"; : > "$rc"
@@ -106,9 +94,8 @@ else
         say "  Das Systemupdate meldete einen Fehler (Details im Protokoll). Weiter mit Schritt 2."
       else
         held=$(upgradable | tr '\n' ' ' || true)
-        if [ -n "${held# }" ]; then            # zurückgehaltene Pakete (zum Beispiel neue Kernelpakete): gezielt nachinstallieren, wie es belaUI macht
+        if [ -n "${held# }" ]; then
           { echo; echo "===== apt-get install (zurückgehaltene Pakete) ====="; } >> "$LOG"
-          # shellcheck disable=SC2086
           apt_run "Pakete" install $held || say "  Einige zurückgehaltene Pakete ließen sich nicht einrichten (Details im Protokoll)."
         fi
         say "  Grundsystem aktualisiert."
@@ -118,7 +105,6 @@ else
 fi
 say ""
 
-# --- Schritt 2: Zusatzpaket ---------------------------------------------------------------------------------------------------------------------
 say "Schritt 2 von 2: IRL4YOU BOX installieren (das Bauen der Bausteine dauert einige Minuten)"
 { echo; echo "===== install/install.sh ====="; } >> "$LOG"
 rc="$TMP/rc2"; : > "$rc"
@@ -141,7 +127,6 @@ bar 100 "Fertig"; bar_end
 RC2=$(cat "$rc" 2>/dev/null || echo 1)
 say ""
 
-# --- Ergebnis -----------------------------------------------------------------------------------------------------------------------------------
 HINTS=$(sed -n '/===== install\/install.sh =====/,$p' "$LOG" | grep -E '^(WARNUNG|FEHLER)' || true)
 BAD=""
 for s in pipbox pipbox-dji nginx; do systemctl is-active --quiet "$s.service" 2>/dev/null || BAD="$BAD $s"; done

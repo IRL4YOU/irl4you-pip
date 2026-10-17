@@ -1,26 +1,4 @@
 #!/usr/bin/env python3
-"""Root-Helfer für das Software-Update von IRL4YOU BOX (läuft nur über pipbox-swupdate.path).
-
-Liest aus der Auslösedatei ausschließlich ein Stichwort aus einer festen Liste (install, rollback, switch) und bei
-"switch" eine Versionsnummer, die streng geprüft wird (nur Ziffern nach Muster x.y.z). Nimmt keine Adressen, Pfade oder
-Befehle von der Weboberfläche an. Die Quelle ist fest im Programm eingetragen.
-
-Ablauf bei "install":
-  1. nicht während einer Übertragung,
-  2. Archiv von der festen GitHub-Adresse laden (nur HTTPS, Größe begrenzt),
-  3. Archiv streng prüfen und in ein privates Verzeichnis entpacken (nur normale Dateien, keine Verweise,
-     keine Pfade nach außen),
-  4. Inhalt prüfen (Pflichtdateien, Versionsnummer neuer, Python-Dateien fehlerfrei, install.sh fehlerfrei),
-  5. alte Version sichern,
-  6. install.sh aus dem entpackten Archiv ausführen,
-  7. prüfen, ob die Oberfläche wieder läuft, sonst automatisch zurückrollen.
-"Rollback" stellt die zuletzt gesicherte Version wieder her. "Switch <Version>" wechselt gezielt auf eine Version, die
-entweder lokal gesichert ist (die letzten 5 bleiben liegen) oder als Release-Marke v<Version> auf GitHub liegt; das darf
-auch eine ältere Version sein. Jeder Wechsel sichert vorher die jetzige Version, sodass man zurückgehen kann.
-
-Hinweis zum Vertrauen: Wie bei jedem Update wird Code aus dem Repository als root ausgeführt. Die Quelle ist daher
-fest auf das eigene Repository gesetzt; ein Update lässt sich nur auslösen, wenn dort eine NEUERE Version liegt.
-"""
 import fcntl
 import io
 import json
@@ -42,14 +20,14 @@ REQ = f"{STATE}/swupdate-request"
 RUN = "/run/pipbox-swupdate"
 STATUS = f"{RUN}/status.json"
 LOG = "/var/log/pipbox-swupdate.log"
-BACKUP = "/var/lib/pipbox-backup"          # nur für root, getrennt vom Zustand des Benutzers pipbox
+BACKUP = "/var/lib/pipbox-backup"
 INSTALL = "/opt/pipbox"
 UNIT_DIR = "/etc/systemd/system"
 LOCK = "/run/pipbox-swupdate.lock"
 URL = "https://codeload.github.com/IRL4YOU/irl4you-pip/tar.gz/refs/heads/main"
 TAG_URL = "https://codeload.github.com/IRL4YOU/irl4you-pip/tar.gz/refs/tags/v{}"
 MODES = ("install", "rollback", "switch")
-KEEP = 5                                    # so viele gesicherte Versionen bleiben auf der Box
+KEEP = 5
 MAX_BYTES = 8 * 1024 * 1024
 MAX_FILES = 300
 MAX_FILE = 2 * 1024 * 1024
@@ -65,7 +43,7 @@ class Refuse(Exception):
 
 def log(msg):
     try:
-        if os.path.exists(LOG) and os.path.getsize(LOG) > 200_000:        # Protokoll klein halten (letzte ~100 KB bleiben)
+        if os.path.exists(LOG) and os.path.getsize(LOG) > 200_000:
             with open(LOG, "rb") as f:
                 f.seek(-100_000, 2)
                 f.readline()
@@ -96,7 +74,6 @@ def status(**kw):
 
 
 def read_req(path, limit=4096):
-    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -115,7 +92,6 @@ def read(path, default=""):
 
 
 def vkey(v):
-    """Sortierschlüssel: Zahlen, dann Release vor Vorabversion."""
     m = VERSION_RE.match(v)
     if not m:
         raise Refuse(f"Ungültige Versionsnummer: {v[:20]!r}")
@@ -136,12 +112,11 @@ def sending():
     return r.stdout.strip() in ("active", "activating")
 
 
-TEST_TARBALL = None      # nur für Tests auf der Kommandozeile als root (--tarball DATEI), nie über die Weboberfläche
-IGNORE_SENDING = False   # ebenso nur per Kommandozeile (--ignore-sending); die Weboberfläche kann das nie setzen
+TEST_TARBALL = None
+IGNORE_SENDING = False
 
 
 def download(url=URL, progress=None):
-    """Archiv laden. progress(Prozent 0-100) wird beim Laden aufgerufen, wenn die Größe bekannt ist."""
     if TEST_TARBALL:
         with open(TEST_TARBALL, "rb") as f:
             return f.read(MAX_BYTES + 1)
@@ -170,12 +145,11 @@ def download(url=URL, progress=None):
 
 
 def safe_extract(data, dest):
-    """Entpackt nur normale Dateien und Ordner. Verweise, Geräte und Pfade nach außen werden abgelehnt."""
     os.makedirs(dest, mode=0o700)
     n = total = 0
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for m in tar:
-            parts = m.name.split("/")[1:]                       # oberster Ordner (irl4you-pip-main) entfällt
+            parts = m.name.split("/")[1:]
             if not parts or parts == [""]:
                 continue
             rel = posixpath.normpath("/".join(parts))
@@ -201,11 +175,10 @@ def safe_extract(data, dest):
 
 
 def validate(tree, local, wanted=None):
-    """wanted=None: das Archiv muss NEUER sein. wanted=Version: das Archiv muss genau diese Version sein (auch älter)."""
     for f in REQUIRED:
         if not os.path.isfile(os.path.join(tree, f)):
             raise Refuse(f"Pflichtdatei fehlt im Archiv: {f}")
-    for page in ("web/index.html", "web/login.html"):               # eine Fehlerseite statt der Oberfläche (beim Hochladen passiert) wird nie eingespielt
+    for page in ("web/index.html", "web/login.html"):
         text = read(f"{tree}/{page}") or ""
         if not text.lstrip().lower().startswith("<!doctype html") or "IRL4YOU" not in text or "</html>" not in text.lower():
             raise Refuse(f"Die Seite im Archiv ist beschädigt: {page}")
@@ -234,7 +207,6 @@ def bdir(v):
 
 
 def migrate_legacy():
-    """Frühere Ablage (eine Version direkt in BACKUP) in ein Unterverzeichnis je Version überführen."""
     if os.path.isdir(f"{BACKUP}/opt-pipbox") and os.path.isfile(f"{BACKUP}/VERSION"):
         v = read(f"{BACKUP}/VERSION")
         if VERSION_RE.match(v) and not os.path.isdir(bdir(v)):
@@ -245,7 +217,6 @@ def migrate_legacy():
 
 
 def list_backups():
-    """Gesicherte Versionen, neueste zuerst."""
     migrate_legacy()
     out = []
     try:
@@ -264,7 +235,7 @@ def prune(keep=KEEP):
 
 def backup(local, do_prune=True):
     os.makedirs(BACKUP, mode=0o755, exist_ok=True)
-    os.chmod(BACKUP, 0o755)                      # nur Programmdateien (öffentlicher Quelltext), keine Zugangsdaten
+    os.chmod(BACKUP, 0o755)
     migrate_legacy()
     shutil.rmtree(bdir(local), ignore_errors=True)
     os.makedirs(f"{bdir(local)}/units", mode=0o755)
@@ -298,7 +269,6 @@ def wait_active(unit, seconds=40):
 
 
 def restore(ver, reason="", note="Zurück auf"):
-    """Stellt eine gesicherte Version wieder her. Die jetzige Version wird vorher gesichert (rückgängig machbar)."""
     src = bdir(ver)
     if not os.path.isdir(f"{src}/opt-pipbox"):
         raise Refuse(f"Version {ver} ist nicht gesichert")
@@ -308,8 +278,8 @@ def restore(ver, reason="", note="Zurück auf"):
     dji_changed = files_differ(f"{src}/opt-pipbox", INSTALL, dji_names)
     hdmi_changed = files_differ(f"{src}/opt-pipbox", INSTALL, ("hdmi_daemon.py",))
     if local != ver and VERSION_RE.match(local):
-        backup(local, do_prune=False)            # erst sichern, dann (unten) aufräumen: das Ziel darf nicht verschwinden
-    for name in os.listdir(INSTALL):             # gebautes Plugin bleibt, Programme werden ersetzt
+        backup(local, do_prune=False)
+    for name in os.listdir(INSTALL):
         if name in ("gst",):
             continue
         p = os.path.join(INSTALL, name)
@@ -330,7 +300,7 @@ def restore(ver, reason="", note="Zurück auf"):
     if hdmi_changed:
         if os.path.exists(os.path.join(INSTALL, "hdmi_daemon.py")):
             subprocess.run(["systemctl", "restart", "pipbox-hdmi.service"])
-        else:                                    # eine Version ohne HDMI-Dienst: Dienst und Eintrag entfernen, sonst startet er ins Leere
+        else:
             subprocess.run(["systemctl", "disable", "--now", "pipbox-hdmi.service"])
             try:
                 os.remove(os.path.join(UNIT_DIR, "pipbox-hdmi.service"))
@@ -346,7 +316,6 @@ def restore(ver, reason="", note="Zurück auf"):
 
 
 def rollback(reason=""):
-    """Zurück auf die zuletzt gesicherte Version (die ältere Seite des letzten Wechsels)."""
     cur = local_version()
     prev = [v for v in list_backups() if v != cur]
     if not prev:
@@ -354,7 +323,6 @@ def rollback(reason=""):
     restore(prev[0], reason)
 
 
-# Schritte von install.sh (Zeilen "PIPBOX-STEP <Kennung>"): Fortschritt in Prozent und Text für die Anzeige
 INSTALL_STEPS = {
     "pakete": (40, "Prüfe die benötigten Pakete"),
     "dienst": (48, "Halte die Oberfläche an und richte Benutzer und Daten ein"),
@@ -368,7 +336,6 @@ INSTALL_TIMEOUT = 900
 
 
 def run_install(tmp):
-    """install.sh ausführen und dabei die Schrittmarken in den Fortschritt übersetzen. Gibt (Rückgabecode, letzte Zeilen) zurück."""
     p = subprocess.Popen(["bash", f"{tmp}/install/install.sh", "install"], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          text=True, errors="replace", start_new_session=True)
     killed = []
@@ -376,7 +343,7 @@ def run_install(tmp):
     def too_long():
         killed.append(1)
         try:
-            os.killpg(p.pid, 9)                       # die ganze Gruppe: Kindprozesse halten sonst die Leitung offen
+            os.killpg(p.pid, 9)
         except OSError:
             p.kill()
     timer = threading.Timer(INSTALL_TIMEOUT, too_long)
@@ -399,7 +366,6 @@ def run_install(tmp):
 
 
 def install(version=None):
-    """version=None: neueste Version aus dem Zweig main (nur wenn neuer). version=x.y.z: genau diese Release-Marke von GitHub."""
     if sending() and not IGNORE_SENDING:
         raise Refuse("Es wird gerade gesendet. Bitte zuerst die Übertragung beenden.")
     local = local_version()
@@ -432,7 +398,6 @@ def install(version=None):
 
 
 def switch(version):
-    """Gezielt auf eine Version wechseln: lokal gesichert (sofort) oder als Release-Marke von GitHub."""
     if not VERSION_RE.match(version or ""):
         raise Refuse("Ungültige Versionsnummer")
     if version == local_version():
@@ -479,7 +444,7 @@ def main():
     except Refuse as e:
         log(f"abgelehnt: {e}")
         status(state="refused", step="", message=str(e), progress=0)
-    except Exception as e:                                  # nie ohne Meldung enden
+    except Exception as e:
         log(f"Fehler: {e!r}")
         status(state="failed", step="", message=f"Fehler beim Update: {str(e)[:120]}", progress=0)
         if mode in ("install", "switch") and not wait_active("pipbox.service", 1):

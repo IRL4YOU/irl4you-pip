@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""Root-Helfer: feste Zusatzadresse für ein LAN-Kabel (läuft über pipbox-netaddr.path oder von install.sh mit --remove).
-
-Wunsch aus Issue #65: Die Box bekommt ihre Adresse weiter per DHCP vom Router; zusätzlich kann sie eine **feste** Adresse bekommen (zum Beispiel, wenn sie am selben
-Router hängt wie andere Geräte und unter einer bekannten Adresse erreichbar sein soll). Die feste Adresse gehört zur **MAC-Adresse** der Netzkarte, nicht zum Namen
-(Namen wie eth0 und eth1 wechseln bei USB-Adaptern). Die DHCP-Adresse, die Standardroute und der Sendeweg bleiben unberührt: Es wird nur eine Adresse hinzugefügt.
-
-Auslösedatei <STATE>/netaddr-request (JSON, höchstens 512 Byte, ohne Verweisen zu folgen, wird gelöscht):
-  {"enable": true, "mac": "aa:bb:cc:dd:ee:ff", "addr": "192.168.1.50", "prefix": 24}   oder   {"enable": false}
-Streng geprüft: nur IPv4 aus den privaten Bereichen (10/8, 172.16/12, 192.168/16), Länge 8 bis 30, nicht die Netz- oder Rundrufadresse, die MAC gehört zu einer
-verkabelten Netzkarte (kein WLAN, kein Tailscale, kein Container), die Adresse ist noch nirgends auf der Box vergeben und das Netz überschneidet sich **nicht** mit dem
-Netz einer anderen Netzkarte (getrennter Adressraum; sonst gerieten Wege durcheinander). Es gibt kein Gateway und keine Route.
-
-Dauerhaft: Das Skript /etc/network/if-up.d/pipbox-extra-ip (geschrieben von diesem Helfer, mit fest eingesetzten, geprüften Werten) setzt die Adresse bei jedem
-Hochfahren der Netzkarte wieder (auch wenn ifplugd oder der DHCP-Dienst die Karte neu starten); es vergleicht die MAC der Karte. Zum Ausschalten werden Skript,
-Einstellung und Adresse entfernt. Ergebnis für die Oberfläche: /run/pipbox-netaddr/status.json."""
 import fcntl
 import ipaddress
 import json
@@ -41,7 +26,7 @@ LABEL = "pb"
 
 
 class Refuse(Exception):
-    """Anfrage abgelehnt; der Text ist für die Oberfläche gedacht."""
+    pass
 
 
 def read_req(path, limit=512):
@@ -72,7 +57,6 @@ def ip(*args):
 
 
 def wired():
-    """{Name: MAC} der verkabelten, echten Netzkarten (kein WLAN, Tailscale, Container oder Brücke)."""
     out = {}
     try:
         names = sorted(os.listdir(SYS_NET))
@@ -96,7 +80,6 @@ def wired():
 
 
 def addresses():
-    """[(Name, Adresse, Netz)] aller IPv4-Adressen der Box (ohne lo)."""
     out = []
     r = ip("-4", "-o", "addr", "show")
     for line in (r.stdout or "").splitlines():
@@ -110,7 +93,6 @@ def addresses():
 
 
 def validate(mac, addr, prefix):
-    """Gibt (Netzkartenname, Adresse, Länge) zurück oder wirft Refuse."""
     if not isinstance(mac, str) or not MAC_RE.match(mac):
         raise Refuse("Ungültige MAC-Adresse")
     if not isinstance(addr, str) or isinstance(prefix, bool) or not isinstance(prefix, int):
@@ -132,7 +114,7 @@ def validate(mac, addr, prefix):
         raise Refuse("Diese Netzkarte (MAC-Adresse) ist nicht eingesteckt oder kein LAN-Kabel.")
     name = names[0]
     cur = current() or {}
-    mine = (cur.get("mac"), cur.get("addr"), cur.get("prefix")) == (mac, str(a), prefix)                 # die eigene, schon gesetzte Adresse erneut übernehmen ist in Ordnung
+    mine = (cur.get("mac"), cur.get("addr"), cur.get("prefix")) == (mac, str(a), prefix)
     for n, other, onet in addresses():
         if other == a and not (mine and n == name):
             raise Refuse("Die Adresse ist auf dieser Box schon vergeben (%s)." % n)
@@ -142,7 +124,6 @@ def validate(mac, addr, prefix):
 
 
 def hook_text(mac, addr, prefix):
-    """Skript fuer /etc/network/if-up.d. Als Bytes-Literal (nur ASCII), damit i18n_extract es nicht als Oberflaechentext erfasst."""
     return (b"""#!/bin/sh
 # IRL4YOU BOX: feste Zusatzadresse (von pipbox-netaddr.py geschrieben; zum Entfernen in der Oberflaeche ausschalten)
 [ "$ADDRFAM" = "inet" ] || exit 0
@@ -197,7 +178,7 @@ def disable():
 def enable(mac, addr, prefix):
     name, addr, prefix = validate(mac, addr, prefix)
     if current() and (current().get("mac"), current().get("addr"), int(current().get("prefix", 0))) != (mac, addr, prefix):
-        remove_address()                                                         # alte Adresse weg, bevor die neue kommt
+        remove_address()
     os.makedirs(CONF_DIR, exist_ok=True)
     write_file(CONF, json.dumps({"mac": mac, "addr": addr, "prefix": prefix}) + "\n")
     os.makedirs(HOOK_DIR, exist_ok=True)
@@ -221,7 +202,7 @@ def handle(req):
 
 
 def main(argv):
-    if len(argv) == 2 and argv[1] == "--remove":                              # von install.sh beim Entfernen
+    if len(argv) == 2 and argv[1] == "--remove":
         disable()
         return 0
     try:

@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Root-Helfer: Protokolle der Box einsammeln, von persönlichen Angaben bereinigen und zum Herunterladen bereitstellen (läuft über pipbox-logs.path).
-
-Die Oberfläche legt eine Auslösedatei mit dem Stichwort "collect" ab; der Helfer liest sie ohne Verweisen zu folgen, löscht sie, sammelt die Journale der
-IRL4YOU-Dienste, das Zustandsprotokoll, den Zustand der Dienste und eine Kurzfassung der Einstellungen und schreibt EINE Textdatei nach
-/run/pipbox-logs/bundle.txt (lesbar für den Dienst, der sie ausliefert). Vorher werden Geheimnisse und persönliche Angaben ersetzt: Passwörter, Stream-ID,
-Serveradressen, WLAN-Namen, IP- und MAC-Adressen, Kamera-Schlüssel, Tailscale-Namen, E-Mail-Adressen, Zugangsschlüssel.
-"""
 import json
 import os
 import re
@@ -19,12 +12,11 @@ REQ = f"{STATE}/logs-request"
 RUN = "/run/pipbox-logs"
 OUT = f"{RUN}/bundle.txt"
 STATUS = f"{RUN}/status.json"
-MAX_TOTAL = 2_000_000          # höchste Größe der Datei in Bytes (ältestes fällt zuerst weg)
-MIN_SECRET = 4                 # kürzere Werte werden nicht als Geheimnis ersetzt (sonst würde zu viel ersetzt)
+MAX_TOTAL = 2_000_000
+MIN_SECRET = 4
 
 
 def read_req(path, limit=64):
-    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -35,7 +27,6 @@ def read_req(path, limit=64):
 
 
 def load_json(name, limit=300_000):
-    """Einstellungsdatei aus dem Ordner des Benutzers pipbox lesen (ohne Verweisen zu folgen, nur normale Dateien, begrenzte Größe). Fehler: None."""
     try:
         fd = os.open(f"{STATE}/{name}", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     except OSError:
@@ -61,11 +52,9 @@ def write_status(**kw):
     os.replace(tmp, STATUS)
 
 
-# ---------------------------------------------------------------- Bereinigen
-
 SECRET_KEYS = r"(?:pass(?:word|wd)?|psk|secret|token|stream[_-]?id|api[_-]?key|authorization|cookie|private[_-]?key)"
 RE_KV = re.compile(r"(?i)\b(" + SECRET_KEYS + r")\b([\"']?\s*[=:]\s*)(?:(?:Bearer|Basic)\s+)?(\"[^\"]*\"|'[^']*'|[^\s,;&}]+)")
-RE_MAC = re.compile(r"\b([0-9A-Fa-f]{2})\\?[:-]([0-9A-Fa-f]{2})\\?[:-]([0-9A-Fa-f]{2})(?:\\?[:-][0-9A-Fa-f]{2}){3}\b")      # auch mit "\:" (nmcli -t maskiert den Doppelpunkt)
+RE_MAC = re.compile(r"\b([0-9A-Fa-f]{2})\\?[:-]([0-9A-Fa-f]{2})\\?[:-]([0-9A-Fa-f]{2})(?:\\?[:-][0-9A-Fa-f]{2}){3}\b")
 RE_DEV = re.compile(r"\bdev_(?:[0-9A-Fa-f]{2}_){5}[0-9A-Fa-f]{2}\b")
 RE_IPV4 = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
 RE_IPV6 = re.compile(r"(?i)(?<![0-9a-z:.])(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}"
@@ -73,7 +62,7 @@ RE_IPV6 = re.compile(r"(?i)(?<![0-9a-z:.])(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}"
                      r"|(?:[0-9a-f]{1,4}:){1,7}:|::(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4}"
                      r"|(?:[0-9a-f]{1,4}:){6}[0-9a-f]{1,4})(?![0-9a-z:])")
 RE_DJI_KEY = re.compile(r"\bdji-[0-9a-f]{4,12}\b")
-RE_EMAIL = re.compile(r"[\w.+-]{1,64}@[A-Za-z][\w-]{0,62}(?:\.[\w-]{1,63}){0,4}\.[A-Za-z]{2,24}\b")          # begrenzt: lange Zeichenfolgen ohne @ dürfen nicht quadratisch lange dauern
+RE_EMAIL = re.compile(r"[\w.+-]{1,64}@[A-Za-z][\w-]{0,62}(?:\.[\w-]{1,63}){0,4}\.[A-Za-z]{2,24}\b")
 RE_TAILNET = re.compile(r"(?i)\b[\w-]{1,63}(?:\.[\w-]{1,63}){0,4}\.ts\.net\b")
 RE_URL_TS = re.compile(r"https://(?:login|console)\.tailscale\.com/\S+")
 KEEP_IPS = ("127.", "0.0.0.0", "255.")
@@ -81,11 +70,10 @@ KEEP_MACS = ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff")
 
 
 class Scrubber:
-    """Ersetzt persönliche Angaben und Geheimnisse. Gleiche Werte bekommen gleiche Platzhalter (so bleibt erkennbar, was zusammengehört)."""
 
     def __init__(self):
-        self.literals = {}          # Wert -> Platzhalter
-        self.maps = {}              # Art -> {Wert: Nummer}
+        self.literals = {}
+        self.maps = {}
 
     def secret(self, value, label):
         v = str(value or "").strip()
@@ -94,7 +82,6 @@ class Scrubber:
             self.literals[v] = "<%s-%d>" % (label, n + 1)
 
     def secret_key(self, value):
-        """Kamera-Schlüssel (Namen der Videoeingänge): gleiche Nummern wie die Schlüssel, die der Text selbst verrät."""
         v = str(value or "").strip()
         if len(v) >= MIN_SECRET and v not in self.literals:
             self.literals[v] = "<Schlüssel-%d>" % self._num("key", v)
@@ -104,7 +91,7 @@ class Scrubber:
         return m.setdefault(key, len(m) + 1)
 
     def scrub(self, text):
-        for v in sorted(self.literals, key=len, reverse=True):          # lange Werte zuerst (ein WLAN-Name kann in einem anderen stecken)
+        for v in sorted(self.literals, key=len, reverse=True):
             text = text.replace(v, self.literals[v])
         text = RE_KV.sub(lambda m: m.group(1) + m.group(2) + "<entfernt>", text)
         if "tailscale.com" in text:
@@ -123,7 +110,6 @@ class Scrubber:
 
 
 def collect_secrets(sc):
-    """Geheimnisse und persönliche Namen aus den Einstellungen und dem Netzwerkprogramm, damit sie überall im Text ersetzt werden."""
     load = load_json
 
     d = load("srtla.json")
@@ -147,7 +133,7 @@ def collect_secrets(sc):
             if isinstance(n, dict):
                 sc.secret(n.get("ssid"), "WLAN")
                 sc.secret(n.get("password"), "PASSWORT")
-    d = load("hotspot.json")                                    # Name und Passwort des eigenen Hotspots der Box
+    d = load("hotspot.json")
     for h in (d.values() if isinstance(d, dict) else []):
         if isinstance(h, dict):
             sc.secret(h.get("ssid"), "HOTSPOT")
@@ -164,17 +150,15 @@ def collect_secrets(sc):
             os.close(fd)
     except OSError:
         pass
-    out = run(["nmcli", "-t", "-f", "NAME,TYPE", "con", "show"], 8)           # gespeicherte WLAN-Namen
+    out = run(["nmcli", "-t", "-f", "NAME,TYPE", "con", "show"], 8)
     for line in out.splitlines():
         p = line.split(":")
         if len(p) >= 2 and p[-1] == "802-11-wireless" and not p[0].startswith("pipbox-hotspot-"):
             sc.secret(":".join(p[:-1]), "WLAN")
-    out = run(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "--rescan", "no"], 8)      # Netze der Umgebung (stehen oft im Journal)
+    out = run(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "--rescan", "no"], 8)
     for line in out.splitlines():
         sc.secret(line.strip().replace("\\:", ":"), "WLAN")
 
-
-# ---------------------------------------------------------------- Sammeln
 
 def run(cmd, timeout=15, limit=400_000):
     try:
@@ -190,7 +174,6 @@ def run(cmd, timeout=15, limit=400_000):
 
 
 def read_small(path, limit=200):
-    """Kleine Datei lesen, auch aus /proc (dort geht kein seek)."""
     try:
         with open(path, "rb") as f:
             return f.read(limit).decode("utf-8", "replace").strip()
@@ -217,7 +200,6 @@ def journal(unit, lines):
 
 
 def collapse_repeats(text):
-    """Folgen gleicher Meldungen (nur die Uhrzeit vorne unterscheidet sich) auf eine Zeile mit Zähler zusammenfassen."""
     out, prev, count, last_t = [], None, 0, ""
 
     def flush():
@@ -237,7 +219,6 @@ def collapse_repeats(text):
 
 
 def drop_noise(text, keep=15):
-    """Die Statusnachrichten der Kamera (alle paar Sekunden) fallen bis auf die letzten weg: Sie füllen das Journal und helfen bei Fehlern selten."""
     out, noise = [], []
     for line in text.splitlines():
         (noise if "Statusnachricht" in line else out).append(line)
@@ -248,8 +229,6 @@ def drop_noise(text, keep=15):
 
 
 def previous_boot(kernel_lines=150, all_lines=120):
-    """Ende des Journals vom vorigen Start: Wenn die Box hängt und neu gestartet wird, stehen die letzten Meldungen davor (Kernel, Dienste) nur dort;
-    der Abschnitt "seit dem Start" zeigt sie nicht. Die letzte Zeile verrät, wann die Box stehen blieb."""
     nl = chr(10)
     boots = [l for l in run(["journalctl", "--list-boots", "--no-pager"], 20).splitlines() if l.strip()]
     if len(boots) < 2 or not re.match(r"\s*-?\d+\s", boots[-2]):
@@ -266,14 +245,12 @@ RTMP_STAT = "http://127.0.0.1:1936/"
 
 
 def rtmp_inputs(xml=None):
-    """Was jede Kamera am Eingang (nginx) sendet: Auflösung, Bildrate, Profil, Stufe, Codec, Datenrate, Zuschauer (Issue #35: ein Bild, das die Box
-    nicht verarbeitet, lässt sich nur mit diesen Angaben der Quelle erklären). Die Schlüssel ersetzt der Bereiniger wie überall."""
     if xml is None:
         try:
             import urllib.request
             with urllib.request.urlopen(RTMP_STAT, timeout=3) as r:
                 xml = r.read(2_000_000).decode("utf-8", "replace")
-        except Exception as e:                                          # nginx aus, Statistik nicht da, Zeitüberschreitung
+        except Exception as e:
             return "(nicht lesbar: %s)\n" % type(e).__name__
     try:
         import xml.etree.ElementTree as ET
@@ -297,8 +274,6 @@ def rtmp_inputs(xml=None):
 
 
 def rtmp_clients(xml=None):
-    """Verbindungen am RTMP-Eingang, auch solche, die nichts liefern: Adresse der Gegenstelle, Programm (flashver), sendet oder schaut, Dauer, abgeworfene
-    Bilder. Eine Kamera, die sich verbindet und nichts schickt (zum Beispiel eine GoPro), erscheint nur hier. Adressen und Schlüssel bereinigt der Bereiniger."""
     if xml is None:
         try:
             import urllib.request
@@ -324,15 +299,13 @@ def rtmp_clients(xml=None):
 
 
 def hotspot_report():
-    """Hotspot der Box (zum Beispiel für eine GoPro): Zustand des Zugangspunkts, angemeldete Geräte, vergebene Adressen und die Zeilen zu An- und Abmeldung
-    aus dem Journal. Ohne Passwort (der Zugangspunkt meldet es nicht; Namen und Adressen bereinigt der Bereiniger)."""
     out = []
     for line in run(["nmcli", "-t", "-f", "DEVICE,CONNECTION", "dev"], 8).splitlines():
         dev, _, con = line.partition(":")
         if not con.startswith("pipbox-hotspot-") or not re.fullmatch(r"[A-Za-z0-9._-]{1,15}", dev):
             continue
         out.append("%s:\n%s" % (dev, run(["wpa_cli", "-i", dev, "status"], 8)))
-        sta = [l for l in run(["wpa_cli", "-i", dev, "all_sta"], 8).splitlines()          # je Gerät nur das Wesentliche (Zustand, Empfang, Dauer)
+        sta = [l for l in run(["wpa_cli", "-i", dev, "all_sta"], 8).splitlines()
                if re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", l.strip()) or re.match(r"(flags|signal|connected_time|inactive_msec|rx_packets|tx_packets)=", l)]
         out.append("Angemeldete Geräte (wpa_cli all_sta):\n" + ("\n".join(sta) or "(keine)"))
         out.append("Nachbarn (ip neigh):\n" + (run(["ip", "neigh", "show", "dev", dev], 8).strip() or "(keine)"))
@@ -382,10 +355,9 @@ class _Bits:
 
 
 def sps_info(nal):
-    """Aus einer H.264-SPS (NAL-Einheit mit Kopfbyte): Profil, Stufe, Größe, Zeilensprung, Bezugsbilder, Bildreihenfolge (POC-Typ). Zahlen, nie Bilddaten."""
     raw = bytearray()
     zeros = 0
-    for b in nal[1:]:                                  # Emulationsschutz (00 00 03) entfernen
+    for b in nal[1:]:
         if zeros >= 2 and b == 3:
             zeros = 0
             continue
@@ -402,7 +374,7 @@ def sps_info(nal):
         r.ue()
         r.ue()
         r.bit()
-        if r.bit():                                    # Skalierungslisten: übersprungen
+        if r.bit():
             for i in range(8 if chroma != 3 else 12):
                 if r.bit():
                     last, nxt = 8, 8
@@ -438,7 +410,7 @@ def sps_info(nal):
         crop = (cl * unit_x, cr * unit_x, ct * unit_y, cb * unit_y)
     info = {"profile": profile, "level": level, "width": width, "height": height, "interlaced": not frame_mbs_only, "refs": refs, "poc": poc,
             "coded": coded, "crop": crop, "vui": False}
-    try:                                                   # Angaben zur Darstellung (VUI): Seitenverhältnis, Bildrate, Farbbereich; fehlen sie, bleibt es bei False
+    try:
         if r.bit():
             info["vui"] = True
             if r.bit():
@@ -473,8 +445,6 @@ def _steps(ts):
 
 
 def analyze_flv(data):
-    """Liest die ersten Sekunden eines FLV-Stücks und beschreibt, wie die Quelle sendet: Codec, Profil, Auflösung, Bildzeiten, Schlüsselbilder, B-Bilder,
-    Tonspur. Nur Kopfdaten und Zeiten, keine Bildinhalte (Issue #35: Litchi statt DJI Fly)."""
     if len(data) < 13 or data[:3] != b"FLV":
         return "(kein FLV-Datenstrom gelesen, %d Byte)" % len(data)
     flags = data[4]
@@ -490,7 +460,7 @@ def analyze_flv(data):
             break
         if t == 9 and body:
             vcodec.add(body[0] & 15)
-            is_config = (body[0] & 15) in (7, 12) and len(body) >= 2 and body[1] == 0          # Decoder-Konfiguration, kein Bild
+            is_config = (body[0] & 15) in (7, 12) and len(body) >= 2 and body[1] == 0
             if not is_config:
                 vcount += 1
                 vts.append(ts)
@@ -557,7 +527,6 @@ def analyze_flv(data):
 
 
 def gst_caps_of(text):
-    """Aus der Ausgabe von `gst-launch-1.0 -v`: die Eigenschaften (Caps) am Ausgang des Parsers (h264parse) und des Dekoders (mppvideodec)."""
     found = {}
     for line in text.splitlines():
         if "caps = " not in line:
@@ -571,8 +540,6 @@ def gst_caps_of(text):
 
 
 def decoder_probe(seconds=4, xml=None):
-    """Dekodiert von jedem laufenden H.264-Eingang kurz (seconds) probeweise mit dem Hardware-Dekoder der Box und schreibt auf, was der Dekoder liefert
-    (Format, Größe, Bildrate, Speicherart): Gründe dafür, dass der Zweig einer Quelle viel Rechenzeit braucht (Issue #35). Braucht gst-launch-1.0."""
     import shutil
     import tempfile
     import xml.etree.ElementTree as ET
@@ -629,8 +596,6 @@ def decoder_probe(seconds=4, xml=None):
 
 
 def stream_probe(seconds=5, xml=None):
-    """Zieht von jedem laufenden Eingang kurz (seconds) den FLV-Datenstrom bei nginx und beschreibt ihn (analyze_flv). Braucht gst-launch-1.0
-    (rtmpsrc), sonst steht nur der Hinweis da. Die Schlüssel ersetzt der Bereiniger."""
     import shutil
     import tempfile
     import xml.etree.ElementTree as ET
@@ -690,7 +655,6 @@ def _proc_read(path):
 
 
 def _cpu_snapshot():
-    """Rechenzeiten aus /proc: je Kern (gesamt, davon Leerlauf) und je Thread (Name, Takte, letzter Kern). Nur Zahlen und Namen."""
     cpus, threads = {}, {}
     for line in _proc_read(PROC + "/stat").splitlines():
         if line.startswith("cpu") and line[3:4].isdigit():
@@ -723,7 +687,6 @@ def _cpu_snapshot():
 
 
 def _unit_of(pid):
-    """Dienst, zu dem ein Prozess gehört (aus der Steuergruppe), sonst Kernel oder ohne Dienst."""
     for line in _proc_read("%s/%s/cgroup" % (PROC, pid)).splitlines():
         for part in reversed(line.split("/")):
             if part.endswith((".service", ".scope")):
@@ -734,8 +697,6 @@ def _unit_of(pid):
 
 
 def cpu_report(seconds=2, sleep=None, top=12, top_threads=10):
-    """Welche Dienste und Threads die Kerne wie stark auslasten (Momentaufnahme über <seconds> Sekunden): Last je Kern, je Dienst (100 % = ein ganzer
-    Kern) und die Threads mit der größten Last samt Kern, auf dem sie zuletzt liefen. Gedacht für Fälle wie "ein Kern ist voll" (Issue #35)."""
     sleep = sleep or time.sleep
     a_cpu, a_thr = _cpu_snapshot()
     sleep(seconds)
@@ -777,7 +738,6 @@ def cpu_report(seconds=2, sleep=None, top=12, top_threads=10):
 
 
 def system_load():
-    """Druck auf CPU, Speicher und Datenträger (PSI), freier Platz und die Prozesse mit dem größten Speicherbedarf: Gründe für Ruckeln und Abstürze."""
     NL = chr(10)
     out = []
     for kind in ("cpu", "memory", "io"):
@@ -793,7 +753,6 @@ def system_load():
 
 
 def net_counters():
-    """Zähler je Netzwerkkarte seit dem Start (Pakete, Fehler, verworfen) und die Verbindungsübersicht: zeigt Verlust und Überlast auf dem Weg."""
     NL = chr(10)
     rows = ["%-10s %12s %10s %6s %6s | %12s %10s %6s %6s" % ("Karte", "rx Byte", "rx Pakete", "rx Fehl", "rx verw", "tx Byte", "tx Pakete", "tx Fehl", "tx verw")]
     for line in _proc_read(PROC + "/net/dev").splitlines()[2:]:
@@ -816,15 +775,12 @@ KERNEL_NOISE = re.compile(r"(?i)looking up|probing|supply property|no regulator|
 
 
 def kernel_hints(n=120):
-    """Zeilen des Kernel-Protokolls zu Videodekoder, Speicher, Temperatur, Abstürzen und USB-Fehlern (der bisherige Abschnitt kennt nur USB, Bluetooth, WLAN)."""
     lines = [l for l in run(["dmesg"], 10).splitlines()
              if not KERNEL_NOISE.search(l) and ((KERNEL_BAD.search(l) and KERNEL_SUBSYS.search(l)) or KERNEL_SEVERE.search(l))]
     return chr(10).join(lines[-n:]) + chr(10)
 
 
 def thread_load(n=22):
-    """Auslastung je Thread (Momentaufnahme über eine Sekunde): zeigt, welcher Zweig oder Dienst einen Kern voll macht (Threads von GStreamer tragen den
-    Namen des Elements, zum Beispiel sbf1:src oder mppvideodec)."""
     out = run(["top", "-H", "-b", "-n", "2", "-d", "1", "-w", "200"], 10)
     frames = out.split("\ntop - ")
     last = frames[-1] if frames else out
@@ -836,8 +792,6 @@ def thread_load(n=22):
 
 
 def wifi_cards():
-    """Zustand der WLAN-Karten für die Fehlersuche (Issue #8, Netzsuche): Karten, Fähigkeiten, Funk, Treiber, gefundene Funkstationen. Namen und MAC-Adressen
-    werden danach bereinigt."""
     out = ["Karten:\n" + run(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev"], 8)]
     for line in run(["nmcli", "-t", "-f", "DEVICE,TYPE", "dev"], 8).splitlines():
         dev, _, typ = line.partition(":")
@@ -859,7 +813,6 @@ def wifi_cards():
 
 
 def settings_summary():
-    """Kurzfassung der Einstellungen ohne Zugangsdaten (keine Passwörter, Stream-ID, Server, WLAN, Schlüssel)."""
     lines = []
     d = load_json("pipeline.json")
     if isinstance(d, dict):
@@ -892,7 +845,6 @@ FOREVER = 4294967295
 
 
 def net_addresses():
-    """Je Netzkarte: Zustand, Kabel, Adressen mit Art (fest oder per DHCP, Rest der Lebensdauer, Label). Zeigt, ob eine feste Adresse nach einem Neustart fehlt."""
     nl = chr(10)
     try:
         data = json.loads(run(["ip", "-j", "-d", "addr"], 10) or "[]")
@@ -921,7 +873,6 @@ def net_addresses():
 
 
 def net_files():
-    """Netzdateien des Systems (ifupdown) und unsere Zusatzadresse: Wer eine feste Adresse von Hand eingetragen hat, sieht man hier."""
     nl = chr(10)
     parts = []
     files = list(NET_FILES)
@@ -943,10 +894,9 @@ def net_files():
 
 
 def net_journal(boot, first, last):
-    """Meldungen zu Netzkarten, ifupdown, ifplugd, DHCP und unserem Skript aus dem Journal eines Starts (boot 0 = jetzt, -1 = vorher)."""
     nl = chr(10)
-    text = run(["journalctl", "-b", str(boot), "-g", NET_JOURNAL_RE, "--case-sensitive=no", "--no-pager", "-o", "short-iso"], 25)       # ohne -n: damit würde erst gekürzt, dann gesucht
-    lines = [l for l in text.splitlines() if l.strip() and " tailscaled[" not in l]                                                   # tailscaled meldet jede Änderung der Karten seitenlang
+    text = run(["journalctl", "-b", str(boot), "-g", NET_JOURNAL_RE, "--case-sensitive=no", "--no-pager", "-o", "short-iso"], 25)
+    lines = [l for l in text.splitlines() if l.strip() and " tailscaled[" not in l]
     if not lines:
         return "(keine Zeilen gefunden)" + nl
     if len(lines) > first + last:
@@ -971,7 +921,6 @@ def network_report():
 
 
 def usb_devices():
-    """USB-Geräte aus /sys (lsusb gibt es auf der Box nicht): Anschluss, Hersteller-/Produktnummer, Name."""
     base = "/sys/bus/usb/devices"
     rows = []
     try:
@@ -992,8 +941,6 @@ def usb_devices():
 
 
 def tailscale_boot(window_s=600, cap=250):
-    """Die Zeilen von tailscaled in den ersten 10 Minuten nach dem Start (Zeit seit dem Start, nicht die Uhrzeit: nach einem Stromausfall springt die Uhr). Nur das Rauschen
-    der Gegenstellen (magicsock, derp, disco, netcheck, portmapper) fehlt. So sieht man, ob tailscaled vor dem Netz oder vor der Uhr startete und wann er "Running" meldete."""
     try:
         p = subprocess.Popen(["journalctl", "-u", "tailscaled", "-b", "--no-pager", "-q", "-o", "short-monotonic"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              text=True, errors="replace")
@@ -1020,7 +967,6 @@ def tailscale_boot(window_s=600, cap=250):
 
 
 def tailscale_state_text():
-    """Zustand von Tailscale, gekürzt aus 'tailscale status --json' (ohne Schlüssel, Peers und Konten)."""
     try:
         d = json.loads(run(["tailscale", "status", "--json"], 15) or "{}")
     except ValueError:
@@ -1034,7 +980,6 @@ def tailscale_state_text():
 
 
 def clock_report():
-    """Uhr und Zeitsynchronisation, Zeitpunkte von tailscaled, Zustand der Selbstheilung: Ist die Uhr nach dem Start gesprungen?"""
     parts = [run(["timedatectl"], 10).strip(),
              run(["timedatectl", "show-timesync", "--all"], 10).strip(),
              "Start des Systems: " + run(["uptime", "-s"], 5).strip() + " (Uhr jetzt " + time.strftime("%Y-%m-%d %H:%M:%S") + ")",
@@ -1046,7 +991,6 @@ def clock_report():
 
 
 def usb_events():
-    """USB-Trennungen, abgeschaltete Anschlüsse und Überstrom der letzten 3 Tage (Kernel-Journal) und die Ereignisse, die die Oberfläche gemerkt hat."""
     pat = re.compile(r"usb \d+-[\d.]+: USB disconnect|disabled by hub|over-current|unable to enumerate USB device|device descriptor read/\w+, error -71|xhci_hcd.*(died|dead|host controller)")
     lines = [l for l in run(["journalctl", "-k", "--since", "-3 days", "--no-pager", "-o", "short-iso"], 20).splitlines() if pat.search(l)]
     saved = load_json("usb-events.json")
@@ -1108,8 +1052,6 @@ def sections():
                  ("pipbox-update", 100), ("pipbox-remote", 100), ("pipbox-power", 40)):
         text = journal(u, n)
         out.append(("Journal %s" % u, collapse_repeats(drop_noise(text) if u == "pipbox-dji" else text)))
-    # Tailscale: Zustand der Freigaben (privat und öffentlich) und die Zeilen des Dienstes, die Freigabe, Zertifikat, Anmeldung und Fehler betreffen
-    # (der Rest, zum Beispiel Verbindungsaufbau zu den Gegenstellen, ist Rauschen)
     ts = ("serve:\n" + (run(["tailscale", "serve", "status"], 10).strip() or "(leer)") + "\n\nfunnel:\n"
           + (run(["tailscale", "funnel", "status"], 10).strip() or "(leer)") + "\n")
     out.append(("Tailscale (Freigabe)", ts))
@@ -1137,7 +1079,7 @@ def build():
     for title, body in sections():
         parts.append("\n===== %s =====\n%s" % (title, body.rstrip("\n") + "\n"))
     text = sc.scrub("".join(parts))
-    if len(text.encode("utf-8")) > MAX_TOTAL:                          # zu groß: vom Ende kürzen (die jüngsten Abschnitte bleiben, der Kopf immer)
+    if len(text.encode("utf-8")) > MAX_TOTAL:
         head, rest = text.split("\n===== System =====", 1)
         rest = rest.encode("utf-8")[-(MAX_TOTAL - len(head.encode("utf-8")) - 200):].decode("utf-8", "ignore")
         text = head + "\n(Datei zu groß: der Anfang wurde gekürzt)\n===== System (gekürzt) =====" + rest.split("\n", 1)[-1]
@@ -1167,7 +1109,7 @@ def main():
         os.chmod(tmp, 0o644)
         os.replace(tmp, OUT)
         write_status(state="done", message="Fertig", size=len(text.encode("utf-8")), version=read_small("/opt/pipbox/VERSION"))
-    except Exception as e:                                                                   # nie ohne Meldung enden
+    except Exception as e:
         write_status(state="error", message="Fehler beim Sammeln: " + type(e).__name__)
         return 1
     return 0

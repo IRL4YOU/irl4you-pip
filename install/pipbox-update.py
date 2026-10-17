@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Root-Helfer für Systemupdates. Wird nur durch pipbox-update.path gestartet.
-
-Liest aus der Auslösedatei ausschließlich ein Stichwort aus einer festen Liste
-(check, dry, run, reboot, autocheck). Alles andere wird verworfen. Nimmt keine Befehle,
-Paketnamen oder Pfade von der Weboberfläche an.
-
-Vorgehen wie bei der Update-Funktion von belaUI: apt-get update, dann
-dist-upgrade (bei zurückgehaltenen Paketen gezielt install). Neustart nötig,
-wenn l4t, belabox-linux-* oder belabox-network-config dabei sind.
-Nie während einer Übertragung (belacoder läuft).
-"""
 import fcntl
 import json
 import os
@@ -53,7 +42,6 @@ def load_status():
 
 
 def read_req(path, limit=4096):
-    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -68,7 +56,7 @@ def save_status(**kw):
     s.update(kw)
     tmp = STATUS + ".tmp"
     try:
-        os.unlink(tmp)                  # kein Verweis des Benutzers pipbox darf als Ziel dienen
+        os.unlink(tmp)
     except OSError:
         pass
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
@@ -82,7 +70,6 @@ def log(line):
     fd = os.open(LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT | flags, 0o644)
     with os.fdopen(fd, "w") as f:
         f.write(line.rstrip("\n") + "\n")
-    # Protokoll begrenzen
     try:
         if os.path.getsize(LOG) > 512 * 1024:
             with os.fdopen(os.open(LOG, os.O_RDONLY | flags), errors="replace") as f:
@@ -106,7 +93,6 @@ def belacoder_running():
 
 
 def run_apt(args, progress=None):
-    """apt-get ausführen, Ausgabe ins Protokoll; liefert (Rückgabecode, Text)."""
     log("$ apt-get " + " ".join(args))
     p = subprocess.Popen(["apt-get"] + args, env=ENV, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True, errors="replace")
@@ -120,8 +106,6 @@ def run_apt(args, progress=None):
 
 
 def dpkg_interrupted():
-    """Hat ein früherer Paketlauf nicht zu Ende gearbeitet (Strom weg, Neustart, abgebrochenes Update)? Dann weigert sich apt mit
-    "dpkg was interrupted". Erkennbar an Resten in /var/lib/dpkg/updates oder halb eingerichteten Paketen laut dpkg --audit."""
     try:
         if any(not n.startswith(".") for n in os.listdir(DPKG_UPDATES)):
             return True
@@ -135,7 +119,6 @@ def dpkg_interrupted():
 
 
 def dpkg_busy():
-    """Hält gerade ein anderer Prozess die Paketsperre (zum Beispiel eine automatische Aktualisierung)? Dann nichts anfassen."""
     for path in DPKG_LOCKS:
         try:
             fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o640)
@@ -146,13 +129,11 @@ def dpkg_busy():
         except OSError:
             return True
         finally:
-            os.close(fd)                 # das Schließen gibt die Sperre wieder frei
+            os.close(fd)
     return False
 
 
 def repair_dpkg():
-    """Einen unterbrochenen Paketlauf zu Ende führen, so wie es apt verlangt (dpkg --configure -a, danach apt-get -f install).
-    Läuft gerade ein anderer Paketvorgang, geschieht nichts. True bei Erfolg."""
     if dpkg_busy():
         log("Es läuft ein anderer Paketvorgang, der unterbrochene Paketstand wird nicht angefasst.")
         return False
@@ -171,7 +152,6 @@ def repair_dpkg():
 
 
 def friendly_error(tail):
-    """Verständliche Meldung für die häufigsten Fehler von apt; sonst die letzten Zeilen."""
     if "dpkg was interrupted" in tail:
         return ("Ein früherer Paketlauf wurde unterbrochen und ließ sich nicht selbst abschließen. Bitte in einer Konsole auf der Box "
                 "ausführen: sudo dpkg --configure -a (danach: sudo apt-get -f install) und das Update dann wiederholen.")
@@ -198,7 +178,6 @@ def summarize(text):
 
 
 def plan():
-    """Wie belaUI: erst dist-upgrade; wenn nichts, zurückgehaltene Pakete einzeln."""
     rc, out = run_apt(["-s", "dist-upgrade"] + APT_LOCK)
     s = summarize(out)
     s["rc"] = rc
@@ -240,8 +219,6 @@ def do_check():
 
 
 def do_autocheck(prev):
-    """Tägliche stille Suche (löst der Server aus): wie "check", aber ohne den Zustand "läuft" und ohne Fehlermeldung. Läuft eine Übertragung oder
-    ist die Paketliste nicht erreichbar (kein Internet), bleibt der bisherige Zustand der Karte unverändert."""
     def restore():
         save_status(**{k: prev[k] for k in ("state", "mode", "message", "finished", "started") if k in prev})
     if belacoder_running():
@@ -279,7 +256,7 @@ def do_run():
                     message=f"Zu wenig freier Speicher ({free // 2**20} MiB, nötig 1536 MiB).")
         return
     if dpkg_interrupted():
-        if dpkg_busy():                  # die Reste gehören dann zu einem Paketvorgang, der gerade läuft
+        if dpkg_busy():
             save_status(state="failed", finished=now(), message=friendly_error("Could not get lock"))
             return
         save_status(state="running", mode="run", message="Ein früherer Paketlauf war unterbrochen, die Box schließt ihn zuerst ab …")
@@ -300,7 +277,6 @@ def do_run():
                     held=s["held"], would_reboot=False, reboot_required=False)
         return
 
-    # Paketstand vor dem Update festhalten (für spätere Fehlersuche), letzte 5 behalten
     snap = f"{SNAPSHOTS}/packages-before-{time.strftime('%Y%m%d-%H%M%S')}.txt"
     with os.fdopen(os.open(snap, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644), "w") as f:
         f.write(subprocess.run(["dpkg-query", "-W"], capture_output=True, text=True).stdout)
@@ -377,7 +353,7 @@ def main():
     log(f"=== {time.strftime('%F %T')} Anforderung: {mode} ===")
     try:
         {"check": do_check, "dry": do_dry, "run": do_run, "reboot": do_reboot, "autocheck": lambda: do_autocheck(prev)}[mode]()
-    except Exception as e:  # nie ohne Statusmeldung enden
+    except Exception as e:
         log(f"Fehler: {e}")
         save_status(state="failed", finished=now(), message=f"Interner Fehler: {e}")
     return 0

@@ -1,26 +1,18 @@
 #!/usr/bin/env python3
-"""Schreibt alle 10 s eine Zeile mit dem Zustand der Box in /var/log/pipbox-health.log.
-
-Zweck: Hängt sich die Box ohne Fehlermeldung auf, zeigen die letzten Zeilen, was kurz davor los war
-(Last, Temperatur, Takt, Speicher, Router, Sendekette). Auf den Datenträger erzwungen (fsync) wird nur alle 30 s,
-das schont die Speicherkarte; bei einem plötzlichen Stromausfall fehlen deshalb bis zu 30 s. Die Datei bleibt unter
-ca. 4 MB, etwa eine Woche (alte Zeilen fallen weg). Nur Lesen von /proc und /sys.
-"""
 import glob
 import os
 import time
 
-LOG_DISK = "/var/log/pipbox-health.log"      # ausführlich: auf der Speicherkarte
-LOG_RAM = "/run/pipbox-health.log"           # sparsam: nur im Arbeitsspeicher (nach einem Neustart weg)
+LOG_DISK = "/var/log/pipbox-health.log"
+LOG_RAM = "/run/pipbox-health.log"
 MODE_FILE = "/etc/pipbox/logmode"
 MAX_DISK = 4 * 1024 * 1024
 MAX_RAM = 1024 * 1024
-INTERVAL = 10          # Sekunden zwischen zwei Zeilen
-SYNC_EVERY = 30        # Sekunden zwischen zwei Zwangs-Speicherungen (fsync)
+INTERVAL = 10
+SYNC_EVERY = 30
 
 
 def mode():
-    """Protokoll-Modus aus /etc/pipbox/logmode; ohne Datei (ältere Installation) wie bisher auf der Karte."""
     return "sparsam" if rd(MODE_FILE) == "sparsam" else "ausfuehrlich"
 
 
@@ -33,8 +25,8 @@ def rd(path, default=""):
 
 
 PROC = "/proc"
-_prev = [None]        # letzter Stand der Rechenzeiten (Kerne, Threads) für die Last seit der vorigen Zeile
-_dthreads = [[]]      # Threads im Kernel-Zustand D beim letzten Durchlauf: [(Name, Pfad)]
+_prev = [None]
+_dthreads = [[]]
 
 
 def _cpu_state():
@@ -61,9 +53,6 @@ def _cpu_state():
 
 
 def dstate_text(limit=6):
-    """"blocked=2 d=usb-storage@usb_sg_wait,kworker/1:2@worker_thread": Threads im Kernel-Zustand D (nicht unterbrechbar) mit der Wartestelle im Kernel (wchan).
-    Nur wenn welche da sind. Zeigt hinterher, WER hinter der Meldung "n Prozess(e) blockiert (D-State)" in der Oberfläche steckte (zum Beispiel ein USB-Modem, das
-    sich zusätzlich als CD-Laufwerk meldet). Gilt für den Durchlauf von cpu_text() davor."""
     n = 0
     for l in rd(PROC + "/stat").splitlines():
         if l.startswith("procs_blocked"):
@@ -82,8 +71,6 @@ def dstate_text(limit=6):
 
 
 def cpu_text(top=2):
-    """Last je Kern seit der vorigen Zeile ("cores=25/11/10/6/1/0/0/0" in %) und die Threads mit der größten Last ("hot=sbf3_lq:src:99%@5": Name, Last,
-    Kern, auf dem er zuletzt lief; 100 % = ein ganzer Kern). Zeigt hinterher, welcher Thread einen Kern voll machte, auch wenn niemand hinsah."""
     now = _cpu_state()
     before, _prev[0] = _prev[0], now
     if before is None:
@@ -106,7 +93,6 @@ def cpu_text(top=2):
 
 
 def running_names():
-    """Namen aller laufenden Programme, mit einem einzigen Durchlauf durch /proc."""
     return {rd(d + "/comm") for d in glob.glob("/proc/[0-9]*")}
 
 

@@ -1,23 +1,10 @@
 #!/usr/bin/env python3
-"""Root-Helfer: eindeutige Antworten auf Adressanfragen (ARP), wenn zwei Netzkarten im selben Netz hängen (11. Oktober 2026).
+"""pipbox-arp: eindeutige ARP-Antworten, wenn zwei Netzkarten im selben Netz hängen.
 
-Hängt die Box mit zwei Karten im selben IPv4-Netz (zum Beispiel WLAN und ein USB-Tether am selben Router), beantwortet Linux die Frage "Wer hat 192.168.80.135?" standardmäßig
-auf jeder dieser Karten. Kameras und Router merken sich dann zeitweise die falsche Hardware-Adresse; das Bild läuft über die falsche Karte oder ins Leere, die Kamera
-wird von nginx wegen "drop idle publisher" entfernt, und die Bluetooth-Verbindung beginnt von vorn (ROCK 5B Plus, DJI Action 4 und Pocket 3).
-
-Dieser Dienst prüft alle paar Sekunden, ob sich zwei Karten im selben Netz überschneiden, und stellt **nur für diese Karten** arp_ignore=1 und arp_announce=2 ein
-(jede Karte antwortet nur für ihre eigene Adresse und meldet sich mit der passenden Absenderadresse). Überschneiden sie sich nicht mehr (oder verschwindet eine Karte), werden
-die alten Werte wieder hergestellt, aber nur, wenn **wir** sie gesetzt haben und sie noch so stehen, wie wir sie hinterlassen haben. Eine Einstellung des Nutzers, zum Beispiel eine Datei in /etc/sysctl.d,
-bleibt unangetastet. Es gibt keine Datei in /etc/sysctl.d und nichts Dauerhaftes; der Merkzettel liegt in /run (wie die Werte selbst nach jedem Neustart weg).
-
-Auf einer Box ohne Überschneidung tut der Dienst nichts außer lesen.
-
-Zusätzlich meldet er in status.json einen **Konflikt**, aber nur dort, wo derselbe Adressbereich bei **verschiedenen Geräten** benutzt wird (zum Beispiel zwei Modems oder Handy-Hotspots, die beide 192.168.8.x vergeben): Die Hardware-Adresse des Routers (Standardgateway) ist an den beiden Karten verschieden. Hängt die Box über LAN und WLAN am selben Router (gleiche Hardware-Adresse), ist das kein Konflikt: Die ARP-Einstellung genügt, und die Oberfläche warnt nicht. Lässt sich eine der beiden Adressen nicht ermitteln, bleibt es still.
-
-Aufruf (nur durch pipbox-arp.service, keine Eingaben von außen):
-  watch      Dauerlauf, prüft alle INTERVAL Sekunden (beim Beenden bleibt der Zustand bestehen, damit ein Neustart des Dienstes beim Update keine Lücke reißt)
-  once       einmal prüfen und anwenden (für Tests und von Hand)
-  uninstall  alle von uns gesetzten Werte zurücksetzen (beim Entfernen der Software)
+Aufruf:
+  watch      Dauerlauf
+  once       einmal prüfen und anwenden
+  uninstall  gesetzte Werte zurücksetzen
 """
 import fcntl
 import ipaddress
@@ -31,8 +18,8 @@ import time
 
 CONF = "/proc/sys/net/ipv4/conf"
 RUN = "/run/pipbox-arp"
-STATE = f"{RUN}/state.json"             # {Karte: {"ignore": alt, "announce": alt}}: was wir geändert haben und womit es vorher belegt war
-STATUS = f"{RUN}/status.json"           # für die Oberfläche: welche Karten sich überschneiden
+STATE = f"{RUN}/state.json"
+STATUS = f"{RUN}/status.json"
 LOCK = "/run/pipbox-arp.lock"
 INTERVAL = 10
 SKIP_PREFIX = ("lo", "docker", "veth", "br-", "virbr", "p2p", "tailscale", "tun", "tap", "wg", "zt")
@@ -63,7 +50,6 @@ def write_int(path, value):
 
 
 def addresses():
-    """[(Karte, Netz)] aller echten IPv4-Netze der Karten (ohne lo, Tailscale, Container, VPN, Verbindungslokales und Punkt-zu-Punkt-Adressen)."""
     try:
         r = subprocess.run(["ip", "-4", "-o", "addr", "show", "scope", "global"], capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.SubprocessError):
@@ -73,7 +59,6 @@ def addresses():
     out = []
     for line in r.stdout.splitlines():
         p = line.split()
-        # "3: wlan0    inet 192.168.80.135/24 brd 192.168.80.255 scope global dynamic wlan0 ..."
         if len(p) < 4 or p[2] != "inet":
             continue
         name = p[1].rstrip(":")
@@ -101,7 +86,6 @@ def ip_lines(*args):
 
 
 def gateway_mac(iface):
-    """Hardware-Adresse des Standardrouters an dieser Karte (klein geschrieben) oder None, wenn es keinen gibt oder sie nicht bekannt ist."""
     gw = None
     for ln in ip_lines("route", "show", "default", "dev", iface):
         p = ln.split()
@@ -119,7 +103,6 @@ def gateway_mac(iface):
 
 
 def conflicts(addrs):
-    """(Karten, Netze) bei denen sich die Adressbereiche zweier Karten überschneiden und ihre Router verschiedene Geräte sind (verschiedene Hardware-Adresse)."""
     names, nets, cache = set(), set(), {}
 
     def mac(n):
@@ -137,7 +120,6 @@ def conflicts(addrs):
 
 
 def overlapping(addrs):
-    """Karten, deren Netz sich mit dem einer anderen Karte überschneidet."""
     names = set()
     for i, (a, na) in enumerate(addrs):
         for b, nb in addrs[i + 1:]:
@@ -170,7 +152,6 @@ def conf_path(iface, key):
 
 
 def apply_card(state, iface):
-    """arp_ignore und arp_announce dieser Karte hochsetzen (nie herabsetzen) und die alten Werte merken."""
     old = {}
     for key, want in WANT.items():
         cur = read_int(conf_path(iface, key))
@@ -189,7 +170,6 @@ def apply_card(state, iface):
 
 
 def release_card(state, iface):
-    """Die alten Werte zurückschreiben, aber nur dort, wo noch genau unser Wert steht."""
     entry = state.pop(iface, None)
     if not entry:
         return False
@@ -201,11 +181,10 @@ def release_card(state, iface):
 
 
 def step(state=None):
-    """Einmal prüfen und anwenden. Gibt den Zustand zurück."""
     state = load_state() if state is None else state
     addrs = addresses()
     if addrs is None:
-        return state                                   # `ip` nicht lesbar: nichts ändern
+        return state
     overlap = overlapping(addrs)
     for iface in overlap:
         if iface not in state and apply_card(state, iface):
@@ -233,7 +212,7 @@ def watch():
     while True:
         try:
             step()
-        except Exception as e:                         # der Dienst darf nie an einem Einzelfall sterben
+        except Exception as e:
             log(f"Fehler: {e}")
         time.sleep(INTERVAL)
 

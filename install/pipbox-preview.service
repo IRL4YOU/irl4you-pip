@@ -6,7 +6,6 @@ After=pipbox-preview.socket
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 -u /opt/pipbox/pipbox_preview.py --serve
-# Läuft als root, weil nur root den Hardware-Dekoder (/dev/mpp_service, /dev/dma_heap, /dev/dri) öffnen darf. Alle übrigen Root-Rechte sind weg: nur rohe Pakete lesen.
 CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
@@ -16,7 +15,6 @@ ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX AF_PACKET
 RestrictNamespaces=yes
 LockPersonality=yes
-# GStreamer legt sein Zwischenverzeichnis hier ab (sonst bei jedem Start neu aufgebaut)
 CacheDirectory=pipbox-preview
 Environment=GST_REGISTRY=/var/cache/pipbox-preview/gst-registry.bin
 Environment=XDG_CACHE_HOME=/var/cache/pipbox-preview

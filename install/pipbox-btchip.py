@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""Root-Helfer: Bluetooth des eingebauten Realtek-Moduls der ROCK 5B Plus (nur dort).
-
-Auf der ROCK 5B Plus sitzt der Bluetooth-Teil des WLAN-Moduls RTL8852BE als USB-Gerät 13d3:3572. Der Kernel 5.10 der BELABOX meldet ihn am
-allgemeinen Treiber btusb an, der für diesen Chip keine Firmware lädt: Der Controller zeigt "UP RUNNING", empfängt aber nichts (die Suche findet keine
-Kamera, kein Handy, gar nichts). Der Realtek-Herstellertreiber rtk_btusb gehört zum Kernel der BELABOX und lädt die Firmware, sucht sie aber ohne Ordner und ohne
-".bin" unter /lib/firmware. Dieser Helfer legt die beiden Verknüpfungen an (rtl8852bu_fw und rtl8852bu_config auf die Dateien in rtl_bt/) und hängt den Chip vom
-allgemeinen Treiber auf rtk_btusb um. Das Standardmodul btusb bleibt unberührt; "Rückweg" ist ein Neustart ohne den Helfer oder "uninstall".
-
-Er tut nur etwas, wenn alle drei Bedingungen stimmen: das Board heißt "Radxa ROCK 5B Plus", das USB-Gerät 13d3:3572 steckt und der Kernel ist ein 5.10.
-Auf jedem anderen Gerät (zum Beispiel der Orange Pi 5 Plus) endet er sofort, ohne etwas zu ändern.
-
-Aufruf (nur durch pipbox-btchip.service, keine Eingaben von außen):
-  auto       beim Start, beim Erkennen des Chips (udev) und auf die Auslösedatei der Oberfläche (Knopf "Treiber jetzt einrichten"; dann wird auch ein
-             schon eingerichteter Chip neu geprüft und ein früherer Fehlschlag noch einmal versucht).
-  uninstall  entfernt die beiden Verknüpfungen (nur wenn sie von uns stammen)
-
-Sicherheitsnetz: Während einer Übertragung (belacoder läuft) wird nichts umgehängt. Nach dem Umhängen muss ein Bluetooth-Adapter am Chip auftauchen und die Firmware ohne
-Fehler geladen werden, sonst wird der Chip wieder an btusb zurückgegeben und für diesen Kernel nicht noch einmal versucht (außer per Knopf).
-"""
 import fcntl
 import hashlib
 import json
@@ -42,9 +23,9 @@ SYSFS_BT = "/sys/class/bluetooth"
 RUN = "/run/pipbox-btchip"
 STATUS = f"{RUN}/status.json"
 LOCK = "/run/pipbox-btchip.lock"
-REQ = "/var/lib/pipbox/btchip-request"       # legt der Dienst pipbox (ohne Root) per Knopf in der Oberfläche an; Inhalt nur "install"
-PERSIST = "/var/lib/pipbox-btchip"            # gehört root: Merkzettel "hat nicht geklappt"
-WAIT_ADAPTER = 25                             # Sekunden, bis nach dem Umhängen ein Adapter am Chip auftauchen muss
+REQ = "/var/lib/pipbox/btchip-request"
+PERSIST = "/var/lib/pipbox-btchip"
+WAIT_ADAPTER = 25
 
 
 def log(msg):
@@ -105,7 +86,6 @@ def board_ok():
 
 
 def chip_device():
-    """Name des USB-Geräts (z. B. "1-1.3") des eingebauten Moduls oder None."""
     try:
         names = sorted(os.listdir(SYSFS_USB))
     except OSError:
@@ -134,7 +114,6 @@ def driver_of(iface):
 
 
 def hci_of(dev):
-    """hciN des Adapters, der an diesem USB-Gerät hängt, oder None."""
     base = os.path.realpath(os.path.join(SYSFS_USB, dev))
     try:
         names = os.listdir(SYSFS_BT)
@@ -170,7 +149,6 @@ def firmware_present():
 
 
 def ensure_links():
-    """Legt die Verknüpfungen an. Eine vorhandene echte Datei bleibt unberührt, eine fremde Verknüpfung wird nicht überschrieben."""
     for name, target in FW_LINKS.items():
         link = os.path.join(FIRMWARE_DIR, name)
         if os.path.islink(link):
@@ -200,7 +178,6 @@ def attached(dev):
 
 
 def attach(dev):
-    """Hängt die Schnittstellen des Chips von btusb auf rtk_btusb um (Kennung dem Herstellertreiber bekannt machen, dann binden)."""
     run(["modprobe", VENDOR], timeout=60)
     if not os.path.isdir(os.path.join(SYSFS_DRV, VENDOR)):
         raise RuntimeError(f"Der Herstellertreiber {VENDOR} ist nicht verfügbar")
@@ -211,17 +188,16 @@ def attach(dev):
     try:
         write_sysfs(os.path.join(SYSFS_DRV, VENDOR, "new_id"), USB_ID.replace(":", " "))
     except OSError:
-        pass                                                           # Kennung ist dem Treiber schon bekannt
+        pass
     for i in ifs:
         if driver_of(i) != VENDOR:
             try:
                 write_sysfs(os.path.join(SYSFS_DRV, VENDOR, "bind"), i)
             except OSError:
-                pass                                                   # new_id hat schon gebunden
+                pass
 
 
 def restore(dev):
-    """Gibt den Chip an den allgemeinen Treiber zurück (nach einem Fehlschlag)."""
     for i in interfaces(dev):
         if driver_of(i) == VENDOR:
             try:
@@ -247,7 +223,7 @@ def wait_adapter(dev, seconds=WAIT_ADAPTER):
 
 def do_auto(force=False):
     if not board_ok():
-        return 0                                                       # nicht die ROCK 5B Plus: nichts tun, auch keine Meldung
+        return 0
     dev = chip_device()
     if not dev:
         return 0
@@ -267,7 +243,7 @@ def do_auto(force=False):
         st(state="ok", message=f"Der Bluetooth-Chip auf dem Board ({USB_NAME}, {USB_ID}) ist eingerichtet und läuft mit dem Herstellertreiber. Ein Stick ist nicht nötig.")
         return 0
     if not force and read_json(marker).get("signature") == signature():
-        return 0                                                       # hat bei diesem Kernel nicht geklappt: nicht in einer Schleife versuchen
+        return 0
     if belacoder_running():
         st(state="waiting", message="Der Bluetooth-Chip auf dem Board wird nach der Übertragung eingerichtet (Bluetooth fehlt dabei kurz).")
         return 0
@@ -331,7 +307,7 @@ def main():
         return 0
     try:
         return do_auto(force=take_request()) if mode == "auto" else do_uninstall()
-    except Exception as e:                                                # nie ohne Meldung enden
+    except Exception as e:
         log(f"Fehler: {e!r}")
         if board_ok():
             status(state="failed", applies=True, name=USB_NAME, message=str(e)[:200])

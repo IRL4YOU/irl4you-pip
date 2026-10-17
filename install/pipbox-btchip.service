@@ -8,9 +8,6 @@ Type=oneshot
 ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-btchip.py auto
 TimeoutStartSec=2min
 Nice=10
-# Root-Rechte nur für diese eine Aufgabe: Der Dienst nimmt keine Eingaben an (feste Aufrufe "auto" und "uninstall", dazu die Auslösedatei der Oberfläche mit festem Stichwort).
-# Er tut nur etwas auf dem Board "Radxa ROCK 5B Plus" mit dem USB-Gerät 13d3:3572 (sonst endet er sofort). Er darf Kernelmodule laden und Kernelmeldungen lesen, schreibt
-# nur in die unten genannten Ordner und nach /sys (Treiber umhängen; deshalb ohne ProtectKernelTunables) und kann keine neuen Rechte erlangen.
 CapabilityBoundingSet=CAP_SYS_MODULE CAP_SYSLOG CAP_DAC_OVERRIDE CAP_FOWNER CAP_CHOWN
 NoNewPrivileges=yes
 ProtectSystem=strict

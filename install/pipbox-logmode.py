@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Root-Helfer: Protokoll-Modus umschalten (läuft über pipbox-logmode.path oder von install.sh mit --apply).
-
-Zwei Stufen, mehr nimmt der Helfer nicht an:
-  sparsam       Journal nur im Arbeitsspeicher, Zustandsprotokoll im Arbeitsspeicher (/run). Schont die Speicherkarte,
-                nach einem Absturz oder Stromausfall bleibt aber keine Spur.
-  ausfuehrlich  Journal dauerhaft (höchstens 30 MB, 7 Tage), Zustandsprotokoll auf der Karte (höchstens 4 MB).
-Liest aus der Auslösedatei ein Stichwort aus fester Liste, ohne Verweisen zu folgen, löscht die Datei und stellt um.
-
-Zusätzlich (1.0.36):
-  Zugriffsprotokoll von nginx: bei "sparsam" aus (kleine Datei in /etc/nginx/conf.d mit "access_log off;"), bei "ausfuehrlich" an. Das Neuladen von nginx trennt
-                die Kameras etwa eine Minute; darum wird nur neu geladen, wenn gerade nicht gesendet wird (sonst gilt es ab dem nächsten Start von nginx).
-  --rotate      (täglicher Timer) große Protokolle (nginx, pipbox-*.log) kopieren, komprimieren und kürzen, höchstens 3 alte Stände, nichts älter als 30 Tage.
-                Das Kürzen ändert die Datei an Ort und Stelle: Es braucht kein Signal an nginx, die Kameras bleiben verbunden.
-  --apply-nginx (von install.sh) das Zugriffsprotokoll passend zum gespeicherten Modus setzen."""
 import fcntl
 import glob
 import gzip
@@ -31,14 +17,14 @@ CONF_DIR = "/etc/pipbox"
 MODE_FILE = f"{CONF_DIR}/logmode"
 JOURNAL_DIR = "/etc/systemd/journald.conf.d"
 JOURNAL_CONF = f"{JOURNAL_DIR}/pipbox-journal.conf"
-OLD_JOURNAL_CONF = f"{JOURNAL_DIR}/pipbox-persistent.conf"        # Name bis 0.9.12
+OLD_JOURNAL_CONF = f"{JOURNAL_DIR}/pipbox-persistent.conf"
 LOCK = "/run/pipbox-logmode.lock"
 JOURNAL_LOG_DIR = "/var/log/journal"
 NGINX_DROPIN = "/etc/nginx/conf.d/pipbox-log.conf"
 NGINX_TEXT = "# IRL4YOU BOX (Protokoll-Modus sparsam): kein Zugriffsprotokoll, schont die Speicherkarte. Die Datei verschwindet im Modus ausführlich.\naccess_log off;\n"
 ROTATE_LOCK = "/run/pipbox-logrotate.lock"
-ROTATE_KEEP = 3                           # alte Stände je Datei (.1.gz bis .3.gz)
-ROTATE_MAX_AGE = 30 * 86400               # nichts Älteres bleibt liegen
+ROTATE_KEEP = 3
+ROTATE_MAX_AGE = 30 * 86400
 ROTATE_LIMITS = (("/var/log/nginx/access.log", 20 * 1024 * 1024), ("/var/log/nginx/error.log", 5 * 1024 * 1024))
 ROTATE_GLOBS = (("/var/log/pipbox-*.log", 5 * 1024 * 1024),)
 MODES = ("sparsam", "ausfuehrlich")
@@ -49,7 +35,6 @@ JOURNAL_TEXT = {
 
 
 def read_req(path, limit=64):
-    """Anfragedatei im Ordner des Benutzers pipbox lesen, ohne Verweisen (Symlinks) zu folgen und nur bis zur Höchstgröße."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
@@ -60,7 +45,6 @@ def read_req(path, limit=64):
 
 
 def write_file(path, text):
-    """Datei als root atomar schreiben (Ordner gehören root)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     try:
@@ -74,7 +58,6 @@ def write_file(path, text):
 
 
 def sending():
-    """Läuft gerade eine Sendung? (belacoder ist da.)"""
     for d in glob.glob("/proc/[0-9]*"):
         try:
             with open(d + "/comm") as f:
@@ -86,8 +69,6 @@ def sending():
 
 
 def apply_nginx(mode):
-    """Zugriffsprotokoll von nginx zum Modus: sparsam = aus (Datei in conf.d), ausfuehrlich = an (Datei weg). Gibt einen kurzen Text zurück.
-    nginx wird nur neu geladen, wenn die Prüfung klappt und gerade nicht gesendet wird (ein Neuladen trennt alle Kameras etwa eine Minute)."""
     want_off = mode == "sparsam"
     try:
         with open(NGINX_DROPIN) as f:
@@ -107,7 +88,7 @@ def apply_nginx(mode):
         ok = subprocess.run(["nginx", "-t"], capture_output=True, timeout=30).returncode == 0
     except (OSError, subprocess.SubprocessError):
         ok = False
-    if not ok:                                                     # nginx lehnt es ab: alten Stand wiederherstellen
+    if not ok:
         try:
             if want_off:
                 os.unlink(NGINX_DROPIN)
@@ -126,8 +107,6 @@ def apply_nginx(mode):
 
 
 def rotate_file(path, limit, now=None):
-    """Eine große Protokolldatei sichern: Inhalt komprimiert nach <Datei>.1.gz (ältere rücken nach .2.gz, .3.gz), dann an Ort und Stelle kürzen. Wer die Datei
-    offen hat (nginx, ein Dienst), schreibt einfach weiter (Anhängen), es braucht kein Signal. Zeilen zwischen Kopie und Kürzen können fehlen. True, wenn gedreht wurde."""
     try:
         st = os.lstat(path)
     except OSError:
@@ -161,7 +140,6 @@ def rotate_file(path, limit, now=None):
 
 
 def rotate_cleanup(path, now=None):
-    """Rotierte Stände, die älter als 30 Tage sind oder über die erlaubte Zahl hinausgehen, löschen."""
     now = time.time() if now is None else now
     for f in glob.glob(path + ".*.gz"):
         try:
@@ -172,7 +150,6 @@ def rotate_cleanup(path, now=None):
 
 
 def rotate_all():
-    """Alle bekannten Protokolle prüfen (täglicher Timer). Gibt die Liste der gedrehten Dateien zurück."""
     lock = os.open(ROTATE_LOCK, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -210,17 +187,17 @@ def apply(mode):
         subprocess.run(["journalctl", "--flush"], capture_output=True)
     try:
         nginx = apply_nginx(mode)
-    except Exception as e:                                          # das Protokoll darf nie am Umschalten scheitern
+    except Exception as e:
         nginx = "Fehler (%s)" % type(e).__name__
     os.makedirs(RUN, exist_ok=True)
     write_file(f"{RUN}/status.json", json.dumps({"mode": mode, "time": int(time.time()), "nginx": nginx}))
 
 
 def main(argv):
-    if len(argv) == 3 and argv[1] == "--apply":          # von install.sh
+    if len(argv) == 3 and argv[1] == "--apply":
         apply(argv[2])
         return 0
-    if len(argv) == 2 and argv[1] == "--apply-nginx":    # von install.sh (Update): Zugriffsprotokoll zum gespeicherten Modus
+    if len(argv) == 2 and argv[1] == "--apply-nginx":
         try:
             with open(MODE_FILE) as f:
                 mode = f.read().strip()
@@ -229,7 +206,7 @@ def main(argv):
         if mode in MODES:
             print("pipbox-logmode: Zugriffsprotokoll von nginx: " + apply_nginx(mode))
         return 0
-    if len(argv) == 2 and argv[1] == "--rotate":          # täglicher Timer
+    if len(argv) == 2 and argv[1] == "--rotate":
         for p in rotate_all():
             print("pipbox-logmode: gedreht: " + p)
         return 0
