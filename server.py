@@ -3307,7 +3307,7 @@ class FpsProbe:
 
 class LayoutStore:
     PROFILES = ("desktop", "mobile")
-    DESIGNS = ("", "klar", "kompakt")
+    DESIGNS = ("", "klar", "kompakt", "kompakt-std", "kontrast", "cockpit", "mischpult")
     ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
     MAX_IDS = 200
 
