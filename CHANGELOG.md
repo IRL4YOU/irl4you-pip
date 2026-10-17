@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.73-test2
+- Anzeige im Bild-in-Bild-Modus korrigiert (Verpixeln ist dort aus).
+
 ## 1.0.73-test1
 - Test: Kennzeichen und Gesichter automatisch verpixeln (nur mit einer Kamera, deutlich mehr Last und Wärme).
 - GPU steht in den Prozessor-Details und in der Statistik ganz unten.
