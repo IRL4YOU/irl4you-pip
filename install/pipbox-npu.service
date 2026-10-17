@@ -1,0 +1,10 @@
+[Unit]
+Description=IRL4YOU BOX NPU-Auslastung für die Oberfläche
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-npu.py
+Nice=10
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
