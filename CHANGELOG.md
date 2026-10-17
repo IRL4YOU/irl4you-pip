@@ -1,7 +1,8 @@
 # Änderungen
 
-## 1.0.72-test1
+## 1.0.73-test1
 - Test: Kennzeichen und Gesichter automatisch verpixeln (nur mit einer Kamera, deutlich mehr Last und Wärme).
+- GPU steht in den Prozessor-Details und in der Statistik ganz unten.
 
 ## 1.0.72
 - NPU-Auslastung in den Prozessor-Details und in der Statistik.
