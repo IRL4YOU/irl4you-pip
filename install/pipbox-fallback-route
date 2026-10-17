@@ -1,0 +1,24 @@
+# IRL4YOU BOX: jede Internetverbindung per DHCP bekommt auch einen eigenen Weg für die Box selbst (Tailscale, Updates, Zeit, Prüfung).
+# Das BELABOX-System legt je Netzkarte nur eine Tabelle für die Sendewege an (Quelladresse -> Tabelle); die allgemeine Standardroute hat nur die erste Karte.
+# Fällt diese aus (zum Beispiel Kabelwackler), hätte die Box selbst keinen Weg mehr ins Internet, obwohl andere Karten einen hätten.
+# Dieser Hook (von dhclient eingebunden, nicht ausgeführt) trägt für jede Karte eine zweite Standardroute mit schlechterer Priorität ein (metric 100 + Nummer der Karte);
+# die erste Karte behält ihren Vorrang. Die Sendewege (srtla) ändert das nicht: Ihre Quelladress-Regeln stehen vor der allgemeinen Tabelle.
+# Fällt eine Karte aus, verschwindet ihre Route mit ihr; kommt sie zurück, gilt wieder die Reihenfolge von vorher. Es wird nicht geprüft, ob eine Verbindung wirklich Internet hat.
+pb_idx=$(cat "/sys/class/net/$interface/ifindex" 2>/dev/null)
+case "$pb_idx" in
+  ''|*[!0-9]*) ;;
+  *)
+    case "$reason" in
+      BOUND|RENEW|REBIND|REBOOT)
+        pb_gw=${new_routers%% *}
+        if [ -n "$pb_gw" ]; then
+          ip route replace default via "$pb_gw" dev "$interface" metric $((100 + pb_idx)) 2>/dev/null || true
+        fi
+        ;;
+      EXPIRE|FAIL|RELEASE|STOP)
+        ip route del default dev "$interface" metric $((100 + pb_idx)) 2>/dev/null || true
+        ;;
+    esac
+    ;;
+esac
+unset pb_idx pb_gw
