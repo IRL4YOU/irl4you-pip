@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.74-test1
+- Systemwarnungen überarbeitet.
+
 ## 1.0.73-test2
 - Anzeige im Bild-in-Bild-Modus korrigiert (Verpixeln ist dort aus).
 
