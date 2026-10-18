@@ -67,7 +67,7 @@ def net_conflict(path=None):
         return None
 
 
-LIMITS = {"temp_warn": 70.0, "temp_crit": 80.0, "cpu_warn": 85.0, "core_warn": 90.0, "mem_warn": 85.0}
+LIMITS = {"temp_warn": 70.0, "temp_crit": 80.0, "cpu_warn": 85.0, "core_warn": 90.0, "core_hold_s": 10.0, "mem_warn": 85.0}
 
 
 def read(path, default=None):
@@ -401,6 +401,7 @@ class Sampler:
         self.pay_prev, self.pay_sm, self.pay_zero = None, None, 0
         self._lock = threading.Lock()
         self._d_since, self._d_last = None, 0.0
+        self._core_hot_t0 = None
 
     NET_SMOOTH_S = 4.0
     NET_SMOOTH_GAP_S = 15.0
@@ -602,6 +603,14 @@ class Sampler:
                      "drop_total": 0, "sent_total": 90210, "loss_pct": 0.04}}
         return out
 
+    def _core_sustained(self, cpu_max, now):
+        if cpu_max is None or cpu_max < LIMITS["core_warn"]:
+            self._core_hot_t0 = None
+            return False
+        if self._core_hot_t0 is None:
+            self._core_hot_t0 = now
+        return now - self._core_hot_t0 >= LIMITS["core_hold_s"]
+
     def finish(self, cores, freqs, temp, total_kb, avail_kb, rates, blocked, fan_pwm=None, blocked_names=None, now=None, uptime=None):
         cpu_avg = round(sum(cores) / len(cores), 1) if cores else None
         cpu_max = max(cores) if cores else None
@@ -611,9 +620,10 @@ class Sampler:
             alerts.append({"level": "crit", "text": f"Temperatur {temp:.0f} °C"})
         elif temp is not None and temp >= LIMITS["temp_warn"]:
             alerts.append({"level": "warn", "text": f"Temperatur {temp:.0f} °C"})
+        core_hot = self._core_sustained(cpu_max, time.monotonic() if now is None else now)
         if cpu_avg is not None and cpu_avg >= LIMITS["cpu_warn"]:
             alerts.append({"level": "warn", "text": f"CPU-Last {cpu_avg:.0f} %"})
-        elif cpu_max is not None and cpu_max >= LIMITS["core_warn"]:
+        elif core_hot:
             alerts.append({"level": "warn", "text": f"Ein CPU-Kern ist fast voll ({cpu_max:.0f} %)"})
         if mem_used is not None and mem_used >= LIMITS["mem_warn"]:
             alerts.append({"level": "warn", "text": f"RAM {mem_used:.0f} % belegt"})
