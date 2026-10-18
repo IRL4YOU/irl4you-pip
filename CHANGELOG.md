@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.74
+- Systemwarnungen überarbeitet.
+
 ## 1.0.73
 - GPU steht in den Prozessor-Details und in der Statistik ganz unten.
 
