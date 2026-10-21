@@ -83,7 +83,7 @@ Das Erkennungsmodul arbeitet lokal auf dem Gerät und **sendet keine Bilder oder
 ### 7. Keine Garantie, Verantwortung der Nutzer, Haftung
 
 Das Erkennungsmodul ist ein **Hilfsmittel**. Es findet nicht jeden Kopf und nicht jedes Kennzeichen, und es kann fälschlich etwas als Kopf
-oder Kennzeichen melden. Wer streamt, bleibt **selbst verantwortlich** dafür, dass Personen und Kennzeichen im Bild rechtmäßig behandelt
+oder Kennzeichen melden. **Die Erkennung ist nicht zu 100 % zuverlässig.** Der Einsatz erfolgt **ausschließlich auf eigene Verantwortung und eigenes Risiko**; für nicht oder falsch verpixelte Köpfe und Kennzeichen trägt allein der Nutzer die Verantwortung. Wer streamt, bleibt **selbst verantwortlich** dafür, dass Personen und Kennzeichen im Bild rechtmäßig behandelt
 werden (zum Beispiel nach Datenschutz- und Persönlichkeitsrecht). Das Erkennungsmodul wird **ohne jede Gewährleistung** bereitgestellt, soweit
 das Gesetz dies zulässt. Der Rechteinhaber haftet nicht für Schäden aus der Nutzung, außer bei Vorsatz oder grober Fahrlässigkeit und in den
 Fällen, in denen das Gesetz eine Haftung zwingend vorschreibt (zum Beispiel für Schäden an Leben, Körper und Gesundheit).
@@ -162,7 +162,7 @@ The module works locally on the device and **does not send images or data** to t
 
 ### 7. No warranty, users remain responsible, liability
 
-The module is an **aid**. It does not find every head or licence plate and may report false detections. Streamers remain **solely
+The module is an **aid**. It does not find every head or licence plate and may report false detections. **The detection is not 100 % reliable.** It is used **solely at your own responsibility and risk**; the user alone is responsible for heads and licence plates that are not or wrongly pixelated. Streamers remain **solely
 responsible** for handling persons and licence plates in their video lawfully (e.g. under data protection and personality rights). The module is
 provided **without warranty of any kind** to the extent permitted by law. The licensor is not liable for damages arising from its use, except in
 cases of intent or gross negligence and where liability is mandatory by law (e.g. injury to life, body or health).
