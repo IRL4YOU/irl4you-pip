@@ -1272,6 +1272,22 @@ PRIVACY_URL = "http://127.0.0.1:8790/"
 PBPIXEL_TAP, PBPIXEL_BOXES = "/dev/shm/pbpixel-tap", "/dev/shm/pbpixel-boxes"
 
 
+SENDE_PIPELINE = "/var/tmp/pipbox/pipeline"
+
+
+def kette_signatur(text):
+    return ("pbpixelmask" in text, sorted(re.findall(r"min-threshold-time=(\d+)", text)))
+
+
+def neustart_noetig(build_text, pfad=None):
+    try:
+        with open(pfad or SENDE_PIPELINE) as f:
+            laufend = f.read()
+    except OSError:
+        return False
+    return bool(build_text) and kette_signatur(laufend) != kette_signatur(build_text)
+
+
 def privacy_status():
     try:
         with urllib.request.urlopen(PRIVACY_URL, timeout=0.6) as r:
@@ -7038,6 +7054,7 @@ class Handler(BaseHTTPRequestHandler):
                 d["lizenz_text"] = self.datenschutz.lizenz_text()
             d["engine_compositor"] = bool(pipbox_live.enabled(PipelineStore._safe_cfg(self.pipeline.cfg)))
             d["sending"] = self.send._active()
+            d["neustart_noetig"] = bool(d["sending"] and not d["engine_compositor"] and neustart_noetig(self.pipeline.build()))
             return self.reply(200, d)
         if path == "/api/deck":
             return self.reply(200, self.deck.get())
@@ -7190,6 +7207,15 @@ class Handler(BaseHTTPRequestHandler):
                     if "addon" in d:
                         self.datenschutz.addon_request(d.get("addon"), bool(belacoder_running() or self.send._active()))
                         return self.reply(200, self.datenschutz.get())
+                    if d.get("restart_send") is True:
+                        res = self.datenschutz.get()
+                        compositor = bool(pipbox_live.enabled(PipelineStore._safe_cfg(self.pipeline.cfg)))
+                        res["sending"] = self.send._active()
+                        res["restarted"], res["note"] = False, ""
+                        if res["sending"] and not compositor and neustart_noetig(self.pipeline.build()):
+                            res["restarted"], res["note"] = self.send.restart_if_live()
+                        res["neustart_noetig"] = False
+                        return self.reply(200, res)
                     return self.reply(200, self.datenschutz.put(d))
                 except ValueError as e:
                     return self.reply(400, {"error": str(e)})
