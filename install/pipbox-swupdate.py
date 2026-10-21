@@ -332,14 +332,11 @@ def restore(ver, reason="", note="Zurück auf"):
 
 
 def remove_test_parts():
-    subprocess.run(["systemctl", "disable", "--now", "pipbox-privacy.service"], capture_output=True)
-    for f in TEST_PARTS:
+    for f in ("yolox_s_fp16.rknn", "plate_raw_fp16.rknn", "yunet.onnx", "kopfnetz_fp16.rknn"):
         try:
-            os.remove(f)
+            os.remove(f"{INSTALL}/privacy/modelle/{f}")
         except OSError:
             pass
-    shutil.rmtree(f"{INSTALL}/privacy", ignore_errors=True)
-    subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
 
 
 def rollback(reason=""):
@@ -358,7 +355,7 @@ INSTALL_STEPS = {
     "srtla": (78, "Prüfe den SRTLA-Sender (wird neu gebaut, wenn er sich geändert hat)"),
     "belacoder": (88, "Prüfe den Encoder (wird neu gebaut, wenn er sich geändert hat)"),
     "start": (95, "Starte die Dienste neu"),
-    "testteile": (96, "Richte die Testfunktionen ein (das dauert einige Minuten)"),
+    "datenschutz": (96, "Frische die Erkennung der Karte Datenschutz auf (kann einige Minuten dauern)"),
 }
 INSTALL_TIMEOUT = 900
 INSTALL_TIMEOUT_TEST = 2400
@@ -375,7 +372,7 @@ def run_install(tmp):
             os.killpg(p.pid, 9)
         except OSError:
             p.kill()
-    timer = threading.Timer(INSTALL_TIMEOUT_TEST if os.path.exists(f"{tmp}/install/install-testteile.sh") else INSTALL_TIMEOUT, too_long)
+    timer = threading.Timer(INSTALL_TIMEOUT_TEST if os.path.exists(f"{tmp}/install/install-datenschutz.sh") else INSTALL_TIMEOUT, too_long)
     timer.start()
     tail = []
     try:
