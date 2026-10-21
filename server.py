@@ -84,17 +84,6 @@ THERMAL_NAMES = {"soc-thermal": "SoC", "bigcore0-thermal": "Große Kerne 4–5",
 
 
 NPU_FILE = "/run/pipbox-npu"
-PRIVACY_URL = "http://127.0.0.1:8790/"
-
-
-def privacy_status():
-    try:
-        with urllib.request.urlopen(PRIVACY_URL, timeout=0.6) as r:
-            d = json.loads(r.read(65536))
-        return {"up": True, "pass_s": float(d.get("pass_s", 0)), "slow": float(d.get("slow", 0)), "temp": float(d.get("temp", 0)),
-                "warn": str(d.get("warn", ""))[:200], "frames": int(d.get("tap_frames", 0))}
-    except Exception:
-        return {"up": False}
 
 
 def npu_load():
@@ -896,7 +885,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 
 
 class SrtlaStore:
-    DEFAULT_SETTINGS = {"min_kbps": 300, "max_kbps": 12000, "latency_ms": 4000, "uplinks": ["eth0", "eth1"],
+    DEFAULT_SETTINGS = {"min_kbps": 450, "max_kbps": 12000, "latency_ms": 4000, "uplinks": ["eth0", "eth1"],
                         "spread": "best"}
 
     def __init__(self, path):
@@ -1275,14 +1264,207 @@ def srtla_signature(data):
             "bitrate": h(mn, mx), "latency": h(lat), "spread": h("all" if st.get("spread") == "all" else "best")}
 
 
+DATENSCHUTZ_DATEI = "/var/lib/pipbox/datenschutz.json"
+DATENSCHUTZ_PY = "/opt/pipbox/privacy/venv/bin/python"
+DATENSCHUTZ_MODELL = "/opt/pipbox/privacy/modelle/kopf_fp16.rknn"
+DATENSCHUTZ_BAUSTEIN = "/opt/pipbox/gst/libgstpbpixel.so"
+PRIVACY_URL = "http://127.0.0.1:8790/"
+PBPIXEL_TAP, PBPIXEL_BOXES = "/dev/shm/pbpixel-tap", "/dev/shm/pbpixel-boxes"
+
+
+def privacy_status():
+    try:
+        with urllib.request.urlopen(PRIVACY_URL, timeout=0.6) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return {"up": False}
+    if not isinstance(d, dict):
+        return {"up": False}
+    out = {"up": True}
+    for k in ("pass_s", "slow", "temp", "warn", "module", "boxes", "paket", "cpu_gross", "cpu_klein", "paused"):
+        if k in d:
+            out[k] = d[k]
+    return out
+
+
+class DatenschutzStore:
+    DEFAULT = {"an": False, "kopf": True, "kennz": True, "zweit": True, "delay_ms": 2000, "zonen": [], "lizenz_ok": False, "lizenz_sha": ""}
+    MAX_ZONEN = 16
+    MIN_DELAY, MAX_DELAY = 2000, 12000
+
+    def __init__(self, state_dir, lizenz_pfad=None):
+        self.path = os.path.join(state_dir, "datenschutz.json")
+        self.lizenz_pfad = lizenz_pfad or os.path.join(os.path.dirname(os.path.abspath(__file__)), "LICENSE-ERKENNUNG.md")
+        self.lock = threading.Lock()
+
+    @classmethod
+    def clean(cls, d):
+        d = d if isinstance(d, dict) else {}
+        out = dict(cls.DEFAULT)
+        for k in ("an", "kopf", "kennz", "zweit", "lizenz_ok"):
+            if isinstance(d.get(k), bool):
+                out[k] = d[k]
+        try:
+            out["delay_ms"] = max(cls.MIN_DELAY, min(cls.MAX_DELAY, int(d.get("delay_ms", cls.DEFAULT["delay_ms"]))))
+        except (TypeError, ValueError):
+            pass
+        zonen = []
+        for z in (d.get("zonen") if isinstance(d.get("zonen"), list) else [])[:cls.MAX_ZONEN]:
+            try:
+                z = [round(float(v), 4) for v in z]
+            except (TypeError, ValueError):
+                continue
+            if len(z) == 4 and all(0.0 <= v <= 1.0 for v in z) and z[2] - z[0] >= 0.01 and z[3] - z[1] >= 0.01:
+                zonen.append(z)
+        out["zonen"] = zonen
+        out["lizenz_sha"] = d["lizenz_sha"] if isinstance(d.get("lizenz_sha"), str) and re.fullmatch(r"[0-9a-f]{64}", d["lizenz_sha"]) else ""
+        return out
+
+    def lizenz_text(self):
+        try:
+            with open(self.lizenz_pfad, encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
+
+    def lizenz_sha(self):
+        t = self.lizenz_text()
+        return hashlib.sha256(t.encode("utf-8")).hexdigest() if t else ""
+
+    @staticmethod
+    def installiert():
+        return os.path.exists(DATENSCHUTZ_PY) and os.path.exists(DATENSCHUTZ_MODELL) and os.path.exists(DATENSCHUTZ_BAUSTEIN)
+
+    ADDON_STATUS = "/run/pipbox-addon/status.json"
+    ADDON_PATH_UNIT = "/etc/systemd/system/pipbox-addon.path"
+    ADDON_DATEIEN = "/opt/pipbox/addons/datenschutz/install/install-datenschutz.sh"
+
+    def addon(self):
+        out = {"state": "idle", "action": "", "step": "", "message": "", "progress": 0,
+               "helper": os.path.exists(self.ADDON_PATH_UNIT), "dateien": os.path.exists(self.ADDON_DATEIEN)}
+        try:
+            with open(self.ADDON_STATUS) as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            return out
+        if isinstance(st, dict):
+            for k in ("state", "action", "step", "message"):
+                if isinstance(st.get(k), str):
+                    out[k] = st[k][:200]
+            if isinstance(st.get("progress"), (int, float)):
+                out["progress"] = max(0, min(100, int(st["progress"])))
+            t = st.get("time")
+            if out["state"] != "installing" and isinstance(t, (int, float)) and time.time() - t > 6 * 3600:
+                out.update(state="idle", message="", action="")
+        return out
+
+    def addon_request(self, action, sending):
+        if action not in ("install", "remove"):
+            raise ValueError("Unbekannte Aktion")
+        a = self.addon()
+        if not a["helper"]:
+            raise ValueError("Der Add-on-Helfer ist nicht installiert (Software-Update ausführen)")
+        if a["state"] == "installing":
+            raise ValueError("Eine Einrichtung läuft bereits")
+        if sending:
+            raise ValueError("Es wird gerade gesendet. Bitte zuerst die Übertragung beenden.")
+        if action == "install":
+            if not self.config()["lizenz_ok"]:
+                raise ValueError("Zuerst die Lizenz der Erkennung annehmen")
+            if self.installiert():
+                raise ValueError("Die Erkennung ist schon eingerichtet")
+            if not a["dateien"]:
+                raise ValueError("Die Add-on-Dateien fehlen (Software-Update ausführen)")
+        elif not self.installiert():
+            raise ValueError("Die Erkennung ist nicht eingerichtet")
+        req = os.path.join(os.path.dirname(self.path), "addon-request")
+        fd = os.open(req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write("datenschutz-" + action + "\n")
+
+    def _read(self):
+        try:
+            with open(self.path) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def config(self):
+        c = self.clean(self._read())
+        if c["lizenz_ok"] and c["lizenz_sha"] != self.lizenz_sha():
+            c["lizenz_ok"] = False
+        return c
+
+    def aktiv(self):
+        c = self.config()
+        return bool(c["an"] and c["lizenz_ok"] and self.installiert())
+
+    def get(self):
+        c = self.config()
+        return {"config": c, "aktiv": bool(c["an"] and c["lizenz_ok"] and self.installiert()), "installiert": self.installiert(),
+                "lizenz_sha": self.lizenz_sha(), "status": privacy_status() if c["an"] and c["lizenz_ok"] else {"up": False}, "addon": self.addon()}
+
+    def _write(self, c):
+        tmp = self.path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+        with os.fdopen(fd, "w") as f:
+            json.dump(c, f, indent=1, ensure_ascii=False)
+        os.replace(tmp, self.path)
+
+    def put(self, req):
+        if not isinstance(req, dict):
+            raise ValueError("Angaben ungültig")
+        with self.lock:
+            cur = self.config()
+            new = dict(cur)
+            for k in ("an", "kopf", "kennz", "zweit", "delay_ms", "zonen"):
+                if k in req:
+                    new[k] = req[k]
+            if "lizenz_ok" in req:
+                if req["lizenz_ok"] is True:
+                    if req.get("lizenz_sha") != self.lizenz_sha() or not self.lizenz_sha():
+                        raise ValueError("Lizenz: Bitte den aktuellen Text laden und erneut annehmen")
+                    new["lizenz_ok"], new["lizenz_sha"] = True, self.lizenz_sha()
+                else:
+                    new["lizenz_ok"], new["lizenz_sha"], new["an"] = False, "", False
+            new = self.clean(new)
+            if new["an"] and not new["lizenz_ok"]:
+                raise ValueError("Zuerst die Lizenz der Erkennung annehmen")
+            if new["an"] and not self.installiert():
+                raise ValueError("Die Erkennung ist auf dieser Box nicht eingerichtet (zuerst einrichten)")
+            if not new["kopf"] and not new["kennz"]:
+                raise ValueError("Mindestens Köpfe oder Kennzeichen einschalten")
+            self._write(new)
+        return self.get()
+
+
+def datenschutz_aktiv(pfad=None):
+    pfad = pfad or DATENSCHUTZ_DATEI
+    try:
+        with open(pfad) as f:
+            c = DatenschutzStore.clean(json.load(f))
+    except (OSError, ValueError):
+        return None
+    if not (c["an"] and c["lizenz_ok"] and DatenschutzStore.installiert()):
+        return None
+    return {"delay_ms": c["delay_ms"]}
+
+
 class PipelineStore:
     DEFAULT = {"type": "single", "main": "", "pip": "", "corner": 3, "size_pct": 25, "size_pct2": 25, "size_pct3": 25, "audio": "main",
                "pip2": "", "corner2": 2, "pip3": "", "corner3": 0, "x": 500, "y": 500, "x2": 500, "y2": 500, "x3": 500, "y3": 500, "main_delay_ms": DEFAULT_MAIN_DELAY_MS,
                "pip_delay_ms": DEFAULT_PIP_DELAY_MS, "pip2_delay_ms": DEFAULT_PIP_DELAY_MS,
-               "pip3_delay_ms": DEFAULT_PIP_DELAY_MS, "auto_failover": True, "swap_cams": 0, "always_ready": False, "facecam": "",
-               "privacy": False, "privacy_delay_ms": 6000}
+               "pip3_delay_ms": DEFAULT_PIP_DELAY_MS, "auto_failover": True, "swap_cams": 0, "always_ready": False, "facecam": ""}
     SLOTS = ("main", "pip", "pip2", "pip3")
     Q = "queue max-size-time=10000000000 max-size-buffers=1000 max-size-bytes=41943040"
+    DATENSCHUTZ_PFAD = None
+    DATENSCHUTZ_FEST = "datei"
+
+    @classmethod
+    def datenschutz(cls):
+        if cls.DATENSCHUTZ_FEST != "datei":
+            return cls.DATENSCHUTZ_FEST
+        return datenschutz_aktiv(cls.DATENSCHUTZ_PFAD)
 
     def __init__(self, path):
         self.path = path
@@ -1487,8 +1669,6 @@ class PipelineStore:
         fc = self._carry_facecam(cfg)
         if fc:
             cfg["facecam"] = fc
-        cfg["privacy"] = req.get("privacy") is True if "privacy" in req else self.cfg.get("privacy") is True
-        cfg["privacy_delay_ms"] = req.get("privacy_delay_ms", self.cfg.get("privacy_delay_ms", 6000)) if cfg["privacy"] else self.cfg.get("privacy_delay_ms", 6000)
         with self.lock:
             self.cfg = cfg
             self.save()
@@ -1534,8 +1714,6 @@ class PipelineStore:
             num(k, 0, 1000)
         for k in ("main_delay_ms", "pip_delay_ms", "pip2_delay_ms", "pip3_delay_ms"):
             num(k, 0, 3000)
-        num("privacy_delay_ms", 2000, 12000)
-        out["privacy"] = out.get("privacy") is True and out.get("type") != "pip"
         num("swap_cams", 0, 4)
         if out["swap_cams"] not in (2, 4):
             out["swap_cams"] = 0
@@ -1679,12 +1857,14 @@ class PipelineStore:
         slots = ("main", "pip", "pip2", "pip3")
         by_key = {cfg[s]: cfg.get(d, 0) for s, d in zip(slots, DELAY_KEYS) if cfg.get(s)}
         order = list(base) if base else [cfg.get(s) for s in slots]
+        ds = PipelineStore.datenschutz() if not pipbox_live.enabled(PipelineStore._safe_cfg(cfg)) else None
+        pd = int(ds["delay_ms"]) if ds else 0
         vals = []
         for k in (order + [None] * 4)[:4]:
             try:
-                vals.append(max(0, min(3000, int(by_key.get(k, 0) or 0))) if k else 0)
+                vals.append((max(0, min(3000, int(by_key.get(k, 0) or 0))) if k else 0) + pd)
             except (TypeError, ValueError):
-                vals.append(0)
+                vals.append(pd)
         return vals
 
     def build(self, cfg=None, rtmp_port=1935, rtmp_app="publish"):
@@ -1709,15 +1889,14 @@ class PipelineStore:
                 delay = max(0, min(3000, int(c.get("main_delay_ms", DEFAULT_MAIN_DELAY_MS))))
             except (TypeError, ValueError):
                 delay = 0
+        ds = self.datenschutz() if not pipbox_live.enabled(c) else None
+        pd = int(ds["delay_ms"]) if ds else 0
+        delay += pd
         qa = q + (f" min-threshold-time={delay * 1000000}" if delay else "")
         qv = q + (f" min-threshold-time={(delay + FRAME_MS) * 1000000}" if delay else "")
-        privacy = bool(c.get("privacy")) and not pip and c["type"] != "pip"
-        if privacy:
-            pd = int(c["privacy_delay_ms"])
-            qa = q + f" min-threshold-time={pd * 1000000}"
-            qv = q + f" min-threshold-time={(pd + FRAME_MS) * 1000000}"
         if pip:
             qv, qa = qv + " name=mainq_v", qa + " name=mainq_a"
+        self._pd = pd
 
         def small(name, key):
             d = 0
@@ -1725,6 +1904,7 @@ class PipelineStore:
                 d = max(0, min(3000, int(c.get(key, DEFAULT_PIP_DELAY_MS) or 0)))
             except (TypeError, ValueError):
                 d = 0
+            d += pd
             th = d + FRAME_MS if d else 0
             return (f"queue name={name} max-size-time={(th + 500) * 1000000} max-size-buffers={0 if d else 30} "
                     f"leaky=downstream" + (f" min-threshold-time={th * 1000000}" if d else ""))
@@ -1732,24 +1912,25 @@ class PipelineStore:
         if plan:
             return self._build_dual(c, plan, base, small, xy, pip2, pip3, sty)
         out.append(f"rtmpsrc location={base}/{c['main']} do-timestamp=true !\nflvdemux name=demux\n")
+        vsrc = "demux.video !\n"
+        mask = ""
+        if ds:
+            out.append("demux.video !\ntee name=ptee\n"
+                       "ptee. !\nqueue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 leaky=downstream !\nh264parse ! mppvideodec !\n"
+                       f"pbpixeltap shm={PBPIXEL_TAP} interval-ms=100 !\nfakesink sync=false async=false\n")
+            vsrc = "ptee. !\n"
+            mask = f"pbpixelmask boxes={PBPIXEL_BOXES} !\n"
         if pip:
-            v = (f"demux.video !\n{qv} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
-                 "video/x-raw,format=NV12 !\n"
+            v = (f"{vsrc}{qv} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
+                 f"{mask}video/x-raw,format=NV12 !\n"
                  f"pbpipmix name=pipmix corner={c['corner']}{xy(c, 'x', 'y', c['corner'])} width-pct={c['size_pct']}{sty(0, 1)}"
                  + (f" slot2=1 corner2={c['corner2']}{xy(c, 'x2', 'y2', c['corner2'])}{sty(1, 2)}" if pip2 and multi else "")
                  + (f" slot3=2 corner3={c['corner3']}{xy(c, 'x3', 'y3', c['corner3'])}{sty(2, 3)}" if pip3 else "") + " !\n"
                  + (f"pbpipmix name=pipmix2 slot=1 corner={c['corner2']}{xy(c, 'x', 'y', c['corner2'])} width-pct={c['size_pct']}{sty(1, 1)} !\n" if pip2 and not multi else "") +
                  "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n")
         else:
-            if privacy:
-                v = ("demux.video !\ntee name=ptee\n"
-                     "ptee. !\nqueue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 leaky=downstream !\nh264parse ! mppvideodec !\n"
-                     "pbpixeltap shm=/dev/shm/pbpixel-tap interval-ms=100 !\nfakesink sync=false async=false\n"
-                     f"ptee. !\n{qv} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
-                     "pbpixelmask boxes=/dev/shm/pbpixel-boxes !\nvideorate ! video/x-raw,framerate=30/1,format=NV12 ! queue !\n")
-            else:
-                v = (f"demux.video !\n{q} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
-                     "videorate ! video/x-raw,framerate=30/1,format=NV12 ! queue !\n")
+            v = (f"{vsrc}{qv if ds else q} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
+                 f"{mask}videorate ! video/x-raw,framerate=30/1,format=NV12 ! queue !\n")
         v += ("mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
               f"h265parse config-interval=-1 ! {q} ! mux.\n")
         out.append(v)
@@ -1823,8 +2004,9 @@ class PipelineStore:
         opus = f"audioconvert ! audioresample quality=10 sinc-filter-mode=1 ! {vol}opusenc bitrate=128000 ! opusparse"
         mute = "queue max-size-buffers=4 leaky=downstream ! fakesink sync=false async=false\n"
         queues = []
+        pd = getattr(self, "_pd", 0)
         for i, key in enumerate(cams):
-            d = int(c.get(DELAY_KEYS[i], 0) or 0)
+            d = int(c.get(DELAY_KEYS[i], 0) or 0) + pd
             items = [f"vsq{i}:s"]
             vport, aport = FEED_PORT + 2 * i, FEED_PORT + 2 * i + 1
             if always:
@@ -1839,7 +2021,12 @@ class PipelineStore:
             if i < group:
                 qv = f"{q} name=vfq{i}" + (f" min-threshold-time={(d + FRAME_MS) * 1000000}" if d else "")
                 out.append(f"{vsrc}tee name=vt{i}\n")
-                out.append(f"vt{i}. !\n{qv} !\nh264parse ! mppvideodec !\nvideo/x-raw,format=NV12 !\nvsel.sink_{i}\n")
+                mask = ""
+                if pd and i == 0:
+                    out.append(f"vt{i}. !\nqueue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 leaky=downstream !\nh264parse ! mppvideodec !\n"
+                               f"pbpixeltap shm={PBPIXEL_TAP} interval-ms=100 !\nfakesink sync=false async=false\n")
+                    mask = f"pbpixelmask boxes={PBPIXEL_BOXES} !\n"
+                out.append(f"vt{i}. !\n{qv} !\nh264parse ! mppvideodec !\n{mask}video/x-raw,format=NV12 !\nvsel.sink_{i}\n")
                 out.append(f"vt{i}. !\n{small_chain}")
                 items.insert(0, f"vfq{i}:v")
             else:
@@ -4586,16 +4773,23 @@ class SwUpdate:
         out["channel"] = self.channel
         out["test_latest"] = chk.get("test_latest", "") if self.channel == "stable" else (latest or "")
         out["stable_latest"] = chk.get("stable_latest", "") if self.channel == "test" else (latest or "")
+        out["bridge"] = False
+        sl = out["stable_latest"]
+        if self.channel == "test" and sl and VERSION_RE.match(sl) and "-" not in sl and latest and vkey(sl) > vkey(self.version) \
+                and vkey(sl) >= vkey(latest.partition("-")[0]):
+            out["bridge"] = True
+            out["latest"], out["newer"] = sl, True
+            out["notes"] = "Die Testphase des Datenschutz-Tests ist beendet. Dieses Update führt zurück auf die stabile Version; die Erkennung ist dort eine eigene Karte (Datenschutz)."
         return out
 
     def request(self, action, confirm, version=None, older=False):
         if action not in ("install", "rollback", "switch", "test", "stable"):
             raise ValueError("Unbekannte Aktion")
-        if action == "install" and self.channel == "test":
-            action = "test"
         if confirm is not True:
             raise ValueError("Bestätigung fehlt")
         st = self.status()
+        if action == "install" and self.channel == "test":
+            action = "stable" if st.get("bridge") else "test"
         if not st["helper_installed"]:
             raise ValueError("Der Update-Helfer ist nicht installiert (install.sh erneut ausführen)")
         if st["sending"]:
@@ -4920,6 +5114,16 @@ class DjiService:
             pass
         self._extras = (now, out)
         self._parked = parked
+        return out
+
+    def camera_kinds(self):
+        out = {}
+        try:
+            for c in self._call({"cmd": "state"}, timeout=2).get("cameras", []):
+                if c.get("rtmp_key") and c.get("kind"):
+                    out[c["rtmp_key"]] = c["kind"]
+        except (RuntimeError, ValueError):
+            pass
         return out
 
     def parked_keys(self):
@@ -6828,6 +7032,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.logmode.status())
         if path == "/api/layout":
             return self.reply(200, self.layout.get())
+        if path == "/api/datenschutz":
+            d = self.datenschutz.get()
+            if "lizenz" in urllib.parse.parse_qs((self.path.split("?", 1) + [""])[1]):
+                d["lizenz_text"] = self.datenschutz.lizenz_text()
+            d["engine_compositor"] = bool(pipbox_live.enabled(PipelineStore._safe_cfg(self.pipeline.cfg)))
+            d["sending"] = self.send._active()
+            return self.reply(200, d)
         if path == "/api/deck":
             return self.reply(200, self.deck.get())
         if path == "/api/btdriver":
@@ -6911,9 +7122,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/pipeline":
             st = self.pipeline.status(self.cams.listing(""))
             st["live"] = {"main": self.send.delay_live(), "pips": self.send.delay_live_pips()}
-            st["privacy_available"] = bool(re.search(r"-test\d+$", self.swupdate.version))
-            if st.get("config", {}).get("privacy") and st.get("config", {}).get("type") != "pip":      # nur mit einer Kamera läuft der Dienst
-                st["privacy_state"] = privacy_status()
             return self.reply(200, st)
         if path == "/api/send":
             out = self.send.status()
@@ -6977,6 +7185,14 @@ class Handler(BaseHTTPRequestHandler):
                 if isinstance(d.get("init"), dict):
                     return self.reply(200, self.layout.init(d["init"]))
                 return self.reply(200, self.layout.put(d.get("profile"), d))
+            if path == "/api/datenschutz":
+                try:
+                    if "addon" in d:
+                        self.datenschutz.addon_request(d.get("addon"), bool(belacoder_running() or self.send._active()))
+                        return self.reply(200, self.datenschutz.get())
+                    return self.reply(200, self.datenschutz.put(d))
+                except ValueError as e:
+                    return self.reply(400, {"error": str(e)})
             if path == "/api/btdriver":
                 self.btdriver.request()
                 return self.reply(200, self.btdriver.status())
@@ -7282,6 +7498,7 @@ def main():
     Handler.netchoice = NetChoice(os.path.join(args.state, "camera-net.json"))
     Handler.names = DeviceNames(args.state)
     Handler.layout = LayoutStore(args.state)
+    Handler.datenschutz = DatenschutzStore(args.state)
     Handler.deck = DeckStore(args.state)
     Handler.statsshare = StatsShare(args.state, demo=args.demo)
     Handler.fpsprobe = FpsProbe("rtmp://127.0.0.1:%d/%s" % (args.rtmp_port, args.rtmp_app), os.path.join(args.state, "gst-registry.bin"), demo=args.demo)
