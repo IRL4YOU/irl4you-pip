@@ -1,13 +1,16 @@
 # Änderungen
 
-## 1.0.74-test1
+## 1.0.76
+- Neue Karte Datenschutz (Add-on): Köpfe und Kennzeichen der Hauptkamera verpixeln, mit Zonen ohne Verpixelung. Eigene Lizenz der Erkennung.
+- Der Testschalter in der Update-Karte entfällt.
+
+## 1.0.75
+- Mindestbitrate ab Werk 450 statt 300 kbit/s.
+
+## 1.0.74
 - Systemwarnungen überarbeitet.
 
-## 1.0.73-test2
-- Anzeige im Bild-in-Bild-Modus korrigiert (Verpixeln ist dort aus).
-
-## 1.0.73-test1
-- Test: Kennzeichen und Gesichter automatisch verpixeln (nur mit einer Kamera, deutlich mehr Last und Wärme).
+## 1.0.73
 - GPU steht in den Prozessor-Details und in der Statistik ganz unten.
 
 ## 1.0.72

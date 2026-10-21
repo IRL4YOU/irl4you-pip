@@ -110,6 +110,7 @@ Das Passwort wird nur an `nmcli` übergeben und von diesem Projekt nicht gespeic
 ## Welche Lizenz gilt wo
 
 - **MIT** (eigener Code): alles außer den unten genannten Teilen, darunter `server.py`, `web/`, `gst/` (eigenes GStreamer-Bauteil) und die Dienste.
+- **Eigene Lizenz** (`LICENSE-ERKENNUNG.md`: Privatpersonen und Streamer frei, Unternehmen nicht): das Erkennungsmodul der Karte Datenschutz.
 - **GPL-3.0**: die Patches in `belacoder/` und das daraus gebaute Programm.
 - **AGPL-3.0**: die Patches in `srtla/` und das daraus gebaute Programm.
 - **GPL-2.0**: die unveränderten Kernel-Quellen in `bluetooth-src/`.
@@ -117,6 +118,16 @@ Das Passwort wird nur an `nmcli` übergeben und von diesem Projekt nicht gespeic
 
 Die GPL-/AGPL-Teile sind eigene Dateien (Patches, Bauskripte); der Upstream-Quelltext wird beim Bauen von GitHub geholt und ist hier mit
 Commit genannt. Das MIT-Bauteil in `gst/` wird zur Laufzeit von GStreamer (LGPL) geladen und enthält keinen GPL-Code. Keine Rechtsberatung.
+
+## Erkennungsmodul (eigene Lizenz, `LICENSE-ERKENNUNG.md`)
+
+Das Erkennungsmodul der Karte Datenschutz ist eine **Eigenentwicklung** und steht **nicht** unter der MIT-Lizenz, sondern unter `LICENSE-ERKENNUNG.md`
+(frei für Privatpersonen und Streamer zum Eigengebrauch, nicht für Unternehmen). Es wird nur auf Wunsch eingerichtet (Add-on).
+
+Fremdes: Die Modelle wurden unter anderem mit Bildern aus dem Open Images Dataset V7 (Google LLC und Mitwirkende) trainiert; die Beschriftungen stehen unter
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), die Fotos unter [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) (Namensnennung der Urheber:
+https://storage.googleapis.com/openimages/web/factsfigures_v7.html). Bilder und Beschriftungen werden nicht mitgeliefert. Bei der Einrichtung werden
+OpenCV (Apache-2.0), NumPy (BSD-3-Clause) und die Rockchip RKNN-Laufzeit (Lizenz des Anbieters) geladen.
 
 ## Aussehen der kleinen Bilder (Anregung)
 
@@ -131,10 +142,3 @@ IRL4YOU BOX läuft neben der Original-Oberfläche der BELABOX (belaUI) und verä
 und welches) und schaltet den SSH-Dienst des Systems (`systemctl start/stop ssh`) sowie das Passwort des SSH-Benutzers (`chpasswd`) mit eigenem Code; ein
 von IRL4YOU BOX erzeugtes Passwort liegt in einer eigenen Datei (`ssh-pass.json`), die Dateien der Original-Oberfläche werden nicht beschrieben. Auch das
 BELABOX-Passwort wird nur zum Anmelden mitbenutzt.
-
-## Datenschutz-Test
-
-- [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX): Apache-2.0
-- [open-image-models](https://github.com/ankandrew/open-image-models): MIT
-- [YuNet (OpenCV Zoo)](https://github.com/opencv/opencv_zoo): MIT
-- [Rockchip RKNN](https://github.com/airockchip/rknn-toolkit2): Lizenz des Anbieters
