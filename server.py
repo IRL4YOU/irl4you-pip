@@ -705,6 +705,17 @@ def ttl_cached_drop(key):
     _TTL.pop(key, None)
 
 
+def mac_suffix(iface):
+    try:
+        with open(f"/sys/class/net/{iface}/address") as f:
+            parts = f.read().strip().upper().split(":")
+    except (OSError, ValueError):
+        return ""
+    if len(parts) != 6 or not all(re.fullmatch(r"[0-9A-F]{2}", x) for x in parts):
+        return ""
+    return parts[4] + parts[5]
+
+
 def iface_ips():
     return [dict(x) for x in ttl_cached("iface_ips", 3.0, _iface_ips_raw)]
 
@@ -3784,7 +3795,7 @@ class Wifi:
                 out.append({"iface": n, "ip": ips.get(n, ""), "camera_net": n == self.netchoice.iface,
                             "up": (read(f"/sys/class/net/{n}/operstate", "") or "").strip() == "up",
                             "ssid": "", "signal": None, "name": info["name"], "vendor": info["vendor"],
-                            "usb_id": info["usb_id"], "driver": info["driver"], **self.caps(n)})
+                            "usb_id": info["usb_id"], "driver": info["driver"], "mac4": mac_suffix(n), **self.caps(n)})
                 self._name(out[-1])
         if out:
             try:

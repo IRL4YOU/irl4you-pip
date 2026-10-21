@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.80
+- WLAN-Hotspot: Der vorgeschlagene Name enthält jetzt eine Endung aus der Hardware-Adresse, damit mehrere Boxen verschiedene Namen haben.
+
 ## 1.0.79
 - Datenschutz: Hinweis, dass die Erkennung mit KI-Unterstützung arbeitet.
 
