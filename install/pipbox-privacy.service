@@ -1,5 +1,5 @@
 [Unit]
-Description=IRL4YOU BOX Datenschutz (Beta): Kennzeichen und Gesichter erkennen
+Description=IRL4YOU BOX Datenschutz: Köpfe und Kennzeichen erkennen (Aufsicht)
 After=pipbox.service
 
 [Service]
