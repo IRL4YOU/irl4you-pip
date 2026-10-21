@@ -1,0 +1,7 @@
+[Unit]
+Description=IRL4YOU BOX Add-on-Helfer (Erkennung der Karte Datenschutz einrichten oder entfernen)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-addon.py
+TimeoutStartSec=45min
