@@ -6,7 +6,7 @@ RT_VER=2.3.2
 RAW=https://github.com/airockchip/rknn-toolkit2/raw/v$RT_VER
 mkdir -p "$D/modelle" "$D/privacy"
 echo "PIPBOX-ADDON programme"
-MODELL_URL=${PB_MODELL_URL:-https://github.com/IRL4YOU/irl4you-pip/releases/download/erkennung-1}
+MODELL_URL=${PB_MODELL_URL:-https://github.com/IRL4YOU/irl4you-pip/releases/download/erkennung-2}
 laden() {
   python3 - "$1" "$2" <<'P'
 import sys, urllib.request
@@ -48,13 +48,14 @@ echo "PIPBOX-ADDON modelle"
 fehlt=0
 while read -r nm sha rest; do
   [ -n "$nm" ] || continue
+  opt=0; [ "$nm" = "kopf_klein" ] && opt=1
   dst="$D/modelle/${nm}_fp16.rknn"
   if [ -f "$dst" ] && [ "$(sha256sum "$dst" | cut -d' ' -f1)" = "$sha" ]; then continue; fi
   f="$HERE/privacy-modelle/${nm}_fp16.rknn"
   if [ ! -f "$f" ] || [ "$(sha256sum "$f" | cut -d' ' -f1)" != "$sha" ]; then
-    laden "$MODELL_URL/${nm}_fp16.rknn" "$D/modelle/${nm}_fp16.rknn.laden" || { echo "WARNUNG: Modell $nm konnte nicht geladen werden."; rm -f "$D/modelle/${nm}_fp16.rknn.laden"; fehlt=1; continue; }
+    laden "$MODELL_URL/${nm}_fp16.rknn" "$D/modelle/${nm}_fp16.rknn.laden" || { echo "WARNUNG: Modell $nm konnte nicht geladen werden."; rm -f "$D/modelle/${nm}_fp16.rknn.laden"; [ "$opt" = 1 ] || fehlt=1; continue; }
     f="$D/modelle/${nm}_fp16.rknn.laden"
-    if [ "$(sha256sum "$f" | cut -d' ' -f1)" != "$sha" ]; then echo "WARNUNG: Modell $nm hat eine falsche Prüfsumme, wird nicht eingespielt."; rm -f "$f"; fehlt=1; continue; fi
+    if [ "$(sha256sum "$f" | cut -d' ' -f1)" != "$sha" ]; then echo "WARNUNG: Modell $nm hat eine falsche Prüfsumme, wird nicht eingespielt."; rm -f "$f"; [ "$opt" = 1 ] || fehlt=1; continue; fi
   fi
   install -m 644 "$f" "$dst.neu" && mv -f "$dst.neu" "$dst"
   rm -f "$D/modelle/${nm}_fp16.rknn.laden"
