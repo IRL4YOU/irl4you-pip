@@ -16,3 +16,13 @@ gcc -O2 -Wall -fPIC -shared -DPACKAGE=\"irl4you-pip\" "$HERE/gstpbpip.c" -o "$OU
   -l:libgobject-2.0.so.0 -l:libglib-2.0.so.0
 mv -f "$OUT/libgstpbpip.so.new" "$OUT/libgstpbpip.so"
 echo "Baustein gebaut: $OUT/libgstpbpip.so"
+
+if [ -f "$HERE/gstpbpixel.c" ]; then
+  gcc -O2 -Wall -fPIC -shared -DPACKAGE=\"irl4you-pip\" "$HERE/gstpbpixel.c" -o "$OUT/libgstpbpixel.so.new" \
+    -I"$R/usr/include/gstreamer-1.0" -I"$R/usr/lib/aarch64-linux-gnu/gstreamer-1.0/include" \
+    -I"$R/usr/include/glib-2.0" -I"$R/usr/lib/aarch64-linux-gnu/glib-2.0/include" \
+    -l:libgstvideo-1.0.so.0 -l:libgstbase-1.0.so.0 -l:libgstreamer-1.0.so.0 \
+    -l:libgobject-2.0.so.0 -l:libglib-2.0.so.0 \
+    && mv -f "$OUT/libgstpbpixel.so.new" "$OUT/libgstpbpixel.so" && echo "Baustein gebaut: $OUT/libgstpbpixel.so" \
+    || echo "WARNUNG: Der Datenschutz-Baustein konnte nicht gebaut werden."
+fi
