@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.78
+- DJI-Kamera: verständlichere Fehlermeldungen. Übersetzungen ergänzt.
+
 ## 1.0.77
 - Datenschutz: Änderungen werden automatisch gespeichert, die Sendung startet bei Bedarf kurz neu. Klare Warnung, dass mit „Alle Kameras immer bereit“ nicht verpixelt wird.
 
