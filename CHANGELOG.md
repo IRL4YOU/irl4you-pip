@@ -1,5 +1,12 @@
 # Änderungen
 
+## 1.0.76
+- Neue Karte Datenschutz (Add-on): Köpfe und Kennzeichen der Hauptkamera verpixeln, mit Zonen ohne Verpixelung. Eigene Lizenz der Erkennung.
+- Der Testschalter in der Update-Karte entfällt.
+
+## 1.0.75
+- Mindestbitrate ab Werk 450 statt 300 kbit/s.
+
 ## 1.0.74
 - Systemwarnungen überarbeitet.
 
