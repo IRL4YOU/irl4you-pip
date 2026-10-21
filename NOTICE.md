@@ -121,7 +121,7 @@ Commit genannt. Das MIT-Bauteil in `gst/` wird zur Laufzeit von GStreamer (LGPL)
 
 ## Erkennungsmodul (eigene Lizenz, `LICENSE-ERKENNUNG.md`)
 
-Das Erkennungsmodul der Karte Datenschutz ist eine **Eigenentwicklung** und steht **nicht** unter der MIT-Lizenz, sondern unter `LICENSE-ERKENNUNG.md`
+Das Erkennungsmodul der Karte Datenschutz arbeitet mit künstlicher Intelligenz (KI) und ist eine **Eigenentwicklung** und steht **nicht** unter der MIT-Lizenz, sondern unter `LICENSE-ERKENNUNG.md`
 (frei für Privatpersonen und Streamer zum Eigengebrauch, nicht für Unternehmen). Es wird nur auf Wunsch eingerichtet (Add-on).
 
 Fremdes: Die Modelle wurden unter anderem mit Bildern aus dem Open Images Dataset V7 (Google LLC und Mitwirkende) trainiert; die Beschriftungen stehen unter

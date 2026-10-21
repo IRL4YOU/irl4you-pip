@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.79
+- Datenschutz: Hinweis, dass die Erkennung mit KI-Unterstützung arbeitet.
+
 ## 1.0.78
 - DJI-Kamera: verständlichere Fehlermeldungen. Übersetzungen ergänzt.
 
