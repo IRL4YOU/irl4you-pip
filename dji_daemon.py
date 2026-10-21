@@ -657,11 +657,11 @@ class Camera:
             while True:
                 left = end - time.time()
                 if left <= 0:
-                    raise CameraError("Keine Antwort der Kamera (0x%04x)" % mid)
+                    raise CameraError("Keine Antwort der Kamera (0x%04x). Kamera ganz aus- und wieder einschalten, bei Bedarf ihr gespeichertes WLAN löschen." % mid)
                 try:
                     msg = await asyncio.wait_for(queue.get(), left)
                 except asyncio.TimeoutError:
-                    raise CameraError("Keine Antwort der Kamera (0x%04x)" % mid)
+                    raise CameraError("Keine Antwort der Kamera (0x%04x). Kamera ganz aus- und wieder einschalten, bei Bedarf ihr gespeichertes WLAN löschen." % mid)
                 if msg.id == mid:
                     return msg
 
@@ -722,7 +722,8 @@ class Camera:
                 await send(Message(T_WIFI, ID_WIFI, TY_WIFI, pack_string(ssid) + pack_string(password)))
                 resp = await wait_for(ID_WIFI, 30)
                 if resp.payload != bytes([0, 0]):
-                    raise CameraError('Die Kamera konnte dem WLAN "%s" nicht beitreten (Name oder Passwort?)' % ssid)
+                    log.info("%s: WLAN-Antwort der Kamera: %s", self.addr, resp.payload.hex())
+                    raise CameraError('Die Kamera konnte dem WLAN "%s" nicht beitreten. Die Box hat Name und Passwort richtig gesendet. Gibt es ein Netz mit demselben Namen in Reichweite (zum Beispiel eine zweite Box)? Dann Kamera neu starten und ihr gespeichertes Netz löschen.' % ssid)
                 if self.typed_network and ssid:
                     self.daemon.remember_network(self, ssid, password)
                 if self.stop_requested:
