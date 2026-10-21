@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.77
+- Datenschutz: Änderungen werden automatisch gespeichert, die Sendung startet bei Bedarf kurz neu. Klare Warnung, dass mit „Alle Kameras immer bereit“ nicht verpixelt wird.
+
 ## 1.0.76
 - Neue Karte Datenschutz (Add-on): Köpfe und Kennzeichen der Hauptkamera verpixeln, mit Zonen ohne Verpixelung. Eigene Lizenz der Erkennung.
 - Der Testschalter in der Update-Karte entfällt.
