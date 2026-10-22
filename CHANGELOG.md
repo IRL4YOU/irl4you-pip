@@ -1,13 +1,10 @@
 # Änderungen
 
 ## 1.0.85
-- Karte Datenschutz warnt mit Knopf, wenn die laufende Sendung noch nicht verpixelt ist.
-- Hinweis zur Facecam im Hauptbild.
+- Erkennung verbessert.
 
 ## 1.0.84
-- „Alle Kameras immer bereit“ ist bei neuen Installationen jetzt Standard, geht auch mit einer Kamera und mit Datenschutz (Verpixeln).
-- Der Ton läuft bei kurzen Aussetzern einer Kamera weiter.
-- Erkennung weiter verbessert.
+- Erkennung verbessert.
 
 ## 1.0.81
 - Erkennung verbessert.
