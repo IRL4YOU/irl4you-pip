@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.0.84
+- „Alle Kameras immer bereit“ ist bei neuen Installationen jetzt Standard, geht auch mit einer Kamera und mit Datenschutz (Verpixeln).
+- Der Ton läuft bei kurzen Aussetzern einer Kamera weiter.
+- Erkennung weiter verbessert.
+
 ## 1.0.81
 - Erkennung verbessert.
 
