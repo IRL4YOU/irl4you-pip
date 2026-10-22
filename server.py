@@ -1500,6 +1500,8 @@ class PipelineStore:
         try:
             with open(path) as f:
                 self.cfg.update(json.load(f))
+        except FileNotFoundError:
+            self.cfg["always_ready"] = True
         except (OSError, ValueError):
             pass
         self.cfg["styles"] = clean_styles(self.cfg.get("styles"))
@@ -1621,7 +1623,7 @@ class PipelineStore:
                "pip2": "", "corner2": 2, "pip3": "", "corner3": 0, "x": 500, "y": 500, "x2": 500, "y2": 500, "x3": 500, "y3": 500, "main_delay_ms": DEFAULT_MAIN_DELAY_MS,
                "pip_delay_ms": DEFAULT_PIP_DELAY_MS, "pip2_delay_ms": DEFAULT_PIP_DELAY_MS,
                "pip3_delay_ms": DEFAULT_PIP_DELAY_MS, "auto_failover": req.get("auto_failover", True) is not False, "swap_cams": 0,
-               "always_ready": t == "pip" and req.get("always_ready") is True}
+               "always_ready": req.get("always_ready") is True}
         cfg["styles"] = clean_styles(req.get("styles"), self.cfg.get("styles"), strict=True)
         if t == "pip":
             try:
@@ -1744,7 +1746,7 @@ class PipelineStore:
         num("swap_cams", 0, 4)
         if out["swap_cams"] not in (2, 4):
             out["swap_cams"] = 0
-        out["always_ready"] = out.get("always_ready") is True and out.get("type") == "pip"
+        out["always_ready"] = out.get("always_ready") is True
         out["type"] = "pip" if out.get("type") == "pip" else "single"
         fc = out.get("facecam")
         out["facecam"] = fc if (out["type"] == "pip" and isinstance(fc, str) and KEY_RE.match(fc) and fc in [out.get(s) for s in cls.SLOTS]) else ""
@@ -1787,7 +1789,7 @@ class PipelineStore:
     @classmethod
     def always_plan(cls, cfg):
         c = cls._safe_cfg(cfg)
-        if pipbox_live.enabled(c) and KEY_RE.match(c.get("main", "")) and cls._layout(c)[0]:
+        if pipbox_live.enabled(c) and KEY_RE.match(c.get("main", "")):
             cams = [k for k in (c["main"], c.get("pip", ""), c.get("pip2", ""), c.get("pip3", "")) if k]
             if len(set(cams)) != len(cams):
                 return None
@@ -1813,8 +1815,10 @@ class PipelineStore:
     @classmethod
     def always_blocker(cls, cfg):
         c = cls._safe_cfg(cfg)
-        if c["type"] != "pip" or c.get("always_ready") is not True or cls.always_plan(cfg):
+        if c.get("always_ready") is not True or cls.always_plan(cfg):
             return None
+        if c["type"] != "pip":
+            return None if pipbox_live.supported() else "Alle Kameras immer bereit ist nicht aktiv: Der Sende-Baustein ist noch nicht auf dem neuen Stand. Die Sendung läuft im normalen Modus. Ein Software-Update baut ihn neu."
         if not feeder_tool():
             return "Alle Kameras immer bereit ist nicht aktiv: Das Programm gst-launch-1.0 fehlt (Paket gstreamer1.0-tools). Die Sendung läuft im normalen Modus. Ein Software-Update installiert das Paket."
         if not plugin_swap() or not plugin_fill():
@@ -1901,8 +1905,8 @@ class PipelineStore:
         q = self.Q
         base = f"rtmp://127.0.0.1:{rtmp_port}/{rtmp_app}"
         pip, pip2, pip3, multi = self._layout(c)
-        if pip and pipbox_live.enabled(c):
-            return pipbox_live.build(c, base)
+        if pipbox_live.enabled(c):
+            return pipbox_live.build(c, base, ds=self.datenschutz(), ds_files=(PBPIXEL_TAP, PBPIXEL_BOXES))
 
         def xy(cfg_, kx, ky, corner_):
             if corner_ != FREE:
@@ -1916,7 +1920,7 @@ class PipelineStore:
                 delay = max(0, min(3000, int(c.get("main_delay_ms", DEFAULT_MAIN_DELAY_MS))))
             except (TypeError, ValueError):
                 delay = 0
-        ds = self.datenschutz() if not pipbox_live.enabled(c) else None
+        ds = self.datenschutz()
         pd = int(ds["delay_ms"]) if ds else 0
         delay += pd
         qa = q + (f" min-threshold-time={delay * 1000000}" if delay else "")
@@ -2112,9 +2116,10 @@ def always_compatible(a, b):
         for k in STYLE_SLOTS:
             c["styles"][k] = dict(c["styles"][k], visible=True)
         return c
-    if pipbox_live.supported() and a.get("type") == "pip" and b.get("type") == "pip" and a.get("always_ready") is True and b.get("always_ready") is True:
+    both = a.get("type") in ("pip", "single") and b.get("type") in ("pip", "single") and a.get("always_ready") is True and b.get("always_ready") is True
+    if pipbox_live.supported() and both:
         return True
-    return a.get("type") == "pip" and b.get("type") == "pip" and a.get("always_ready") is True and b.get("always_ready") is True and norm(a) == norm(b)
+    return both and a.get("type") == b.get("type") and norm(a) == norm(b)
 
 
 class SendControl:
@@ -7063,9 +7068,8 @@ class Handler(BaseHTTPRequestHandler):
             d = self.datenschutz.get()
             if "lizenz" in urllib.parse.parse_qs((self.path.split("?", 1) + [""])[1]):
                 d["lizenz_text"] = self.datenschutz.lizenz_text()
-            d["engine_compositor"] = bool(pipbox_live.enabled(PipelineStore._safe_cfg(self.pipeline.cfg)))
             d["sending"] = self.send._active()
-            d["neustart_noetig"] = bool(d["sending"] and not d["engine_compositor"] and neustart_noetig(self.pipeline.build()))
+            d["neustart_noetig"] = bool(d["sending"] and neustart_noetig(self.pipeline.build()))
             return self.reply(200, d)
         if path == "/api/deck":
             return self.reply(200, self.deck.get())
@@ -7220,10 +7224,9 @@ class Handler(BaseHTTPRequestHandler):
                         return self.reply(200, self.datenschutz.get())
                     if d.get("restart_send") is True:
                         res = self.datenschutz.get()
-                        compositor = bool(pipbox_live.enabled(PipelineStore._safe_cfg(self.pipeline.cfg)))
                         res["sending"] = self.send._active()
                         res["restarted"], res["note"] = False, ""
-                        if res["sending"] and not compositor and neustart_noetig(self.pipeline.build()):
+                        if res["sending"] and neustart_noetig(self.pipeline.build()):
                             res["restarted"], res["note"] = self.send.restart_if_live()
                         res["neustart_noetig"] = False
                         return self.reply(200, res)

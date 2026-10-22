@@ -65,7 +65,7 @@ def frame_ok():
         return False
 
 
-_ENG = {"mtime": None, "level": 0, "shift": False}
+_ENG = {"mtime": None, "level": 0, "shift": False, "aud": False, "vid": False}
 COPY_LEVEL = 13
 
 
@@ -81,7 +81,7 @@ def engine_level():
         if _ENG["mtime"] != mt:
             out = subprocess.run([BIN, "-v"], capture_output=True, text=True, timeout=5).stdout
             m = re.search(r"-sb(\d+)", out)
-            _ENG.update(mtime=mt, level=int(m.group(1)) if m else 0, shift=bool(re.search(r"-sb\d+(-[a-z0-9]+)*-sh\b", out)))
+            _ENG.update(mtime=mt, level=int(m.group(1)) if m else 0, shift=bool(re.search(r"-sb\d+(-[a-z0-9]+)*-sh\b", out)), aud=bool(re.search(r"-sb\d+(-[a-z0-9]+)*-au\b", out)), vid=bool(re.search(r"-sb\d+(-[a-z0-9]+)*-vt\b", out)))
         return _ENG["level"]
     except (OSError, subprocess.SubprocessError):
         return 0
@@ -95,8 +95,24 @@ def shift_ok():
     return bool(_ENG["shift"])
 
 
+def audio_tap_ok():
+    force = os.environ.get("PIPBOX_AUDIO_TAP")
+    if force in ("0", "1"):
+        return force == "1"
+    engine_level()
+    return bool(_ENG["aud"])
+
+
+def video_tap_ok():
+    force = os.environ.get("PIPBOX_VIDEO_TAP")
+    if force in ("0", "1"):
+        return force == "1"
+    engine_level()
+    return bool(_ENG["vid"])
+
+
 def enabled(cfg):
-    return bool(cfg.get("type") == "pip" and cfg.get("always_ready") is True and cfg.get("main") and supported())
+    return bool(cfg.get("type") in ("pip", "single") and cfg.get("always_ready") is True and cfg.get("main") and supported())
 
 
 def pip_size(pct):
@@ -200,6 +216,7 @@ LAG_GRACE_S = 8.0
 LAG_HOLD_S = 15.0
 LAG_MAX_TRIES = 3
 LAG_WINDOW_S = 180.0
+SKIP_FILE = "pixel-skip.json"
 HOLD_FILE = "feed-hold.json"
 
 
@@ -251,7 +268,7 @@ def hold_delays(delays, buffer, big_key=None, big_lead=None, uniform=False, shif
     return {k: max(int(v), floor_big if k == big_key else floor) for k, v in delays.items()}
 
 
-def build(c, base=RTMP_BASE, frame=None):
+def build(c, base=RTMP_BASE, frame=None, ds=None, ds_files=None):
     global FRAME_BUILT
     frame = frame_ok() if frame is None else bool(frame)
     FRAME_BUILT = frame
@@ -267,15 +284,24 @@ def build(c, base=RTMP_BASE, frame=None):
         for j in range(4):
             pads.append(f"sink_{n}::xpos=0 sink_{n}::ypos=0 sink_{n}::width=2 sink_{n}::height=2 sink_{n}::alpha=0 sink_{n}::zorder={3 + 2 * k}")
             n += 1
+    px = ""
+    if ds and ds_files:
+        dly = max(0, int(ds.get("delay_ms", 0) or 0))
+        px = (f"pbpixeltap name=ptap shm={ds_files[0]} interval-ms=100 !\n"
+              f"queue name=pdelay max-size-time={(dly + 1500) * 1000000} max-size-buffers=0 max-size-bytes=0 min-threshold-time={(dly + 33) * 1000000} !\n"
+              f"pbpixelmask name=pmask boxes={ds_files[1]} !\n")
     out.append("compositor name=pipcomp background=black " + " ".join(pads) + " !\n"
                f"video/x-raw,format=NV12,width={CANVAS_W},height={CANVAS_H},framerate={FPS}/1,colorimetry=bt709 !\n"
+               + px
                + ("pbround name=rnd !\n" if frame else "")
                + "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
                "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                f"h265parse config-interval=-1 ! {q} ! mux.\n")
-    out.append("input-selector name=asel ! identity name=a_delay signal-handoffs=TRUE ! volume name=avol ! "
+    ad = f"queue name=pdelay_a max-size-time={(dly + 1500) * 1000000} max-size-buffers=0 max-size-bytes=0 min-threshold-time={dly * 1000000} ! " if px and dly else ""
+    out.append("input-selector name=asel ! audiomixer name=amix ! identity name=a_delay signal-handoffs=TRUE ! volume name=avol ! " + ad +
                f"opusenc bitrate=128000 ! opusparse ! {q} ! mux.\n")
     out.append(f"audiotestsrc is-live=true wave=silence ! capsfilter caps=\"{AUDIO_CAPS}\" ! queue ! asel.sink_0\n")
+    out.append(f"audiotestsrc is-live=true wave=silence ! capsfilter caps=\"{AUDIO_CAPS}\" ! queue ! amix.\n")
     n = SLOTS
     for k in range(RINGS):
         for j in range(4):
@@ -465,6 +491,25 @@ class Layout:
                 self.sent[key] = line
         return order_for_swap(lines, old_caps, alpha)
 
+
+    def skip_zones(self, c, roles, dims, hide):
+        geoms = {k: small_geometry(c, k) for k in (1, 2, 3)}
+        by_pos = {v: s for s, v in roles.items()}
+        out = []
+        for k in (1, 2, 3):
+            s = by_pos.get(k)
+            if s is None or (hide >> (k - 1)) & 1 or geoms[k]["opacity"] <= 0:
+                continue
+            g = geoms[k]
+            d = dims.get(s)
+            if d and d[0] and d[1] and d[1] > d[0]:
+                g = portrait_geometry(c, k, g, d)
+            m = 8
+            x0, y0 = max(0, g["x"] - m), max(0, g["y"] - m)
+            x1, y1 = min(CANVAS_W, g["x"] + g["w"] + m), min(CANVAS_H, g["y"] + g["h"] + m)
+            if x1 > x0 and y1 > y0:
+                out.append([round(x0 / CANVAS_W, 4), round(y0 / CANVAS_H, 4), round(x1 / CANVAS_W, 4), round(y1 / CANVAS_H, 4)])
+        return out
 
     def pre_commands(self, c, pre_roles, dims):
         geoms = {k: small_geometry(c, k) for k in (1, 2, 3)}
@@ -855,6 +900,7 @@ class LiveController:
             cl = self.layout.commands(self.cfg, slot_key, roles, dims, audio_ok, hide, apos, mute, self.effective_delays(main), getattr(self, "shift_ms", None))
             sel = [x for x in cl if x.startswith("select asel ")]
             lines = sel + lines + [x for x in cl if not x.startswith("select asel ")]
+            self._write_skip(self.layout.skip_zones(self.cfg, roles, dims, hide))
         eff_changed = apos != getattr(self, "_eff_apos", None)
         self._eff_apos = apos
         if lines and os.environ.get("PIPBOX_LIVE_DEBUG"):
@@ -869,6 +915,16 @@ class LiveController:
             self._view_pending = False
         shown = set(self.alive) | {k for k in slot_key if k and k in self.pub}
         return {"slots": list(slot_key), "alive": sorted(shown), "main": self.main_key, "line": self.last_line}
+
+    def _write_skip(self, zones):
+        text = json.dumps({"zonen": zones})
+        if text == getattr(self, "_skip_text", None):
+            return
+        try:
+            self.put(SKIP_FILE, text)
+            self._skip_text = text
+        except Exception as e:
+            self.log(f"send: {SKIP_FILE} nicht geschrieben: {e}")
 
     def send_lines(self, lines):
         parts = [[]]
