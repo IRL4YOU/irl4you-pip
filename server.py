@@ -784,7 +784,23 @@ def _alert_text(a):
     return "Meldung"
 
 
-def status_light(m, live, limits=None, battery_limit=10):
+class UplinkMemory:
+
+    def __init__(self):
+        self.up = set()
+
+    def reset(self):
+        self.up = set()
+
+    def dropped(self, ups):
+        self.up &= set(ups)
+        for n, v in ups.items():
+            if (v or {}).get("state") in ("an", "reserve"):
+                self.up.add(n)
+        return sorted(n for n in self.up if (ups.get(n) or {}).get("state") == "aus")
+
+
+def status_light(m, live, limits=None, battery_limit=10, memory=None):
     reasons = []
 
     def add(level, text):
@@ -803,13 +819,17 @@ def status_light(m, live, limits=None, battery_limit=10):
         if isinstance(b, int) and not isinstance(b, bool) and b <= battery_limit and c.get("charging") is not True and not c.get("parked") and (c.get("battery_age") is None or c["battery_age"] <= 300):
             add("warn", "Akku %s %d %%" % (c.get("name") or c.get("key") or "Kamera", b))
     ups = m.get("uplinks") or {}
-    if live and ups:
-        names = m.get("conn_names") or {}
-        down = [n for n, v in ups.items() if (v or {}).get("state") == "aus"]
-        if len(down) == len(ups):
-            add("crit", "Kein Sendeweg verbunden")
-        elif down:
-            add("warn", "Sendeweg nicht verbunden: " + ", ".join(str(names.get(n) or n) for n in down))
+    if memory is not None:
+        if not live:
+            memory.reset()
+        elif ups:
+            names = m.get("conn_names") or {}
+            down = memory.dropped(ups)
+            if down:
+                if not any((v or {}).get("state") in ("an", "reserve") for v in ups.values()):
+                    add("crit", "Kein Sendeweg mehr verbunden")
+                else:
+                    add("warn", "Sendeweg ausgefallen: " + ", ".join(str(names.get(n) or n) for n in down))
     level = "crit" if any(r["level"] == "crit" for r in reasons) else ("warn" if reasons else "ok")
     return {"level": level, "live": bool(live), "reasons": reasons[:10]}
 
@@ -7020,7 +7040,7 @@ class Handler(BaseHTTPRequestHandler):
                     if p:
                         c["fps"], c["fps_measured"] = p, True
         try:
-            m["light"] = status_light(m, self.twitch._live(), self.sysalerts.data, self.twitch.store.data.get("threshold", 10))
+            m["light"] = status_light(m, self.twitch._live(), self.sysalerts.data, self.twitch.store.data.get("threshold", 10), self.uplinkmem)
         except Exception:
             m["light"] = None
         return m
@@ -7639,6 +7659,7 @@ def main():
         threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
         threading.Thread(target=Handler.twitchbot.keep, daemon=True).start()
     Handler.chatreader = TwitchReader(Handler.twitch.store, demo=args.demo, paths=Handler.chatpaths)
+    Handler.uplinkmem = UplinkMemory()
     Handler.sysalerts.light_fn = Handler.light_now
     Handler.sysalerts.reader = Handler.chatreader
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
