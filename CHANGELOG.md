@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.89
+- Ampel (grün, gelb, rot) für den Zustand der Box in der Live-Karte; im Twitch-Chat antwortet `!status` mit der Farbe (Streamer und Moderatoren, auf Wunsch auch VIPs).
+
 ## 1.0.88
 - Twitch-Chat: Der Befehl `!temp` schreibt die Temperatur der Box in den Chat (Streamer und Moderatoren, auf Wunsch auch VIPs; Schalter bei den Systemwarnungen, standardmäßig aus).
 
