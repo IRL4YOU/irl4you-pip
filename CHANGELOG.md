@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.88
+- Twitch-Chat: Der Befehl `!temp` schreibt die Temperatur der Box in den Chat (Streamer und Moderatoren, auf Wunsch auch VIPs; Schalter bei den Systemwarnungen, standardmäßig aus).
+
 ## 1.0.87
 - Erkennung verbessert.
 
