@@ -2553,14 +2553,16 @@ class SysAlerts:
     METRICS = (("temp", "CPU-Temperatur", "°C", 3, (40, 100), 65), ("cpu", "CPU-Auslastung", "%", 5, (20, 100), 75), ("ram", "RAM-Auslastung", "%", 5, (20, 100), 60))
     DEFAULT_ALERT = "Warnung: {Name} bei {Wert} (Grenze {Grenze})"
     DEFAULT_OK = "{Name} wieder normal ({Wert})"
-    DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK, "cmd_on": False, "cmd_vip": False,
+    DEFAULT_TEMP = "Box-Temperatur: {Wert}"
+    DEFAULT_STATUS = {"ok": "🟢 Alles okay", "warn": "🟡 Es gibt eine Warnung", "crit": "🔴 Es gibt ein Problem"}
+    DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK, "msg_temp": DEFAULT_TEMP, "msg_st_ok": DEFAULT_STATUS["ok"],
+                "msg_st_warn": DEFAULT_STATUS["warn"], "msg_st_crit": DEFAULT_STATUS["crit"], "cmd_temp": False, "cmd_status": False, "cmd_vip": False,
                 **{k: {"on": True, "limit": dflt} for k, _n, _u, _h, _r, dflt in METRICS}}
     POLL_S = 10
     SUSTAIN = 3
     RETRY_S = 60
     COOLDOWN = (1, 120)
     CMDS = ("!temp", "!status")
-    LIGHT_TEXT = {"ok": "🟢 Alles okay", "warn": "🟡 Es gibt eine Warnung", "crit": "🔴 Es gibt ein Problem"}
     CMD_POLL_S = 2
     CMD_GAP_S = 30
     CMD_MAX_AGE_S = 60
@@ -2576,13 +2578,15 @@ class SysAlerts:
         self.reader = None
         self.light_fn = None
         self.cmd_since = None
-        self.cmd_last = None
+        self.cmd_last = {}
         try:
             with open(path) as f:
                 saved = json.load(f)
         except (OSError, ValueError):
             saved = None
         if isinstance(saved, dict):
+            if saved.get("cmd_on") is True and "cmd_temp" not in saved and "cmd_status" not in saved:
+                saved = dict(saved, cmd_temp=True, cmd_status=True)
             try:
                 self.data = self._merge(self.data, saved, strict=False)
             except ValueError:
@@ -2606,7 +2610,7 @@ class SysAlerts:
             except ValueError:
                 if strict:
                     raise
-        for key in ("enabled", "recover", "only_live", "cmd_on", "cmd_vip"):
+        for key in ("enabled", "recover", "only_live", "cmd_temp", "cmd_status", "cmd_vip"):
             if key in req:
                 if isinstance(req[key], bool):
                     new[key] = req[key]
@@ -2630,7 +2634,7 @@ class SysAlerts:
                     take(g)
             elif sub is not None and strict:
                 raise ValueError("Ungültige Anfrage")
-        for key in ("msg_alert", "msg_ok"):
+        for key in ("msg_alert", "msg_ok", "msg_temp", "msg_st_ok", "msg_st_warn", "msg_st_crit"):
             if key in req:
                 def h(key=key):
                     new[key] = TwitchStore._message(req[key])
@@ -2748,23 +2752,24 @@ class SysAlerts:
         parts = str(item.get("text") or "").split()
         return parts[0].lower() if parts and parts[0].lower() in self.CMDS else None
 
-    def _light_text(self):
+    def _light_text(self, data):
         try:
             light = self.light_fn() if self.light_fn else None
         except Exception:
             light = None
-        text = self.LIGHT_TEXT.get((light or {}).get("level"))
-        if text is None:
+        level = (light or {}).get("level")
+        if level not in ("ok", "warn", "crit"):
             return "⚪ Status nicht verfügbar"
-        return text + (" (keine Sendung)" if light["level"] == "ok" and not light.get("live") else "")
+        return data["msg_st_" + level] + (" (keine Sendung)" if level == "ok" and not light.get("live") else "")
 
-    def _reply(self, cfg, item, cmd="!temp"):
+    def _reply(self, cfg, item, cmd="!temp", data=None):
+        data = data or self.data
         who = TwitchNotifier.camera_text(item.get("name"))
         if cmd == "!status":
-            text = ("@%s " % who if who else "") + self._light_text()
+            text = ("@%s " % who if who else "") + self._light_text(data)
         else:
             v = self.values()["temp"]
-            text = ("@%s " % who if who else "") + ("Box-Temperatur: %d °C" % round(v) if v is not None else "Box-Temperatur: nicht messbar")
+            text = ("@%s " % who if who else "") + data["msg_temp"].replace("{Wert}", "%d °C" % round(v) if v is not None else "nicht messbar")
         if self.demo:
             self.reader._add({"type": "msg", "name": "Box", "color": "#9146FF", "text": text, "emotes": []})
             return True
@@ -2774,7 +2779,7 @@ class SysAlerts:
         with self.lock:
             data = json.loads(json.dumps(self.data))
         cfg = self._creds()
-        if not data["cmd_on"] or self.reader is None or (cfg is None and not self.demo):
+        if not (data["cmd_temp"] or data["cmd_status"]) or self.reader is None or (cfg is None and not self.demo):
             self.cmd_since = None
             return
         r = self.reader.poll(self.cmd_since or 0)
@@ -2786,12 +2791,13 @@ class SysAlerts:
         now = self.wall()
         for it in r.get("items", []):
             cmd = self._is_cmd(it)
-            if not cmd or not self._allowed(it, data["cmd_vip"]) or now - it.get("t", now) > self.CMD_MAX_AGE_S:
+            if not cmd or not data["cmd_temp" if cmd == "!temp" else "cmd_status"] or not self._allowed(it, data["cmd_vip"]) or now - it.get("t", now) > self.CMD_MAX_AGE_S:
                 continue
-            if self.cmd_last is not None and self.mono() - self.cmd_last < self.CMD_GAP_S:
+            last = self.cmd_last.get(cmd)
+            if last is not None and self.mono() - last < self.CMD_GAP_S:
                 continue
-            self.cmd_last = self.mono()
-            self._reply(cfg, it, cmd)
+            self.cmd_last[cmd] = self.mono()
+            self._reply(cfg, it, cmd, data)
 
     def run_cmd(self):
         while not self.stop_ev.is_set():
