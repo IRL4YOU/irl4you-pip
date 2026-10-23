@@ -2553,12 +2553,16 @@ class SysAlerts:
     METRICS = (("temp", "CPU-Temperatur", "°C", 3, (40, 100), 65), ("cpu", "CPU-Auslastung", "%", 5, (20, 100), 75), ("ram", "RAM-Auslastung", "%", 5, (20, 100), 60))
     DEFAULT_ALERT = "Warnung: {Name} bei {Wert} (Grenze {Grenze})"
     DEFAULT_OK = "{Name} wieder normal ({Wert})"
-    DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK,
+    DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK, "cmd_on": False, "cmd_vip": False,
                 **{k: {"on": True, "limit": dflt} for k, _n, _u, _h, _r, dflt in METRICS}}
     POLL_S = 10
     SUSTAIN = 3
     RETRY_S = 60
     COOLDOWN = (1, 120)
+    CMD = "!temp"
+    CMD_POLL_S = 2
+    CMD_GAP_S = 30
+    CMD_MAX_AGE_S = 60
 
     def __init__(self, path, notifier, sampler, demo=False, mono=time.monotonic, wall=time.time):
         self.path, self.notifier, self.sampler, self.demo = path, notifier, sampler, demo
@@ -2568,6 +2572,9 @@ class SysAlerts:
         self.state = {k: {"over": 0, "alerting": False, "last": None, "retry": None, "pending_ok": False} for k, *_ in self.METRICS}
         self.last = None
         self.stop_ev = threading.Event()
+        self.reader = None
+        self.cmd_since = None
+        self.cmd_last = None
         try:
             with open(path) as f:
                 saved = json.load(f)
@@ -2597,7 +2604,7 @@ class SysAlerts:
             except ValueError:
                 if strict:
                     raise
-        for key in ("enabled", "recover", "only_live"):
+        for key in ("enabled", "recover", "only_live", "cmd_on", "cmd_vip"):
             if key in req:
                 if isinstance(req[key], bool):
                     new[key] = req[key]
@@ -2728,6 +2735,55 @@ class SysAlerts:
                         st["alerting"], st["retry"] = True, now + self.RETRY_S
                         continue
                 st["pending_ok"] = False
+
+    def _allowed(self, item, vip):
+        badges = item.get("badges") or []
+        return "broadcaster" in badges or "moderator" in badges or (vip and "vip" in badges)
+
+    def _is_cmd(self, item):
+        if item.get("type") != "msg":
+            return False
+        parts = str(item.get("text") or "").split()
+        return bool(parts) and parts[0].lower() == self.CMD
+
+    def _reply(self, cfg, item):
+        v = self.values()["temp"]
+        who = TwitchNotifier.camera_text(item.get("name"))
+        text = ("@%s " % who if who else "") + ("Box-Temperatur: %d °C" % round(v) if v is not None else "Box-Temperatur: nicht messbar")
+        if self.demo:
+            self.reader._add({"type": "msg", "name": "Box", "color": "#9146FF", "text": text, "emotes": []})
+            return True
+        return self._send(cfg, text)
+
+    def cmd_tick(self):
+        with self.lock:
+            data = json.loads(json.dumps(self.data))
+        cfg = self._creds()
+        if not data["cmd_on"] or self.reader is None or (cfg is None and not self.demo):
+            self.cmd_since = None
+            return
+        r = self.reader.poll(self.cmd_since or 0)
+        last = r.get("last", 0)
+        if self.cmd_since is None:
+            self.cmd_since = last
+            return
+        self.cmd_since = last
+        now = self.wall()
+        for it in r.get("items", []):
+            if not self._is_cmd(it) or not self._allowed(it, data["cmd_vip"]) or now - it.get("t", now) > self.CMD_MAX_AGE_S:
+                continue
+            if self.cmd_last is not None and self.mono() - self.cmd_last < self.CMD_GAP_S:
+                continue
+            self.cmd_last = self.mono()
+            self._reply(cfg, it)
+
+    def run_cmd(self):
+        while not self.stop_ev.is_set():
+            try:
+                self.cmd_tick()
+            except Exception as e:
+                print("sysalerts-cmd:", type(e).__name__)
+            self.stop_ev.wait(self.CMD_POLL_S)
 
     def _reset(self, keep_alert=False):
         for st in self.state.values():
