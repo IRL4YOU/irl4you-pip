@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.91
+- Systemwarnungen im Twitch-Chat: Schalter oben, Texte darunter.
+
 ## 1.0.90
 - Twitch-Chat: `!temp` und `!status` einzeln einschaltbar, mit eigener Pause und einstellbaren Antworttexten.
 
