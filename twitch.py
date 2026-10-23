@@ -2559,7 +2559,8 @@ class SysAlerts:
     SUSTAIN = 3
     RETRY_S = 60
     COOLDOWN = (1, 120)
-    CMD = "!temp"
+    CMDS = ("!temp", "!status")
+    LIGHT_TEXT = {"ok": "🟢 Alles okay", "warn": "🟡 Es gibt eine Warnung", "crit": "🔴 Es gibt ein Problem"}
     CMD_POLL_S = 2
     CMD_GAP_S = 30
     CMD_MAX_AGE_S = 60
@@ -2573,6 +2574,7 @@ class SysAlerts:
         self.last = None
         self.stop_ev = threading.Event()
         self.reader = None
+        self.light_fn = None
         self.cmd_since = None
         self.cmd_last = None
         try:
@@ -2742,14 +2744,27 @@ class SysAlerts:
 
     def _is_cmd(self, item):
         if item.get("type") != "msg":
-            return False
+            return None
         parts = str(item.get("text") or "").split()
-        return bool(parts) and parts[0].lower() == self.CMD
+        return parts[0].lower() if parts and parts[0].lower() in self.CMDS else None
 
-    def _reply(self, cfg, item):
-        v = self.values()["temp"]
+    def _light_text(self):
+        try:
+            light = self.light_fn() if self.light_fn else None
+        except Exception:
+            light = None
+        text = self.LIGHT_TEXT.get((light or {}).get("level"))
+        if text is None:
+            return "⚪ Status nicht verfügbar"
+        return text + (" (keine Sendung)" if light["level"] == "ok" and not light.get("live") else "")
+
+    def _reply(self, cfg, item, cmd="!temp"):
         who = TwitchNotifier.camera_text(item.get("name"))
-        text = ("@%s " % who if who else "") + ("Box-Temperatur: %d °C" % round(v) if v is not None else "Box-Temperatur: nicht messbar")
+        if cmd == "!status":
+            text = ("@%s " % who if who else "") + self._light_text()
+        else:
+            v = self.values()["temp"]
+            text = ("@%s " % who if who else "") + ("Box-Temperatur: %d °C" % round(v) if v is not None else "Box-Temperatur: nicht messbar")
         if self.demo:
             self.reader._add({"type": "msg", "name": "Box", "color": "#9146FF", "text": text, "emotes": []})
             return True
@@ -2770,12 +2785,13 @@ class SysAlerts:
         self.cmd_since = last
         now = self.wall()
         for it in r.get("items", []):
-            if not self._is_cmd(it) or not self._allowed(it, data["cmd_vip"]) or now - it.get("t", now) > self.CMD_MAX_AGE_S:
+            cmd = self._is_cmd(it)
+            if not cmd or not self._allowed(it, data["cmd_vip"]) or now - it.get("t", now) > self.CMD_MAX_AGE_S:
                 continue
             if self.cmd_last is not None and self.mono() - self.cmd_last < self.CMD_GAP_S:
                 continue
             self.cmd_last = self.mono()
-            self._reply(cfg, it)
+            self._reply(cfg, it, cmd)
 
     def run_cmd(self):
         while not self.stop_ev.is_set():
