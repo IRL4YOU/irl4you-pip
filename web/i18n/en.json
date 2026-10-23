@@ -2518,13 +2518,10 @@
   "Sendung jetzt neu starten": "Restart the stream now",
   "ACHTUNG: Verpixeln ist eingeschaltet, die laufende Sendung ist aber noch nicht verpixelt. Die Sendung muss neu gestartet werden.": "WARNING: pixelation is switched on, but the running stream is not pixelated yet. The stream has to be restarted.",
   "auch VIPs": "VIPs too",
-  "Box-Temperatur: nicht messbar": "Box temperature: not available",
-  "Box-Temperatur: {1} °C": "Box temperature: {1} °C",
   "(keine Sendung)": "(not streaming)",
   "Akku {1} {2} %": "Battery {1} {2} %",
   "Alles in Ordnung": "All fine",
   "Alles okay": "All OK",
-  "Chat-Befehle „!temp“ und „!status“ beantworten (Streamer und Moderatoren)": "Answer the chat commands “!temp” and “!status” (streamer and moderators)",
   "HDMI-Kamera ohne Signal": "HDMI camera without signal",
   "Kamera {1} ohne Signal": "Camera {1} without signal",
   "Kein Sendeweg verbunden": "No uplink connected",
@@ -2534,7 +2531,18 @@
   "⚪ Status nicht verfügbar": "⚪ Status not available",
   "🔴 Es gibt ein Problem": "🔴 There is a problem",
   "🟡 Es gibt eine Warnung": "🟡 There is a warning",
-  "🟢 Alles okay": "🟢 All OK"
+  "🟢 Alles okay": "🟢 All OK",
+  "Chat-Befehle (Streamer und Moderatoren)": "Chat commands (streamer and moderators)",
+  "„!status“ nennt die Ampel": "“!status” gives the traffic light",
+  "„!temp“ nennt die Temperatur": "“!temp” gives the temperature",
+  "Antwort ({Wert} wird ersetzt)": "Reply ({Wert} is replaced)",
+  "Box-Temperatur: {1}": "Box temperature: {1}",
+  "Chat-Befehl „!status“": "Chat command “!status”",
+  "Chat-Befehl „!temp“": "Chat command “!temp”",
+  "Gelb": "Yellow",
+  "Grün": "Green",
+  "Systemwarnung": "System warning",
+  "nicht messbar": "not available"
  },
  "patterns": []
 }
