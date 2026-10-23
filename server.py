@@ -771,6 +771,49 @@ def uplink_states(selected):
     return out
 
 
+def _alert_text(a):
+    if a.get("text"):
+        return str(a["text"])[:120]
+    kind = a.get("kind")
+    if kind == "usb":
+        return "USB-Gerät getrennt"
+    if kind == "cam":
+        return "Kamera %s ohne Signal" % (a.get("name") or "")
+    if kind == "hdmi":
+        return "HDMI-Kamera ohne Signal"
+    return "Meldung"
+
+
+def status_light(m, live, limits=None, battery_limit=10):
+    reasons = []
+
+    def add(level, text):
+        reasons.append({"level": level, "text": text})
+    alerts = [a for a in (m.get("alerts") or []) if isinstance(a, dict)]
+    for a in alerts:
+        add("crit" if a.get("level") == "crit" else "warn", _alert_text(a))
+    seen = " ".join(r["text"] for r in reasons)
+    cpu, mem = (m.get("cpu") or {}).get("avg"), (m.get("mem") or {}).get("used_pct")
+    for key, label, unit, val, word in (("temp", "Temperatur", "°C", m.get("temp_c"), "Temperatur"), ("cpu", "CPU-Last", "%", cpu, "CPU"), ("ram", "RAM", "%", mem, "RAM")):
+        lim = (limits or {}).get(key) or {}
+        if lim.get("on") and isinstance(val, (int, float)) and not isinstance(val, bool) and isinstance(lim.get("limit"), int) and val >= lim["limit"] and word not in seen:
+            add("warn", "%s %d %s (Grenze %d %s)" % (label, round(val), unit, lim["limit"], unit))
+    for c in m.get("cameras") or []:
+        b = c.get("battery")
+        if isinstance(b, int) and not isinstance(b, bool) and b <= battery_limit and c.get("charging") is not True and not c.get("parked") and (c.get("battery_age") is None or c["battery_age"] <= 300):
+            add("warn", "Akku %s %d %%" % (c.get("name") or c.get("key") or "Kamera", b))
+    ups = m.get("uplinks") or {}
+    if live and ups:
+        names = m.get("conn_names") or {}
+        down = [n for n, v in ups.items() if (v or {}).get("state") == "aus"]
+        if len(down) == len(ups):
+            add("crit", "Kein Sendeweg verbunden")
+        elif down:
+            add("warn", "Sendeweg nicht verbunden: " + ", ".join(str(names.get(n) or n) for n in down))
+    level = "crit" if any(r["level"] == "crit" for r in reasons) else ("warn" if reasons else "ok")
+    return {"level": level, "live": bool(live), "reasons": reasons[:10]}
+
+
 class NetChoice:
 
     def __init__(self, path):
@@ -6976,7 +7019,17 @@ class Handler(BaseHTTPRequestHandler):
                     p = self.fpsprobe.get(c["key"])
                     if p:
                         c["fps"], c["fps_measured"] = p, True
+        try:
+            m["light"] = status_light(m, self.twitch._live(), self.sysalerts.data, self.twitch.store.data.get("threshold", 10))
+        except Exception:
+            m["light"] = None
         return m
+
+    @classmethod
+    def light_now(cls):
+        h = object.__new__(cls)
+        h.headers = {}
+        return h.metrics_data(light=True).get("light")
 
     @classmethod
     def stats_snapshot_now(cls):
@@ -7586,6 +7639,7 @@ def main():
         threading.Thread(target=Handler.twitchlogin.keep, daemon=True).start()
         threading.Thread(target=Handler.twitchbot.keep, daemon=True).start()
     Handler.chatreader = TwitchReader(Handler.twitch.store, demo=args.demo, paths=Handler.chatpaths)
+    Handler.sysalerts.light_fn = Handler.light_now
     Handler.sysalerts.reader = Handler.chatreader
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
     Handler.chathelix = HelixChat(Handler.twitchlogin, Handler.chatmod)
