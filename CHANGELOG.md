@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.90
+- Twitch-Chat: `!temp` und `!status` einzeln einschaltbar, mit eigener Pause und einstellbaren Antworttexten.
+
 ## 1.0.89
 - Ampel (grün, gelb, rot) für den Zustand der Box in der Live-Karte; im Twitch-Chat antwortet `!status` mit der Farbe (Streamer und Moderatoren, auf Wunsch auch VIPs).
 
