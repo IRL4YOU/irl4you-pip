@@ -2517,10 +2517,24 @@
   "In diesen Bereichen wird nie verpixelt, zum Beispiel am eigenen Tacho oder an der Halterung des Handys auf dem Motorrad. Rechteck im Bild aufziehen (Maus oder Finger), zum Verschieben in das Rechteck ziehen, zum Ändern der Größe an einer Ecke ziehen. Läuft die Sendung, zeigt das Bild die Vorschau, sonst ein Raster. Kleine Bilder, etwa eine Facecam, werden ohnehin nicht verpixelt. Ist die Facecam aber Teil des Hauptbilds (fest eingeblendet oder selbst als Hauptbild gewählt), bitte ihren Bereich hier eintragen, sonst wird sie mit verpixelt.": "Nothing is pixelated in these areas, for example your own speedometer or the phone mount on the motorcycle. Drag a rectangle in the picture (mouse or finger), drag inside a rectangle to move it, drag a corner to resize it. While streaming, the picture shows the preview, otherwise a grid. Small pictures, such as a facecam, are never pixelated anyway. If the face cam is part of the main picture, though (permanently overlaid or chosen as the main picture itself), please enter its area here, otherwise it will be pixelated too.",
   "Sendung jetzt neu starten": "Restart the stream now",
   "ACHTUNG: Verpixeln ist eingeschaltet, die laufende Sendung ist aber noch nicht verpixelt. Die Sendung muss neu gestartet werden.": "WARNING: pixelation is switched on, but the running stream is not pixelated yet. The stream has to be restarted.",
-  "Chat-Befehl „!temp“ beantworten (Streamer und Moderatoren)": "Answer the chat command “!temp” (streamer and moderators)",
   "auch VIPs": "VIPs too",
   "Box-Temperatur: nicht messbar": "Box temperature: not available",
-  "Box-Temperatur: {1} °C": "Box temperature: {1} °C"
+  "Box-Temperatur: {1} °C": "Box temperature: {1} °C",
+  "(keine Sendung)": "(not streaming)",
+  "Akku {1} {2} %": "Battery {1} {2} %",
+  "Alles in Ordnung": "All fine",
+  "Alles okay": "All OK",
+  "Chat-Befehle „!temp“ und „!status“ beantworten (Streamer und Moderatoren)": "Answer the chat commands “!temp” and “!status” (streamer and moderators)",
+  "HDMI-Kamera ohne Signal": "HDMI camera without signal",
+  "Kamera {1} ohne Signal": "Camera {1} without signal",
+  "Kein Sendeweg verbunden": "No uplink connected",
+  "Meldung": "Alert",
+  "Sendeweg nicht verbunden:": "Uplink not connected:",
+  "Warnung": "Warning",
+  "⚪ Status nicht verfügbar": "⚪ Status not available",
+  "🔴 Es gibt ein Problem": "🔴 There is a problem",
+  "🟡 Es gibt eine Warnung": "🟡 There is a warning",
+  "🟢 Alles okay": "🟢 All OK"
  },
  "patterns": []
 }
