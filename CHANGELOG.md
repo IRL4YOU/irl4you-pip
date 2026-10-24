@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.94
+- Erkennung verbessert.
+
 ## 1.0.93
 - Erkennung verbessert.
 
