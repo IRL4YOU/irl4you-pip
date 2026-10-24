@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.95
+- Ampel: Am Handy steht sie während der Sendung als Punkt in der Kopfleiste.
+
 ## 1.0.94
 - Erkennung verbessert.
 
