@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.93
+- Erkennung verbessert.
+
 ## 1.0.92
 - Ampel: Ein Sendeweg, der nie verbunden war, zählt nicht mehr als Warnung; nur ein ausgefallener.
 
