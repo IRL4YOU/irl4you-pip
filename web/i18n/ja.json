@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "緊急モード: 現在 {1} が配信しています（不足しているカメラは、信号が 60 秒間安定すると復帰します）",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "プライベート範囲のアドレスのみ使えます（10.…、172.16.… から 172.31.…、192.168.…）。",
   "Nur Akku": "バッテリーのみ",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "バッテリー残量のみ読み取る（カメラは HDMI で送信）",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "バッテリー残量のみ読み取る（DJI カメラ、カメラは HDMI で送信）",
   "Nur Akkustand per Bluetooth": "バッテリー残量のみ（Bluetooth 経由）",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "作成後30分以内のみ可能です。その後はエントリが保持されます。",
   "Nur während der Sendung": "配信中のみ",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 問題が発生しています",
   "🟡 Es gibt eine Warnung": "🟡 警告があります",
   "🟢 Alles okay": "🟢 すべて正常",
-  "Kamera unter 24 fps": "カメラが 24 fps 未満"
+  "Kamera unter 24 fps": "カメラが 24 fps 未満",
+  "Anzeigen": "表示",
+  "Verbergen": "非表示",
+  "Stream-ID (leer = entfernen)": "ストリームID(空欄 = 削除)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "ストリームIDは、配信が終了しているときだけ表示できます。",
+  "Erst die Sendung beenden": "先に配信を終了してください"
  },
  "patterns": []
 }

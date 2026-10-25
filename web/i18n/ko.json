@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "비상 모드: {1}만 송출 중입니다(누락된 카메라는 신호가 60초간 안정되면 복귀합니다)",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "사설 대역의 주소만 허용됩니다(10.…, 172.16.…부터 172.31.…, 192.168.…).",
   "Nur Akku": "배터리만",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "배터리 잔량만 읽기(카메라는 HDMI로 송출)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "배터리 잔량만 읽기(DJI 카메라, 카메라는 HDMI로 송출)",
   "Nur Akkustand per Bluetooth": "배터리 잔량만, Bluetooth로",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "생성 후 처음 30분 동안만 가능합니다. 그 후에는 항목이 보존됩니다.",
   "Nur während der Sendung": "스트림 중에만",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 문제가 있습니다",
   "🟡 Es gibt eine Warnung": "🟡 경고가 있습니다",
   "🟢 Alles okay": "🟢 모두 정상",
-  "Kamera unter 24 fps": "카메라 24 fps 미만"
+  "Kamera unter 24 fps": "카메라 24 fps 미만",
+  "Anzeigen": "표시",
+  "Verbergen": "숨기기",
+  "Stream-ID (leer = entfernen)": "스트림 ID (비워 두면 삭제)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "스트림 ID는 송출이 끝난 상태에서만 표시할 수 있습니다.",
+  "Erst die Sendung beenden": "먼저 송출을 종료하세요"
  },
  "patterns": []
 }
