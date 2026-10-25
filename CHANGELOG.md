@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.6
+- Übersetzungen ergänzt.
+
 ## 1.1.5
 - Erkennung verbessert.
 
