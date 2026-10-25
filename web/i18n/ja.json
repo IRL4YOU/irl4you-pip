@@ -2525,7 +2525,22 @@
   "Verbergen": "非表示",
   "Stream-ID (leer = entfernen)": "ストリームID(空欄 = 削除)",
   "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "ストリームIDは、配信が終了しているときだけ表示できます。",
-  "Erst die Sendung beenden": "先に配信を終了してください"
+  "Erst die Sendung beenden": "先に配信を終了してください",
+  "Erinnerung in Minuten": "リマインダー(分)",
+  "Erinnerung nach": "リマインダー: 経過後",
+  "Erinnerung: Zahl von {1} bis {2} Minuten": "リマインダー: {1}~{2}分の数値",
+  "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecamがメイン映像です: ぼかしは行われません",
+  "Meldung ({Mikro} und {Prozent} werden ersetzt)": "メッセージ({Mikro} と {Prozent} は置き換えられます)",
+  "Mikro-Akku": "マイクのバッテリー",
+  "Mikro-Akku (DJI) melden ab": "マイクのバッテリー(DJI)を通知する残量",
+  "Mikro-Akku bei {1} %, bitte wechseln: {2}": "マイクのバッテリーが {1} %です。交換してください: {2}",
+  "Mikro-Akku in Prozent": "マイクのバッテリー(%)",
+  "Mikro-Akku: Zahl von {1} bis {2} Prozent": "マイクのバッテリー: {1}~{2} %の数値",
+  "Mikrofone:": "マイク:",
+  "Mikrofone: noch keins gelesen (gekoppelte DJI-Mikrofone werden alle 2 Minuten abgefragt).": "マイク: まだ読み取られていません(ペアリング済みのDJIマイクは2分ごとに照会されます)。",
+  "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "ヒント: 複数のBoxを使う場合は、各Hotspotに別々の名前を付けてください。同じ名前のネットワークがあるとカメラが取り違え、どれにも接続しなくなります。",
+  "Warnung: {1} liefert nur {2}": "警告: {1} は {2} しか出力していません",
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: デバッグメッセージ 宛先 0x{2} ID 0x{3} タイプ 0x{4}({5} バイト): {6}"
  },
  "patterns": []
 }
