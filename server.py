@@ -1050,6 +1050,13 @@ class SrtlaStore:
                                  "has_streamid": bool(s.get("streamid"))} for s in self.data["servers"]],
                     "selected": self.data["selected"], "settings": dict(self.data["settings"])}
 
+    def streamid(self, sid):
+        with self.lock:
+            cur = next((s for s in self.data["servers"] if s["id"] == sid), None)
+            if not cur:
+                raise KeyError(sid)
+            return cur.get("streamid", "")
+
     def add(self, req):
         item = self.check(req)
         with self.lock:
@@ -7468,6 +7475,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/srtla/settings":
                 self.srtla.set_settings(d, [o["iface"] for o in iface_ips()] or ["eth0", "eth1"])
                 return self.reply(200, {"ok": True})
+            m2s = re.match(r"^/api/srtla/([0-9a-f]{8})/streamid$", path)
+            if m2s:
+                if self.send._active():
+                    return self.reply(409, {"error": "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist."})
+                try:
+                    return self.reply(200, {"streamid": self.srtla.streamid(m2s.group(1))})
+                except KeyError:
+                    return self.reply(404, {"error": "nicht gefunden"})
             m2 = re.match(r"^/api/srtla/([0-9a-f]{8})$", path)
             if m2:
                 try:
