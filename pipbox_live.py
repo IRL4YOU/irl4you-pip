@@ -575,6 +575,19 @@ def read_fps(path=LIVE_STATS, now=None):
     return out
 
 
+def read_rates(path=LIVE_STATS, now=None):
+    try:
+        if (now if now is not None else time.time()) - os.stat(path).st_mtime > STATS_MAX_AGE_S:
+            return {}
+        with open(path) as f:
+            text = f.readline()
+    except OSError:
+        return {}
+    dmx = {int(m.group(1)): float(m.group(2)) for m in re.finditer(r" dmx_f(\d)=(\d+(?:\.\d+)?)/", text)}
+    dec = {int(m.group(1)): float(m.group(2)) for m in re.finditer(r" dec_f(\d)=(\d+(?:\.\d+)?)/", text)}
+    return {i: (round(v, 1), round(dec.get(i, 0.0), 1)) for i, v in dmx.items() if v > 0}
+
+
 def parse_rtmp_stats(xml):
     out = {}
     for m in re.finditer(r"<stream>.*?</stream>", xml, re.S):

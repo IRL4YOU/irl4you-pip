@@ -800,7 +800,41 @@ class UplinkMemory:
         return sorted(n for n in self.up if (ups.get(n) or {}).get("state") == "aus")
 
 
-def status_light(m, live, limits=None, battery_limit=10, memory=None):
+class FpsMemory:
+    FPS_LOW = 24.0
+    FPS_LOW_HOLD_S = 15.0
+    GAP_S = 7.0
+
+    def __init__(self):
+        self.since = {}
+
+    def reset(self):
+        self.since = {}
+
+    def low(self, rates, now=None):
+        now = time.time() if now is None else now
+        out = {}
+        for key in list(self.since):
+            if key not in rates:
+                del self.since[key]
+        for key, (dmx, dec) in rates.items():
+            if dmx < self.FPS_LOW:
+                kind, fps = "camera", dmx
+            elif 0 < dec < self.FPS_LOW:
+                kind, fps = "box", dec
+            else:
+                self.since.pop(key, None)
+                continue
+            first, last, was = self.since.get(key, (now, now, kind))
+            if now - last > self.GAP_S or was != kind:
+                first = now
+            self.since[key] = (first, now, kind)
+            if now - first >= self.FPS_LOW_HOLD_S:
+                out[key] = (kind, fps)
+        return out
+
+
+def status_light(m, live, limits=None, battery_limit=10, memory=None, fps_memory=None):
     reasons = []
 
     def add(level, text):
@@ -818,6 +852,15 @@ def status_light(m, live, limits=None, battery_limit=10, memory=None):
         b = c.get("battery")
         if isinstance(b, int) and not isinstance(b, bool) and b <= battery_limit and c.get("charging") is not True and not c.get("parked") and (c.get("battery_age") is None or c["battery_age"] <= 300):
             add("warn", "Akku %s %d %%" % (c.get("name") or c.get("key") or "Kamera", b))
+    if fps_memory is not None:
+        if not live:
+            fps_memory.reset()
+        else:
+            cams = {c.get("key"): c for c in m.get("cameras") or []}
+            rates = {c["key"]: tuple(c["rates"]) for c in cams.values() if c.get("key") and isinstance(c.get("rates"), (list, tuple)) and len(c["rates"]) == 2}
+            for key, (kind, fps) in sorted(fps_memory.low(rates).items()):
+                name = cams[key].get("name") or key
+                add("warn", "%s: nur %d fps" % (name, round(fps)) if kind == "camera" else "%s: Box dekodiert nur %d fps" % (name, round(fps)))
     ups = m.get("uplinks") or {}
     if memory is not None:
         if not live:
@@ -2228,6 +2271,18 @@ class SendControl:
             if time.time() - float(d.get("time", 0)) > 15:
                 return {}
             return {k: float(v) for k, v in ((d.get("failover") or {}).get("fps") or {}).items() if isinstance(k, str) and isinstance(v, (int, float)) and v > 0}
+        except (TypeError, ValueError):
+            return {}
+
+    def measured_rates(self):
+        if self.demo:
+            return {}
+        d = self._detail()
+        try:
+            if time.time() - float(d.get("time", 0)) > 15:
+                return {}
+            return {k: (float(v[0]), float(v[1])) for k, v in ((d.get("failover") or {}).get("rates") or {}).items()
+                    if isinstance(k, str) and isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(x, (int, float)) for x in v)}
         except (TypeError, ValueError):
             return {}
 
@@ -7025,6 +7080,10 @@ class Handler(BaseHTTPRequestHandler):
             p = pic.get(c["key"]) if pic else None
             c["pic"], c["pic_wait"] = (p[0], p[1]) if p else (None, 0)
         measured = self.send.measured_fps()
+        rates = self.send.measured_rates()
+        for c in m["cameras"]:
+            if c["key"] in rates:
+                c["rates"] = list(rates[c["key"]])
         if self.fpsprobe:
             self.fpsprobe.keep({c["key"] for c in m["cameras"] if c.get("state") == "live"})
         for c in m["cameras"]:
@@ -7040,7 +7099,7 @@ class Handler(BaseHTTPRequestHandler):
                     if p:
                         c["fps"], c["fps_measured"] = p, True
         try:
-            m["light"] = status_light(m, self.twitch._live(), self.sysalerts.data, self.twitch.store.data.get("threshold", 10), self.uplinkmem)
+            m["light"] = status_light(m, self.twitch._live(), self.sysalerts.data, self.twitch.store.data.get("threshold", 10), self.uplinkmem, self.fpsmem)
         except Exception:
             m["light"] = None
         return m
@@ -7660,6 +7719,7 @@ def main():
         threading.Thread(target=Handler.twitchbot.keep, daemon=True).start()
     Handler.chatreader = TwitchReader(Handler.twitch.store, demo=args.demo, paths=Handler.chatpaths)
     Handler.uplinkmem = UplinkMemory()
+    Handler.fpsmem = FpsMemory()
     Handler.sysalerts.light_fn = Handler.light_now
     Handler.sysalerts.reader = Handler.chatreader
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
