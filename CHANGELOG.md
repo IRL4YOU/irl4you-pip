@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.0.98
+- Ampel: Die Warnung für zu wenige Kamerabilder lässt sich ausschalten.
+- Übersetzungen ergänzt.
+
 ## 1.0.97
 - Ampel: Warnung, wenn eine Kamera zu wenige Bilder liefert.
 
