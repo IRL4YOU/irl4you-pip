@@ -154,6 +154,13 @@ static GstFlowReturn pt_transform_ip(GstBaseTransform *t, GstBuffer *buf) {
   return GST_FLOW_OK;
 }
 
+static GstBaseTransformClass *pt_parent_class;
+static gboolean pt_query(GstBaseTransform *t, GstPadDirection dir, GstQuery *q) {
+  if (dir == GST_PAD_SINK && GST_QUERY_TYPE(q) == GST_QUERY_ALLOCATION)
+    return TRUE;
+  return pt_parent_class->query(t, dir, q);
+}
+
 static void pb_pixel_tap_class_init(PbPixelTapClass *klass) {
   GObjectClass *oc = G_OBJECT_CLASS(klass);
   GstElementClass *ec = GST_ELEMENT_CLASS(klass);
@@ -169,6 +176,8 @@ static void pb_pixel_tap_class_init(PbPixelTapClass *klass) {
   bc->set_caps = pt_set_caps;
   bc->transform_ip = pt_transform_ip;
   bc->transform_ip_on_passthrough = TRUE;
+  pt_parent_class = g_type_class_peek_parent(klass);
+  bc->query = pt_query;
 }
 static void pb_pixel_tap_init(PbPixelTap *s) {
   s->have_info = FALSE; s->shm = g_strdup("/dev/shm/pbpixel-tap"); s->interval_ms = 100; s->fd = -1; s->map = NULL; s->map_size = 0; s->last_pts = -1; s->count = 0;
