@@ -2543,6 +2543,10 @@
   "Grün": "Green",
   "Systemwarnung": "System warning",
   "nicht messbar": "not available",
+  "(nicht von {1}:dafür „Netze suchen“ drücken)": "(not from {1}: press “Search networks” for that)",
+  "Kein Sendeweg mehr verbunden": "No uplink connected any more",
+  "Sendeweg ausgefallen:": "Uplink failed:",
+  "Kamera unter 24 fps": "Camera below 24 fps",
   "{1}: nur {2} fps": "{1}: only {2} fps",
   "{1}: Box dekodiert nur {2} fps": "{1}: box decodes only {2} fps"
  },
