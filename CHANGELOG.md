@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.3
+- Die Facecam wird nie verpixelt.
+
 ## 1.1.2
 - Defekte Kameras können jetzt in den Twitch-Chat gemeldet werden.
 
