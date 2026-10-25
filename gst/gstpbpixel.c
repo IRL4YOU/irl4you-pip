@@ -263,6 +263,19 @@ static gboolean pm_set_caps(GstBaseTransform *t, GstCaps *in, GstCaps *out) {
   return TRUE;
 }
 
+static gint pm_cell_size(gint shortside, gint cells) {
+  static const gint stufen[] = {4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256};
+  gint roh = (shortside + cells - 1) / cells;
+  if (roh < 4) roh = 4;
+  gint best = stufen[0];
+  for (guint i = 0; i < G_N_ELEMENTS(stufen); i++) {
+    const gint d = stufen[i] > roh ? stufen[i] - roh : roh - stufen[i];
+    const gint db = best > roh ? best - roh : roh - best;
+    if (d < db) best = stufen[i];
+  }
+  return best;
+}
+
 static void pm_mosaic(guint8 *py, gint sy, guint8 *puv, gint suv, gint fw, gint fh, gfloat fx0, gfloat fy0, gfloat fx1, gfloat fy1, gint cells) {
   gint x0 = (gint) floorf(fx0) & ~1, y0 = (gint) floorf(fy0) & ~1, x1 = ((gint) ceilf(fx1) + 1) & ~1, y1 = ((gint) ceilf(fy1) + 1) & ~1;
   if (x0 < 0) x0 = 0;
@@ -284,13 +297,16 @@ static void pm_mosaic(guint8 *py, gint sy, guint8 *puv, gint suv, gint fw, gint 
   for (gint y = 0; y < bh; y++) memcpy(scr + (gsize) y * bw, py + (gsize) (y0 + y) * sy + x0, (gsize) bw);
   for (gint y = 0; y < bh / 2; y++) memcpy(scu + (gsize) y * bw, puv + (gsize) (y0 / 2 + y) * suv + x0, (gsize) bw);
   const gint shortside = bw < bh ? bw : bh;
-  gint cs = (shortside + cells - 1) / cells;
-  if (cs < 2) cs = 2;
-  cs = (cs + 1) & ~1;
-  for (gint cy = y0; cy < y1; cy += cs) {
-    const gint ch = (cy + cs > y1) ? y1 - cy : cs;
-    for (gint cx = x0; cx < x1; cx += cs) {
-      const gint cw = (cx + cs > x1) ? x1 - cx : cs;
+  const gint cs = pm_cell_size(shortside, cells);
+
+  for (gint gy = (y0 / cs) * cs; gy < y1; gy += cs) {
+    const gint cy = gy > y0 ? gy : y0;
+    const gint ch = ((gy + cs < y1) ? gy + cs : y1) - cy;
+    if (ch <= 0) continue;
+    for (gint gx = (x0 / cs) * cs; gx < x1; gx += cs) {
+      const gint cx = gx > x0 ? gx : x0;
+      const gint cw = ((gx + cs < x1) ? gx + cs : x1) - cx;
+      if (cw <= 0) continue;
       guint32 sum = 0;
       for (gint y = 0; y < ch; y++) {
         const guint8 *row = scr + (gsize) (cy - y0 + y) * bw + (cx - x0);
