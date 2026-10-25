@@ -2548,14 +2548,13 @@
   "Sendeweg ausgefallen:": "Uplink failed:",
   "Kamera unter 24 fps": "Camera below 24 fps",
   "{1}: nur {2} fps": "{1}: only {2} fps",
-  "{1}: Box dekodiert nur {2} fps": "{1}: box decodes only {2} fps",
   "Anzeigen": "Show",
   "Verbergen": "Hide",
   "Stream-ID (leer = entfernen)": "Stream ID (empty = remove)",
   "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "The stream ID can only be shown when the stream is stopped.",
   "Erst die Sendung beenden": "Stop the stream first",
   "Warnung: {1} liefert nur {2}": "Warning: {1} delivers only {2}",
-  "(Dekoder der Box)": "(box decoder)"
+  "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam is the main picture: nothing is pixelated"
  },
  "patterns": []
 }
