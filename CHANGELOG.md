@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.99
+- Datenschutz: Hinweis zu „Alle Kameras immer bereit“ richtiggestellt.
+
 ## 1.0.98
 - Ampel: Die Warnung für zu wenige Kamerabilder lässt sich ausschalten.
 - Übersetzungen ergänzt.
