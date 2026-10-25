@@ -1448,7 +1448,7 @@
   "Nur Abonnenten aus": "Subscribers-only off",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "Only addresses from the private ranges are allowed (10.…, 172.16.… to 172.31.…, 192.168.…).",
   "Nur Akku": "Battery only",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "Read battery level only (camera sends via HDMI)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "Read battery level only (DJI cameras, camera sends via HDMI)",
   "Nur Akkustand per Bluetooth": "Battery level only, via Bluetooth",
   "Nur Emotes an": "Emote-only on",
   "Nur Emotes aus": "Emote-only off",
@@ -2548,7 +2548,12 @@
   "Sendeweg ausgefallen:": "Uplink failed:",
   "Kamera unter 24 fps": "Camera below 24 fps",
   "{1}: nur {2} fps": "{1}: only {2} fps",
-  "{1}: Box dekodiert nur {2} fps": "{1}: box decodes only {2} fps"
+  "{1}: Box dekodiert nur {2} fps": "{1}: box decodes only {2} fps",
+  "Anzeigen": "Show",
+  "Verbergen": "Hide",
+  "Stream-ID (leer = entfernen)": "Stream ID (empty = remove)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "The stream ID can only be shown when the stream is stopped.",
+  "Erst die Sendung beenden": "Stop the stream first"
  },
  "patterns": []
 }
