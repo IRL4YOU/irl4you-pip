@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "โหมดฉุกเฉิน: กำลังส่งสัญญาณจาก {1} (กล้องที่ขาดหายจะกลับมาหลังมีสัญญาณเสถียร 60 s)",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "อนุญาตเฉพาะที่อยู่ในช่วงส่วนตัว (10.… 172.16.… ถึง 172.31.… 192.168.…)",
   "Nur Akku": "แบตเตอรี่อย่างเดียว",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "อ่านเฉพาะระดับแบตเตอรี่ (กล้องส่งผ่าน HDMI)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "อ่านเฉพาะระดับแบตเตอรี่ (กล้อง DJI, กล้องส่งผ่าน HDMI)",
   "Nur Akkustand per Bluetooth": "เฉพาะระดับแบตเตอรี่ ผ่านบลูทูธ",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "ทำได้เฉพาะ 30 นาทีแรกหลังสร้าง: หลังจากนั้นรายการจะถูกเก็บไว้",
   "Nur während der Sendung": "เฉพาะขณะสตรีม",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 มีปัญหา",
   "🟡 Es gibt eine Warnung": "🟡 มีคำเตือน",
   "🟢 Alles okay": "🟢 ทุกอย่างโอเค",
-  "Kamera unter 24 fps": "กล้องต่ำกว่า 24 fps"
+  "Kamera unter 24 fps": "กล้องต่ำกว่า 24 fps",
+  "Anzeigen": "แสดง",
+  "Verbergen": "ซ่อน",
+  "Stream-ID (leer = entfernen)": "Stream ID (เว้นว่าง = ลบ)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "แสดง Stream ID ได้เฉพาะเมื่อหยุดสตรีมแล้วเท่านั้น",
+  "Erst die Sendung beenden": "โปรดหยุดสตรีมก่อน"
  },
  "patterns": []
 }
