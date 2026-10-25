@@ -492,7 +492,9 @@ class Layout:
         return order_for_swap(lines, old_caps, alpha)
 
 
-    def skip_zones(self, c, roles, dims, hide):
+    def skip_zones(self, c, roles, dims, hide, facecam_main=False):
+        if facecam_main:
+            return [[0.0, 0.0, 1.0, 1.0]]
         geoms = {k: small_geometry(c, k) for k in (1, 2, 3)}
         by_pos = {v: s for s, v in roles.items()}
         out = []
@@ -899,6 +901,7 @@ class LiveController:
             self.main_key, self.last_line = main, line
         nums = [int(x) for x in line.split()]
         roles = {}
+        late_zones = None
         if main in slot_of and main in self.alive:
             roles[slot_of[main]] = 0
         for k in (1, 2, 3):
@@ -913,12 +916,20 @@ class LiveController:
             cl = self.layout.commands(self.cfg, slot_key, roles, dims, audio_ok, hide, apos, mute, self.effective_delays(main), getattr(self, "shift_ms", None))
             sel = [x for x in cl if x.startswith("select asel ")]
             lines = sel + lines + [x for x in cl if not x.startswith("select asel ")]
-            self._write_skip(self.layout.skip_zones(self.cfg, roles, dims, hide))
+            fc_slot = slot_of.get(self.cfg.get("facecam") or "")
+            fc_main = fc_slot is not None and roles.get(fc_slot) == 0
+            zones = self.layout.skip_zones(self.cfg, roles, dims, hide, fc_main)
+            if fc_main:
+                late_zones = zones
+            else:
+                self._write_skip(zones)
         eff_changed = apos != getattr(self, "_eff_apos", None)
         self._eff_apos = apos
         if lines and os.environ.get("PIPBOX_LIVE_DEBUG"):
             self.log("live: " + " | ".join(lines)[:1500])
         ok = self.send_lines(lines)
+        if late_zones is not None and ok:
+            self._write_skip(late_zones)
         if not ok:
             self.layout.reset()
             self.reassign_lines = reassign + self.reassign_lines
