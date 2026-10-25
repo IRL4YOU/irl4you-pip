@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.2
+- Defekte Kameras können jetzt in den Twitch-Chat gemeldet werden.
+
 ## 1.1.1
 - Verbesserungen und Sprachdateien auf den neuen Stand gebracht.
 
