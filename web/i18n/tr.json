@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "Acil durum modu: şu kameralar yayın yapıyor: {1} (eksik kameralar 60 s kararlı sinyalden sonra geri gelir)",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "Yalnızca özel aralıklardaki adreslere izin verilir (10.…, 172.16.… ile 172.31.… arası, 192.168.…).",
   "Nur Akku": "Yalnızca pil",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "Yalnızca pil seviyesini oku (kamera HDMI ile yayın yapıyor)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "Yalnızca pil seviyesini oku (DJI kameralar, kamera HDMI ile yayın yapıyor)",
   "Nur Akkustand per Bluetooth": "Yalnızca pil seviyesi, Bluetooth ile",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "Yalnızca oluşturulduktan sonraki ilk 30 dakika içinde mümkündür: sonrasında kayıt saklanır.",
   "Nur während der Sendung": "Yalnızca yayın sırasında",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 Bir sorun var",
   "🟡 Es gibt eine Warnung": "🟡 Bir uyarı var",
   "🟢 Alles okay": "🟢 Her şey tamam",
-  "Kamera unter 24 fps": "Kamera 24 fps altında"
+  "Kamera unter 24 fps": "Kamera 24 fps altında",
+  "Anzeigen": "Göster",
+  "Verbergen": "Gizle",
+  "Stream-ID (leer = entfernen)": "Stream ID (boş = kaldır)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "Stream ID yalnızca yayın durdurulduğunda gösterilebilir.",
+  "Erst die Sendung beenden": "Önce yayını durdurun"
  },
  "patterns": []
 }
