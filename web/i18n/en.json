@@ -2553,7 +2553,9 @@
   "Verbergen": "Hide",
   "Stream-ID (leer = entfernen)": "Stream ID (empty = remove)",
   "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "The stream ID can only be shown when the stream is stopped.",
-  "Erst die Sendung beenden": "Stop the stream first"
+  "Erst die Sendung beenden": "Stop the stream first",
+  "Warnung: {1} liefert nur {2}": "Warning: {1} delivers only {2}",
+  "(Dekoder der Box)": "(box decoder)"
  },
  "patterns": []
 }
