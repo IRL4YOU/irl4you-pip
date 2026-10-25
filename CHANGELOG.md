@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.1
+- Verbesserungen und Sprachdateien auf den neuen Stand gebracht.
+
 ## 1.1.0
 - Hinweise und Sprachdateien auf den neuen Stand gebracht.
 
