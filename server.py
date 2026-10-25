@@ -853,7 +853,7 @@ def status_light(m, live, limits=None, battery_limit=10, memory=None, fps_memory
         if isinstance(b, int) and not isinstance(b, bool) and b <= battery_limit and c.get("charging") is not True and not c.get("parked") and (c.get("battery_age") is None or c["battery_age"] <= 300):
             add("warn", "Akku %s %d %%" % (c.get("name") or c.get("key") or "Kamera", b))
     if fps_memory is not None:
-        if not live:
+        if (limits or {}).get("fps_on") is False or not live:
             fps_memory.reset()
         else:
             cams = {c.get("key"): c for c in m.get("cameras") or []}

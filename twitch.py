@@ -2556,7 +2556,7 @@ class SysAlerts:
     DEFAULT_TEMP = "Box-Temperatur: {Wert}"
     DEFAULT_STATUS = {"ok": "🟢 Alles okay", "warn": "🟡 Es gibt eine Warnung", "crit": "🔴 Es gibt ein Problem"}
     DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK, "msg_temp": DEFAULT_TEMP, "msg_st_ok": DEFAULT_STATUS["ok"],
-                "msg_st_warn": DEFAULT_STATUS["warn"], "msg_st_crit": DEFAULT_STATUS["crit"], "cmd_temp": False, "cmd_status": False, "cmd_vip": False,
+                "msg_st_warn": DEFAULT_STATUS["warn"], "msg_st_crit": DEFAULT_STATUS["crit"], "cmd_temp": False, "cmd_status": False, "cmd_vip": False, "fps_on": True,
                 **{k: {"on": True, "limit": dflt} for k, _n, _u, _h, _r, dflt in METRICS}}
     POLL_S = 10
     SUSTAIN = 3
@@ -2610,7 +2610,7 @@ class SysAlerts:
             except ValueError:
                 if strict:
                     raise
-        for key in ("enabled", "recover", "only_live", "cmd_temp", "cmd_status", "cmd_vip"):
+        for key in ("enabled", "recover", "only_live", "cmd_temp", "cmd_status", "cmd_vip", "fps_on"):
             if key in req:
                 if isinstance(req[key], bool):
                     new[key] = req[key]
