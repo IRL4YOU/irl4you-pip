@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "Tryb awaryjny: nadają {1} (brakujące kamery wracają po 60 s stabilnego sygnału)",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "Dozwolone są tylko adresy z zakresów prywatnych (10.…, 172.16.… do 172.31.…, 192.168.…).",
   "Nur Akku": "Tylko akumulator",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "Odczytuj tylko poziom akumulatora (kamera nadaje przez HDMI)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "Odczytuj tylko poziom akumulatora (kamery DJI, kamera nadaje przez HDMI)",
   "Nur Akkustand per Bluetooth": "Tylko poziom akumulatora, przez Bluetooth",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "Możliwe tylko w pierwszych 30 minutach po utworzeniu: potem wpis zostaje zachowany.",
   "Nur während der Sendung": "Tylko podczas transmisji",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 Wystąpił problem",
   "🟡 Es gibt eine Warnung": "🟡 Jest ostrzeżenie",
   "🟢 Alles okay": "🟢 Wszystko OK",
-  "Kamera unter 24 fps": "Kamera poniżej 24 fps"
+  "Kamera unter 24 fps": "Kamera poniżej 24 fps",
+  "Anzeigen": "Pokaż",
+  "Verbergen": "Ukryj",
+  "Stream-ID (leer = entfernen)": "ID streamu (puste = usuń)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "ID streamu można pokazać tylko wtedy, gdy transmisja jest zakończona.",
+  "Erst die Sendung beenden": "Najpierw zakończ transmisję"
  },
  "patterns": []
 }
