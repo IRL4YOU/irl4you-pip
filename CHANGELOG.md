@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.0
+- Hinweise und Sprachdateien auf den neuen Stand gebracht.
+
 ## 1.0.99
 - Datenschutz: Hinweis zu „Alle Kameras immer bereit“ richtiggestellt.
 
