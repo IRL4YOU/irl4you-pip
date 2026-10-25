@@ -860,7 +860,7 @@ def status_light(m, live, limits=None, battery_limit=10, memory=None, fps_memory
             rates = {c["key"]: tuple(c["rates"]) for c in cams.values() if c.get("key") and isinstance(c.get("rates"), (list, tuple)) and len(c["rates"]) == 2}
             for key, (kind, fps) in sorted(fps_memory.low(rates).items()):
                 name = cams[key].get("name") or key
-                add("warn", "%s: nur %d fps" % (name, round(fps)) if kind == "camera" else "%s: Box dekodiert nur %d fps" % (name, round(fps)), "fps")
+                add("warn", "%s: nur %d fps" % (name, round(fps)), "fps")
     ups = m.get("uplinks") or {}
     if memory is not None:
         if not live:
@@ -2354,6 +2354,8 @@ class SendControl:
                "since": d.get("since"), "restarts": d.get("restarts"), "delay_live": bool(d.get("delay_live")), "delay_live_pips": bool(d.get("delay_live_pips")),
                "server": sel and {"name": sel["name"], "host": sel["host"], "port": sel["port"]}}
         out["failover"] = d.get("failover") if active else None
+        fc, fmain = self.pipeline.cfg.get("facecam"), ((d.get("failover") or {}).get("main") if active else None)
+        out["facecam_main"] = bool(fc and fmain == fc and PipelineStore.datenschutz())
         out["view_live"], out["audio_live"], out["view"] = self.view_live(), self.audio_live(), self.view_state()
         out["footer"] = self.footer()
         sw = d.get("swap") if active else None
