@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "Modalità di emergenza: stanno trasmettendo {1} (le videocamere mancanti tornano dopo 60 s di segnale stabile)",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "Sono ammessi solo indirizzi degli intervalli privati (10.…, da 172.16.… a 172.31.…, 192.168.…).",
   "Nur Akku": "Solo batteria",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "Leggi solo il livello della batteria (la fotocamera trasmette via HDMI)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "Leggi solo il livello della batteria (videocamere DJI, la fotocamera trasmette via HDMI)",
   "Nur Akkustand per Bluetooth": "Solo livello della batteria, via Bluetooth",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "Possibile solo nei primi 30 minuti dopo la creazione: poi la voce viene conservata.",
   "Nur während der Sendung": "Solo durante la trasmissione",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 C'è un problema",
   "🟡 Es gibt eine Warnung": "🟡 C'è un'allerta",
   "🟢 Alles okay": "🟢 Tutto ok",
-  "Kamera unter 24 fps": "Videocamera sotto i 24 fps"
+  "Kamera unter 24 fps": "Videocamera sotto i 24 fps",
+  "Anzeigen": "Mostra",
+  "Verbergen": "Nascondi",
+  "Stream-ID (leer = entfernen)": "ID stream (vuoto = rimuovere)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "L'ID stream può essere mostrato solo quando la trasmissione è terminata.",
+  "Erst die Sendung beenden": "Prima termina la trasmissione"
  },
  "patterns": []
 }

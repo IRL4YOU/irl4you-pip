@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "Mode secours : diffusion par {1} (les caméras manquantes reviennent après 60 s de signal stable)",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "Seules les adresses des plages privées sont autorisées (10.…, 172.16.… à 172.31.…, 192.168.…).",
   "Nur Akku": "Batterie seule",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "Lire uniquement le niveau de batterie (la caméra émet en HDMI)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "Lire uniquement le niveau de batterie (caméras DJI, la caméra émet en HDMI)",
   "Nur Akkustand per Bluetooth": "Niveau de batterie seul, via Bluetooth",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "Possible seulement pendant les 30 premières minutes après la création : ensuite l’entrée est conservée.",
   "Nur während der Sendung": "Uniquement pendant la diffusion",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 Il y a un problème",
   "🟡 Es gibt eine Warnung": "🟡 Il y a un avertissement",
   "🟢 Alles okay": "🟢 Tout est OK",
-  "Kamera unter 24 fps": "Caméra sous 24 ips"
+  "Kamera unter 24 fps": "Caméra sous 24 ips",
+  "Anzeigen": "Afficher",
+  "Verbergen": "Masquer",
+  "Stream-ID (leer = entfernen)": "ID du stream (vide = supprimer)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "L’ID du stream ne peut être affiché que lorsque la diffusion est arrêtée.",
+  "Erst die Sendung beenden": "Arrêtez d’abord la diffusion"
  },
  "patterns": []
 }
