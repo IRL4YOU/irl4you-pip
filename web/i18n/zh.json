@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "应急模式：当前仅 {1} 在发送（缺失的摄像机在信号稳定 60 秒后恢复）",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "只允许使用私有范围的地址（10.…、172.16.… 到 172.31.…、192.168.…）。",
   "Nur Akku": "仅电池",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "仅读取电量（相机通过 HDMI 输出）",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "仅读取电量（DJI 相机，相机通过 HDMI 输出）",
   "Nur Akkustand per Bluetooth": "仅电量，通过蓝牙",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "仅在创建后的前 30 分钟内可行：之后该条目将被保留。",
   "Nur während der Sendung": "仅在推流期间",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 出现问题",
   "🟡 Es gibt eine Warnung": "🟡 有警告",
   "🟢 Alles okay": "🟢 一切正常",
-  "Kamera unter 24 fps": "摄像机低于 24 fps"
+  "Kamera unter 24 fps": "摄像机低于 24 fps",
+  "Anzeigen": "显示",
+  "Verbergen": "隐藏",
+  "Stream-ID (leer = entfernen)": "Stream ID（留空 = 删除）",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "仅在直播停止后才能显示 Stream ID。",
+  "Erst die Sendung beenden": "请先停止直播"
  },
  "patterns": []
 }
