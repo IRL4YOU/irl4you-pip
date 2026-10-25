@@ -1205,7 +1205,7 @@
   "Notbetrieb: es senden {1} (fehlende Kameras kommen nach 60 s stabilem Signal zurück)": "Noodmodus: alleen {1} streamen (ontbrekende camera's komen terug na 60 s stabiel signaal)",
   "Nur Adressen aus den privaten Bereichen sind erlaubt (10.…, 172.16.… bis 172.31.…, 192.168.…).": "Alleen adressen uit de privébereiken zijn toegestaan (10.…, 172.16.… tot 172.31.…, 192.168.…).",
   "Nur Akku": "Alleen accu",
-  "Nur Akkustand lesen (Kamera sendet per HDMI)": "Alleen accuniveau lezen (camera zendt via HDMI uit)",
+  "Nur Akkustand lesen (DJI-Kameras, Kamera sendet per HDMI)": "Alleen accuniveau lezen (DJI-camera's, camera zendt via HDMI uit)",
   "Nur Akkustand per Bluetooth": "Alleen accuniveau, via Bluetooth",
   "Nur in den ersten 30 Minuten nach dem Anlegen möglich: Danach bleibt der Eintrag erhalten.": "Alleen mogelijk in de eerste 30 minuten na het aanmaken: daarna blijft het item bewaard.",
   "Nur während der Sendung": "Alleen tijdens de stream",
@@ -2520,7 +2520,12 @@
   "🔴 Es gibt ein Problem": "🔴 Er is een probleem",
   "🟡 Es gibt eine Warnung": "🟡 Er is een waarschuwing",
   "🟢 Alles okay": "🟢 Alles oké",
-  "Kamera unter 24 fps": "Camera onder 24 fps"
+  "Kamera unter 24 fps": "Camera onder 24 fps",
+  "Anzeigen": "Tonen",
+  "Verbergen": "Verbergen",
+  "Stream-ID (leer = entfernen)": "Stream-ID (leeg = verwijderen)",
+  "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "De stream-ID kan alleen worden getoond als de stream is gestopt.",
+  "Erst die Sendung beenden": "Stop eerst de stream"
  },
  "patterns": []
 }
