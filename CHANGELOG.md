@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.4
+- Hinweis, wenn die Facecam das Hauptbild ist.
+
 ## 1.1.3
 - Die Facecam wird nie verpixelt.
 
