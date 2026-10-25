@@ -2554,7 +2554,8 @@
   "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "The stream ID can only be shown when the stream is stopped.",
   "Erst die Sendung beenden": "Stop the stream first",
   "Warnung: {1} liefert nur {2}": "Warning: {1} delivers only {2}",
-  "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam is the main picture: nothing is pixelated"
+  "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam is the main picture: nothing is pixelated",
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: debug message target 0x{2} ID 0x{3} type 0x{4} ({5} bytes): {6}"
  },
  "patterns": []
 }
