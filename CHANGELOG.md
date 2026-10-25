@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.5
+- Erkennung verbessert.
+
 ## 1.1.4
 - Hinweis, wenn die Facecam das Hauptbild ist.
 
