@@ -837,8 +837,8 @@ class FpsMemory:
 def status_light(m, live, limits=None, battery_limit=10, memory=None, fps_memory=None):
     reasons = []
 
-    def add(level, text):
-        reasons.append({"level": level, "text": text})
+    def add(level, text, kind=None):
+        reasons.append({"level": level, "text": text} if kind is None else {"level": level, "text": text, "kind": kind})
     alerts = [a for a in (m.get("alerts") or []) if isinstance(a, dict)]
     for a in alerts:
         add("crit" if a.get("level") == "crit" else "warn", _alert_text(a))
@@ -860,7 +860,7 @@ def status_light(m, live, limits=None, battery_limit=10, memory=None, fps_memory
             rates = {c["key"]: tuple(c["rates"]) for c in cams.values() if c.get("key") and isinstance(c.get("rates"), (list, tuple)) and len(c["rates"]) == 2}
             for key, (kind, fps) in sorted(fps_memory.low(rates).items()):
                 name = cams[key].get("name") or key
-                add("warn", "%s: nur %d fps" % (name, round(fps)) if kind == "camera" else "%s: Box dekodiert nur %d fps" % (name, round(fps)))
+                add("warn", "%s: nur %d fps" % (name, round(fps)) if kind == "camera" else "%s: Box dekodiert nur %d fps" % (name, round(fps)), "fps")
     ups = m.get("uplinks") or {}
     if memory is not None:
         if not live:
@@ -7736,6 +7736,14 @@ def main():
     Handler.uplinkmem = UplinkMemory()
     Handler.fpsmem = FpsMemory()
     Handler.sysalerts.light_fn = Handler.light_now
+
+    def fps_status():
+        rates = Handler.send.measured_rates()
+        if not rates:
+            return {}
+        names = {c.get("key"): c.get("name") for c in list(Handler.cams.cams) if isinstance(c, dict)}
+        return {k: {"name": names.get(k) or k, "rates": list(v)} for k, v in rates.items()}
+    Handler.sysalerts.fps_fn = fps_status
     Handler.sysalerts.reader = Handler.chatreader
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
     Handler.chathelix = HelixChat(Handler.twitchlogin, Handler.chatmod)

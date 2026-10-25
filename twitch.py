@@ -2554,8 +2554,12 @@ class SysAlerts:
     DEFAULT_ALERT = "Warnung: {Name} bei {Wert} (Grenze {Grenze})"
     DEFAULT_OK = "{Name} wieder normal ({Wert})"
     DEFAULT_TEMP = "Box-Temperatur: {Wert}"
+    DEFAULT_FPS = "Warnung: {Name} liefert nur {Wert}"
+    FPS_LOW = 24.0
+    FPS_HOLD_S = 15.0
+    FPS_REARM = 3.0
     DEFAULT_STATUS = {"ok": "🟢 Alles okay", "warn": "🟡 Es gibt eine Warnung", "crit": "🔴 Es gibt ein Problem"}
-    DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK, "msg_temp": DEFAULT_TEMP, "msg_st_ok": DEFAULT_STATUS["ok"],
+    DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK, "msg_temp": DEFAULT_TEMP, "msg_fps": DEFAULT_FPS, "msg_st_ok": DEFAULT_STATUS["ok"],
                 "msg_st_warn": DEFAULT_STATUS["warn"], "msg_st_crit": DEFAULT_STATUS["crit"], "cmd_temp": False, "cmd_status": False, "cmd_vip": False, "fps_on": True,
                 **{k: {"on": True, "limit": dflt} for k, _n, _u, _h, _r, dflt in METRICS}}
     POLL_S = 10
@@ -2576,6 +2580,8 @@ class SysAlerts:
         self.last = None
         self.stop_ev = threading.Event()
         self.reader = None
+        self.fps_fn = None
+        self.fps_state = {}
         self.light_fn = None
         self.cmd_since = None
         self.cmd_last = {}
@@ -2634,7 +2640,7 @@ class SysAlerts:
                     take(g)
             elif sub is not None and strict:
                 raise ValueError("Ungültige Anfrage")
-        for key in ("msg_alert", "msg_ok", "msg_temp", "msg_st_ok", "msg_st_warn", "msg_st_crit"):
+        for key in ("msg_alert", "msg_ok", "msg_temp", "msg_fps", "msg_st_ok", "msg_st_warn", "msg_st_crit"):
             if key in req:
                 def h(key=key):
                     new[key] = TwitchStore._message(req[key])
@@ -2741,6 +2747,51 @@ class SysAlerts:
                         st["alerting"], st["retry"] = True, now + self.RETRY_S
                         continue
                 st["pending_ok"] = False
+        self.fps_tick(data, cfg, now, pause)
+
+    def fps_tick(self, data, cfg, now, pause):
+        try:
+            cams = (self.fps_fn() if (self.fps_fn and data.get("fps_on", True)) else None) or {}
+        except Exception:
+            cams = {}
+        for key in [k for k in self.fps_state if k not in cams]:
+            del self.fps_state[key]
+        for key, c in cams.items():
+            try:
+                dmx, dec = float(c["rates"][0]), float(c["rates"][1])
+            except (KeyError, TypeError, ValueError, IndexError):
+                continue
+            if 0 < dmx < self.FPS_LOW:
+                kind, fps = "camera", dmx
+            elif dmx > 0 and 0 < dec < self.FPS_LOW:
+                kind, fps = "box", dec
+            else:
+                kind, fps = None, min(dmx, dec) if dec > 0 else dmx
+            st = self.fps_state.setdefault(key, {"since": None, "alerting": False, "last": None, "retry": None, "pending_ok": False, "kind": None})
+            name = str(c.get("name") or key)
+            label = name if kind != "box" else name + " (Dekoder der Box)"
+            limit = self.fmt(self.FPS_LOW, "fps")
+            if kind is not None:
+                if st["since"] is None or st["kind"] != kind:
+                    st["since"], st["kind"] = now, kind
+                if st["retry"] is not None and now < st["retry"]:
+                    continue
+                if now - st["since"] >= self.FPS_HOLD_S and (st["last"] is None or now - st["last"] >= pause):
+                    text = self.render(data["msg_fps"], label, self.fmt(fps, "fps"), limit)
+                    if self._send(cfg, text):
+                        st.update(alerting=True, last=now, retry=None, pending_ok=data["recover"], name=label)
+                    else:
+                        st["retry"] = now + self.RETRY_S
+            else:
+                st["since"], st["kind"] = None, None
+                if st["alerting"] and fps >= self.FPS_LOW + self.FPS_REARM:
+                    st["alerting"] = False
+                    if st["pending_ok"] and data["recover"]:
+                        text = self.render(data["msg_ok"], st.get("name") or name, self.fmt(fps, "fps"), limit)
+                        if not self._send(cfg, text):
+                            st["alerting"], st["retry"] = True, now + self.RETRY_S
+                            continue
+                    st["pending_ok"] = False
 
     def _allowed(self, item, vip):
         badges = item.get("badges") or []
@@ -2760,7 +2811,9 @@ class SysAlerts:
         level = (light or {}).get("level")
         if level not in ("ok", "warn", "crit"):
             return "⚪ Status nicht verfügbar"
-        return data["msg_st_" + level] + (" (keine Sendung)" if level == "ok" and not light.get("live") else "")
+        text = data["msg_st_" + level] + (" (keine Sendung)" if level == "ok" and not light.get("live") else "")
+        why = [r["text"] for r in (light.get("reasons") or []) if isinstance(r, dict) and r.get("kind") == "fps" and r.get("text")][:2]
+        return text + (": " + " · ".join(why) if why else "")
 
     def _reply(self, cfg, item, cmd="!temp", data=None):
         data = data or self.data
@@ -2812,6 +2865,10 @@ class SysAlerts:
             st.update(over=0, retry=None)
             if not keep_alert:
                 st.update(alerting=False, pending_ok=False)
+        for st in self.fps_state.values():
+            st.update(since=None, retry=None)
+            if not keep_alert:
+                st.update(alerting=False, pending_ok=False)
 
     def run(self):
         while not self.stop_ev.is_set():
@@ -2828,4 +2885,4 @@ class SysAlerts:
         vals = self.values()
         return dict(d, ready=self._creds() is not None,
                     values={k: (None if vals[k] is None else round(vals[k], 1)) for k in vals},
-                    alerting=[k for k, st in self.state.items() if st["alerting"]], last=last)
+                    alerting=[k for k, st in self.state.items() if st["alerting"]] + (["fps"] if any(st["alerting"] for st in self.fps_state.values()) else []), last=last)
