@@ -2769,7 +2769,7 @@ class SysAlerts:
                 kind, fps = None, min(dmx, dec) if dec > 0 else dmx
             st = self.fps_state.setdefault(key, {"since": None, "alerting": False, "last": None, "retry": None, "pending_ok": False, "kind": None})
             name = str(c.get("name") or key)
-            label = name if kind != "box" else name + " (Dekoder der Box)"
+            label = name
             limit = self.fmt(self.FPS_LOW, "fps")
             if kind is not None:
                 if st["since"] is None or st["kind"] != kind:
