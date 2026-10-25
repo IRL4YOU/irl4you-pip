@@ -2525,7 +2525,22 @@
   "Verbergen": "Скрыть",
   "Stream-ID (leer = entfernen)": "ID потока (пусто = удалить)",
   "Die Stream-ID lässt sich nur anzeigen, wenn die Sendung beendet ist.": "ID потока можно показать только после завершения трансляции.",
-  "Erst die Sendung beenden": "Сначала завершите трансляцию"
+  "Erst die Sendung beenden": "Сначала завершите трансляцию",
+  "Erinnerung in Minuten": "Напоминание через (минуты)",
+  "Erinnerung nach": "Напомнить через",
+  "Erinnerung: Zahl von {1} bis {2} Minuten": "Напоминание: число от {1} до {2} минут",
+  "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam — основное изображение: ничего не пикселизируется",
+  "Meldung ({Mikro} und {Prozent} werden ersetzt)": "Сообщение ({Mikro} и {Prozent} будут заменены)",
+  "Mikro-Akku": "Аккумулятор микрофона",
+  "Mikro-Akku (DJI) melden ab": "Сообщать об аккумуляторе микрофона (DJI) от",
+  "Mikro-Akku bei {1} %, bitte wechseln: {2}": "Аккумулятор микрофона на {1} %, пожалуйста, замените: {2}",
+  "Mikro-Akku in Prozent": "Аккумулятор микрофона в процентах",
+  "Mikro-Akku: Zahl von {1} bis {2} Prozent": "Аккумулятор микрофона: число от {1} до {2} процентов",
+  "Mikrofone:": "Микрофоны:",
+  "Mikrofone: noch keins gelesen (gekoppelte DJI-Mikrofone werden alle 2 Minuten abgefragt).": "Микрофоны: пока не считан ни один (сопряжённые микрофоны DJI опрашиваются каждые 2 минуты).",
+  "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "Совет: при нескольких боксах дайте каждому Hotspot своё имя. Иначе камера путает сети с одинаковым именем и больше не подключается ни к одной.",
+  "Warnung: {1} liefert nur {2}": "Предупреждение: {1} даёт только {2}",
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: отладочное сообщение, цель 0x{2}, ID 0x{3}, тип 0x{4} ({5} байт): {6}"
  },
  "patterns": []
 }
