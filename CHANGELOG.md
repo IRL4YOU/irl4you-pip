@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.0.97
+- Ampel: Warnung, wenn eine Kamera zu wenige Bilder liefert.
+
 ## 1.0.96
 - Verbesserungen.
 
