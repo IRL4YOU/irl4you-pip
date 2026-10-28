@@ -6,7 +6,7 @@ RT_VER=2.3.2
 RAW=https://github.com/airockchip/rknn-toolkit2/raw/v$RT_VER
 mkdir -p "$D/modelle" "$D/privacy"
 echo "PIPBOX-ADDON programme"
-MODELL_URL=${PB_MODELL_URL:-https://github.com/IRL4YOU/irl4you-pip/releases/download/erkennung-7}
+MODELL_URL=${PB_MODELL_URL:-https://github.com/IRL4YOU/irl4you-pip/releases/download/erkennung-8}
 laden() {
   python3 - "$1" "$2" <<'P'
 import sys, urllib.request
