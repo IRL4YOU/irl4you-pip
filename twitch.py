@@ -2555,18 +2555,23 @@ class SysAlerts:
     DEFAULT_OK = "{Name} wieder normal ({Wert})"
     DEFAULT_TEMP = "Box-Temperatur: {Wert}"
     DEFAULT_FPS = "Warnung: {Name} liefert nur {Wert}"
-    FPS_LOW = 24.0
+    FPS_LOW = 20.0
     FPS_HOLD_S = 15.0
     FPS_REARM = 3.0
     DEFAULT_STATUS = {"ok": "🟢 Alles okay", "warn": "🟡 Es gibt eine Warnung", "crit": "🔴 Es gibt ein Problem"}
     DEFAULTS = {"enabled": False, "cooldown": 10, "recover": True, "only_live": True, "msg_alert": DEFAULT_ALERT, "msg_ok": DEFAULT_OK, "msg_temp": DEFAULT_TEMP, "msg_fps": DEFAULT_FPS, "msg_st_ok": DEFAULT_STATUS["ok"],
-                "msg_st_warn": DEFAULT_STATUS["warn"], "msg_st_crit": DEFAULT_STATUS["crit"], "cmd_temp": False, "cmd_status": False, "cmd_vip": False, "fps_on": True,
+                "msg_st_warn": DEFAULT_STATUS["warn"], "msg_st_crit": DEFAULT_STATUS["crit"], "cmd_temp": False, "cmd_status": False, "cmd_vip": False, "cmd_pixel": False, "pixel_head_mod": False, "fps_on": True,
                 **{k: {"on": True, "limit": dflt} for k, _n, _u, _h, _r, dflt in METRICS}}
     POLL_S = 10
     SUSTAIN = 3
     RETRY_S = 60
     COOLDOWN = (1, 120)
-    CMDS = ("!temp", "!status")
+    CMDS = ("!temp", "!status", "!pixel")
+    CMD_FLAG = {"!temp": "cmd_temp", "!status": "cmd_status", "!pixel": "cmd_pixel"}
+    PIXEL_ON, PIXEL_OFF = ("an", "on"), ("aus", "off")
+    PIXEL_HEAD = ("kopf", "köpfe", "koepfe", "kopfe", "head", "heads", "gesicht", "gesichter", "face", "faces")
+    PIXEL_PLATE = ("kennz", "kennzeichen", "plate", "plates", "nummernschild", "nummernschilder")
+    PIXEL_GAP_S = 10
     CMD_POLL_S = 2
     CMD_GAP_S = 30
     CMD_MAX_AGE_S = 60
@@ -2580,6 +2585,8 @@ class SysAlerts:
         self.last = None
         self.stop_ev = threading.Event()
         self.reader = None
+        self.pixel_get = None
+        self.pixel_set = None
         self.fps_fn = None
         self.fps_state = {}
         self.light_fn = None
@@ -2616,7 +2623,7 @@ class SysAlerts:
             except ValueError:
                 if strict:
                     raise
-        for key in ("enabled", "recover", "only_live", "cmd_temp", "cmd_status", "cmd_vip", "fps_on"):
+        for key in ("enabled", "recover", "only_live", "cmd_temp", "cmd_status", "cmd_vip", "cmd_pixel", "pixel_head_mod", "fps_on"):
             if key in req:
                 if isinstance(req[key], bool):
                     new[key] = req[key]
@@ -2797,6 +2804,10 @@ class SysAlerts:
         badges = item.get("badges") or []
         return "broadcaster" in badges or "moderator" in badges or (vip and "vip" in badges)
 
+    def _allowed_pixel(self, item):
+        badges = item.get("badges") or []
+        return "broadcaster" in badges or "moderator" in badges
+
     def _is_cmd(self, item):
         if item.get("type") != "msg":
             return None
@@ -2815,10 +2826,57 @@ class SysAlerts:
         why = [r["text"] for r in (light.get("reasons") or []) if isinstance(r, dict) and r.get("kind") == "fps" and r.get("text")][:2]
         return text + (": " + " · ".join(why) if why else "")
 
+    @staticmethod
+    def _pixel_state(an, kopf, kennz):
+        h, k = bool(an and kopf), bool(an and kennz)
+        return "Verpixeln: Köpfe %s, Kennzeichen %s" % ("an" if h else "aus", "an" if k else "aus")
+
+    def _pixel_text(self, item, data):
+        if self.pixel_get is None or self.pixel_set is None:
+            return "Verpixeln ist hier nicht verfügbar"
+        try:
+            st = self.pixel_get() or {}
+        except Exception:
+            return "Verpixeln: Stand nicht lesbar"
+        an, kopf, kennz = bool(st.get("an")), st.get("kopf") is not False, st.get("kennz") is not False
+        cur_h, cur_k = an and kopf, an and kennz
+        words = [w.lower() for w in str(item.get("text") or "").split()[1:]]
+        if not words:
+            return self._pixel_state(an, kopf, kennz)
+        on = [w for w in words if w in self.PIXEL_ON + self.PIXEL_OFF]
+        target = [w for w in words if w in self.PIXEL_HEAD + self.PIXEL_PLATE]
+        if len(on) != 1 or len(target) > 1 or len(words) != len(on) + len(target):
+            return "Nutzung: !pixel an|aus, !pixel kopf an|aus, !pixel kennz an|aus"
+        want = on[0] in self.PIXEL_ON
+        new_h, new_k = cur_h, cur_k
+        if not target:
+            new_h = new_k = want
+        elif target[0] in self.PIXEL_HEAD:
+            new_h = want
+        else:
+            new_k = want
+        if (new_h, new_k) == (cur_h, cur_k):
+            return self._pixel_state(an, kopf, kennz) + " (schon so)"
+        if cur_h and not new_h and "broadcaster" not in (item.get("badges") or []) and not data.get("pixel_head_mod"):
+            return "Köpfe ausschalten darf nur der Streamer"
+        if new_h or new_k:
+            args = (True, new_h, new_k)
+        else:
+            args = (False, kopf, kennz)
+        try:
+            ok, note = self.pixel_set(*args)
+        except Exception:
+            return "Verpixeln nicht geändert"
+        if not ok:
+            return "Verpixeln nicht geändert: " + str(note)
+        return self._pixel_state(*args) + (" (%s)" % note if note else "")
+
     def _reply(self, cfg, item, cmd="!temp", data=None):
         data = data or self.data
         who = TwitchNotifier.camera_text(item.get("name"))
-        if cmd == "!status":
+        if cmd == "!pixel":
+            text = ("@%s " % who if who else "") + self._pixel_text(item, data)
+        elif cmd == "!status":
             text = ("@%s " % who if who else "") + self._light_text(data)
         else:
             v = self.values()["temp"]
@@ -2832,7 +2890,7 @@ class SysAlerts:
         with self.lock:
             data = json.loads(json.dumps(self.data))
         cfg = self._creds()
-        if not (data["cmd_temp"] or data["cmd_status"]) or self.reader is None or (cfg is None and not self.demo):
+        if not (data["cmd_temp"] or data["cmd_status"] or data["cmd_pixel"]) or self.reader is None or (cfg is None and not self.demo):
             self.cmd_since = None
             return
         r = self.reader.poll(self.cmd_since or 0)
@@ -2844,10 +2902,12 @@ class SysAlerts:
         now = self.wall()
         for it in r.get("items", []):
             cmd = self._is_cmd(it)
-            if not cmd or not data["cmd_temp" if cmd == "!temp" else "cmd_status"] or not self._allowed(it, data["cmd_vip"]) or now - it.get("t", now) > self.CMD_MAX_AGE_S:
+            if not cmd or not data[self.CMD_FLAG[cmd]] or now - it.get("t", now) > self.CMD_MAX_AGE_S:
+                continue
+            if not (self._allowed_pixel(it) if cmd == "!pixel" else self._allowed(it, data["cmd_vip"])):
                 continue
             last = self.cmd_last.get(cmd)
-            if last is not None and self.mono() - last < self.CMD_GAP_S:
+            if last is not None and self.mono() - last < (self.PIXEL_GAP_S if cmd == "!pixel" else self.CMD_GAP_S):
                 continue
             self.cmd_last[cmd] = self.mono()
             self._reply(cfg, it, cmd, data)
