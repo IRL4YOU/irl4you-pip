@@ -801,7 +801,7 @@ class UplinkMemory:
 
 
 class FpsMemory:
-    FPS_LOW = 24.0
+    FPS_LOW = 20.0
     FPS_LOW_HOLD_S = 15.0
     GAP_S = 7.0
 
@@ -1410,6 +1410,22 @@ def neustart_noetig(build_text, pfad=None):
     except OSError:
         return False
     return bool(build_text) and kette_signatur(laufend) != kette_signatur(build_text)
+
+
+def pixel_stand(store):
+    c = store.config()
+    return {"an": c["an"], "kopf": c["kopf"], "kennz": c["kennz"]}
+
+
+def pixel_umschalten(store, send, pipeline, an, kopf, kennz):
+    try:
+        store.put({"an": an, "kopf": kopf, "kennz": kennz})
+    except ValueError as e:
+        return False, str(e)
+    if send._active() and neustart_noetig(pipeline.build()):
+        restarted, note = send.restart_if_live()
+        return True, "Sendung startet kurz neu" if restarted else note
+    return True, ""
 
 
 def privacy_status():
@@ -7745,6 +7761,11 @@ def main():
             return {}
         names = {c.get("key"): c.get("name") for c in list(Handler.cams.cams) if isinstance(c, dict)}
         return {k: {"name": names.get(k) or k, "rates": list(v)} for k, v in rates.items()}
+    def pixel_get():
+        return pixel_stand(Handler.datenschutz)
+    def pixel_set(an, kopf, kennz):
+        return pixel_umschalten(Handler.datenschutz, Handler.send, Handler.pipeline, an, kopf, kennz)
+    Handler.sysalerts.pixel_get, Handler.sysalerts.pixel_set = pixel_get, pixel_set
     Handler.sysalerts.fps_fn = fps_status
     Handler.sysalerts.reader = Handler.chatreader
     Handler.chatmod = TwitchMod(Handler.twitch.store, Handler.twitchlogin, paths=Handler.chatpaths, demo=args.demo, demo_reader=Handler.chatreader if args.demo else None)
