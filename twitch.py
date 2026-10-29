@@ -2804,9 +2804,9 @@ class SysAlerts:
         badges = item.get("badges") or []
         return "broadcaster" in badges or "moderator" in badges or (vip and "vip" in badges)
 
-    def _allowed_pixel(self, item):
+    def _allowed_pixel(self, item, vip):
         badges = item.get("badges") or []
-        return "broadcaster" in badges or "moderator" in badges
+        return "broadcaster" in badges or "moderator" in badges or (vip and "vip" in badges)
 
     def _is_cmd(self, item):
         if item.get("type") != "msg":
@@ -2857,7 +2857,8 @@ class SysAlerts:
             new_k = want
         if (new_h, new_k) == (cur_h, cur_k):
             return self._pixel_state(an, kopf, kennz) + " (schon so)"
-        if cur_h and not new_h and "broadcaster" not in (item.get("badges") or []) and not data.get("pixel_head_mod"):
+        badges = item.get("badges") or []
+        if cur_h and not new_h and "broadcaster" not in badges and not (data.get("pixel_head_mod") and "moderator" in badges):
             return "Köpfe ausschalten darf nur der Streamer"
         if new_h or new_k:
             args = (True, new_h, new_k)
@@ -2904,7 +2905,7 @@ class SysAlerts:
             cmd = self._is_cmd(it)
             if not cmd or not data[self.CMD_FLAG[cmd]] or now - it.get("t", now) > self.CMD_MAX_AGE_S:
                 continue
-            if not (self._allowed_pixel(it) if cmd == "!pixel" else self._allowed(it, data["cmd_vip"])):
+            if not (self._allowed_pixel(it, data["cmd_vip"]) if cmd == "!pixel" else self._allowed(it, data["cmd_vip"])):
                 continue
             last = self.cmd_last.get(cmd)
             if last is not None and self.mono() - last < (self.PIXEL_GAP_S if cmd == "!pixel" else self.CMD_GAP_S):
