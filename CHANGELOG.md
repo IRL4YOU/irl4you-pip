@@ -1,11 +1,15 @@
 # Änderungen
 
-## 1.1.9
-- Chat-Befehl „!pixel“ schaltet das Verpixeln (Streamer, Moderatoren und auf Wunsch VIPs; deutsch und englisch).
+## 1.1.10
+- Die Befehle für das Verpixeln im Chat (Streamer, Moderatoren und auf Wunsch VIPs; deutsch und englisch):
 - „!pixel an“ oder „!pixel aus“ (englisch „on“ und „off“): Köpfe und Kennzeichen.
 - „!pixel kopf an“ oder „!pixel kopf aus“ (englisch „head on“ und „head off“): nur die Köpfe.
 - „!pixel kennz an“ oder „!pixel kennz aus“ (englisch „plate on“ und „plate off“): nur die Kennzeichen.
 - „!pixel“ allein nennt den Stand. Wird das Verpixeln ganz ein- oder ausgeschaltet, startet die Sendung kurz neu.
+- Hilfe zu den Befehlen kurz und besser lesbar.
+
+## 1.1.9
+- Chat-Befehl „!pixel“ schaltet das Verpixeln ein und aus.
 - Warnung bei zu wenigen Kamerabildern jetzt unter 20 fps.
 
 ## 1.1.8
