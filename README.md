@@ -26,7 +26,7 @@ Das dauert einige Minuten, weil unter anderem der Encoder (`belacoder`) gebaut w
 
 **Update und Rückweg:** Spätere Versionen spielt die Karte „Software-Update (IRL4YOU BOX)“ ein. Entfernen: `sudo sh install/install.sh uninstall`.
 
-MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`). Das Erkennungsmodul der Karte Datenschutz (Add-on, nur auf Wunsch eingerichtet) hat eine eigene Lizenz ([LICENSE-ERKENNUNG.md](LICENSE-ERKENNUNG.md)): kostenlos für Privatpersonen und Streamer zum Eigengebrauch, nicht für Unternehmen, nicht zum Verkauf oder zur Weitergabe. **Version 1.1.7.**
+MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`). Das Erkennungsmodul der Karte Datenschutz (Add-on, nur auf Wunsch eingerichtet) hat eine eigene Lizenz ([LICENSE-ERKENNUNG.md](LICENSE-ERKENNUNG.md)): kostenlos für Privatpersonen und Streamer zum Eigengebrauch, nicht für Unternehmen, nicht zum Verkauf oder zur Weitergabe. **Version 1.1.8.**
 
 Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
