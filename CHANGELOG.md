@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.9
+- Chat-Befehl „!pixel“ schaltet das Verpixeln ein und aus.
+- Warnung bei zu wenigen Kamerabildern jetzt unter 20 fps.
+
 ## 1.1.8
 - Erkennung verbessert.
 
