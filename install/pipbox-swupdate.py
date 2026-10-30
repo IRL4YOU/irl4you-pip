@@ -33,7 +33,7 @@ MAX_BYTES = 8 * 1024 * 1024
 MAX_FILES = 300
 MAX_FILE = 2 * 1024 * 1024
 MAX_TOTAL = 20 * 1024 * 1024
-REQUIRED = ("VERSION", "server.py", "srv/util.py", "srv/handler.py", "tw/store.py", "dji.py", "dji_daemon.py", "phone_battery.py", "controllers.py", "controller_keys.py", "hdmi_daemon.py", "install/pipbox-hdmi.service", "pipbox_send.py", "pipbox_send_ctl.py",
+REQUIRED = ("VERSION", "server.py", "srv/util.py", "srv/handler.py", "tw/store.py", "web/app.css", "web/js/core.js", "web/js/boot.js", "dji.py", "dji_daemon.py", "phone_battery.py", "controllers.py", "controller_keys.py", "hdmi_daemon.py", "install/pipbox-hdmi.service", "pipbox_send.py", "pipbox_send_ctl.py",
             "web/index.html", "web/login.html", "web/i18n.js", "web/i18n/languages.json", "install/install.sh", "gst/gstpbpip.c", "gst/build.sh")
 VERSION_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}(-[a-z0-9.]{1,16})?$")
 TEST_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}-test\d{1,3}$")

@@ -177,6 +177,10 @@ PY
     install -m 644 "$HERE/web/statistik.html" /opt/pipbox/web/statistik.html
     install -m 644 "$HERE/web/i18n.js" /opt/pipbox/web/i18n.js
     for f in chat.js chat.css; do [ -f "$HERE/web/$f" ] && install -m 644 "$HERE/web/$f" "/opt/pipbox/web/$f"; done
+    install -m 644 "$HERE/web/app.css" /opt/pipbox/web/app.css
+    install -d /opt/pipbox/web/js
+    rm -f /opt/pipbox/web/js/*.js
+    for f in "$HERE"/web/js/*.js; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/js/$(basename "$f")"; done
     install -d /opt/pipbox/web/i18n
     rm -f /opt/pipbox/web/i18n/*.json
     for f in "$HERE"/web/i18n/*.json; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/i18n/$(basename "$f")"; done
