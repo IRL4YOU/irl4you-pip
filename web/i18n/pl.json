@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "Osiągnięto limit czasu: nie udało się pobrać listy pakietów na czas (Internet?). Spróbuj ponownie później.",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "Osiągnięto limit {1} minut, apt-get zostaje zatrzymany.",
   "Abbrechen erst bei Stillstand": "Anuluj tylko przy zawieszeniu",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "Anulowanie jest możliwe dopiero, gdy aktualizacja nie postępuje od 5 minut.",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "Anulowanie jest możliwe dopiero, gdy aktualizacja nie postępuje od 10 minut.",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "Anulowanie nie jest już możliwe: pakiety są instalowane.",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "Zażądano anulowania, ale pakiety są instalowane: nie anuluję.",
   "Abbruch angefordert.": "Zażądano anulowania.",
