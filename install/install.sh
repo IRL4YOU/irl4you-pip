@@ -84,7 +84,13 @@ PY
     cmp -s "$HERE/hdmi_daemon.py" /opt/pipbox/hdmi_daemon.py || hdmi_changed=1
     cmp -s "$HERE/install/pipbox-hdmi.service" /etc/systemd/system/pipbox-hdmi.service || hdmi_changed=1
     install -m 644 "$HERE/server.py" /opt/pipbox/server.py
-    [ -f "$HERE/twitch.py" ] && install -m 644 "$HERE/twitch.py" /opt/pipbox/twitch.py
+    for d in srv tw; do
+        install -d /opt/pipbox/$d
+        rm -f /opt/pipbox/$d/*.py
+        for f in "$HERE/$d"/*.py; do install -m 644 "$f" "/opt/pipbox/$d/$(basename "$f")"; done
+    done
+    rm -f /opt/pipbox/twitch.py
+    python3 -m compileall -q /opt/pipbox/srv /opt/pipbox/tw >/dev/null 2>&1 || true
     install -m 644 "$HERE/dji.py" /opt/pipbox/dji.py
     install -m 644 "$HERE/dji_daemon.py" /opt/pipbox/dji_daemon.py
     install -m 644 "$HERE/phone_battery.py" /opt/pipbox/phone_battery.py
