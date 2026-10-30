@@ -2,6 +2,7 @@
 import argparse
 import base64
 import binascii
+import fcntl
 import glob
 import hashlib
 import ipaddress
@@ -2258,6 +2259,7 @@ class SendControl:
     def __init__(self, state_dir, srtla, pipeline, cams, demo=False):
         self.req = os.path.join(state_dir, "send-request")
         self.srtla, self.pipeline, self.cams, self.demo = srtla, pipeline, cams, demo
+        self.block_fn = None
 
     def _active(self):
         if self.demo:
@@ -2337,6 +2339,13 @@ class SendControl:
 
     def reasons(self):
         r = []
+        if self.block_fn:
+            try:
+                blocked = self.block_fn()
+            except Exception:
+                blocked = None
+            if blocked:
+                r.append(blocked)
         pub = self.srtla.public()
         if not pub["selected"]:
             r.append("Kein SRTLA-Server ausgewählt")
@@ -5007,6 +5016,8 @@ class Updates:
         self.req = os.path.join(state_dir, "update-request")
         self.status_path = os.path.join(state_dir, "update-status.json")
         self.log_path = os.path.join(state_dir, "update.log")
+        self.cancel_path = os.path.join(state_dir, "update-cancel")
+        self.fake_cancel = False
         self.fake = {}
         self.lock = threading.Lock()
         self.last_try = 0.0
@@ -5045,6 +5056,8 @@ class Updates:
             except OSError:
                 pass
             kernel = os.uname().release
+        if not self.demo and st.get("state") == "running" and time.time() - (st.get("started") or 0) > self.STALE_AFTER and not self.helper_alive():
+            st = dict(st, state="failed", finished=int(time.time()), message="Das Update wurde unterbrochen (Neustart der Box oder Zeitgrenze des Systems). Bitte erneut starten.")
         st["reboot_pending"] = bool(st.get("reboot_required")) and st.get("reboot_boot_id") == self.boot_id()
         if st.get("state") == "rebooting" and self.reboot_done(st):
             st["state"] = "done"
@@ -5053,10 +5066,14 @@ class Updates:
         st["kernel_running"] = kernel
         st["streaming"] = belacoder_running() if not self.demo else False
         st["helper_installed"] = self.demo or os.path.exists("/etc/systemd/system/pipbox-update.path")
+        st["cancel_pending"] = os.path.lexists(self.cancel_path)
+        st["cancel_in"] = max(0, int(self.STALL_S - (time.time() - (st.get("activity") or st.get("started") or 0)))) if st.get("state") == "running" else 0
         st["log"] = log
         return st
 
     def request(self, mode, confirm):
+        if mode == "cancel":
+            return self.cancel()
         if mode not in self.MODES:
             raise ValueError("Unbekannte Aktion")
         if mode in ("run", "reboot") and not confirm:
@@ -5074,6 +5091,52 @@ class Updates:
         fd = os.open(self.req, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(mode + "\n")
+
+    def cancel(self):
+        st = self.status()
+        if st.get("state") != "running":
+            raise ValueError("Es läuft kein Update")
+        if st.get("installing"):
+            raise ValueError("Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.")
+        if st.get("cancel_in"):
+            raise ValueError("Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.")
+        if self.demo:
+            self.fake_cancel = True
+            return
+        fd = os.open(self.cancel_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.close(fd)
+
+    def live_block(self):
+        if self.demo:
+            return "Ein Systemupdate läuft gerade. Live gehen ist erst danach möglich." if self.fake.get("state") == "running" and self.fake.get("mode") == "run" else None
+        try:
+            with open(self.status_path) as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            return None
+        if st.get("state") == "running" and st.get("mode") == "run" and (time.time() - (st.get("started") or 0) <= self.STALE_AFTER or self.helper_alive()):
+            return "Ein Systemupdate läuft gerade. Live gehen ist erst danach möglich."
+        return None
+
+    STALL_S = 300
+    LOCK_PATH = "/run/pipbox-update.lock"
+    STALE_AFTER = 30
+
+    def helper_alive(self):
+        try:
+            fd = os.open(self.LOCK_PATH, os.O_RDONLY)
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return True
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return False
+        except OSError:
+            return True
+        finally:
+            os.close(fd)
 
     AUTO_EVERY = 6 * 3600
     AUTO_RETRY = 3600
@@ -5131,11 +5194,15 @@ class Updates:
 
     def _fake(self, mode):
         f = self.fake
+        self.fake_cancel = False
         f.update(state="running", mode=mode, message="")
         time.sleep(1.5)
         if mode == "run":
             total = 12
             for i in range(total + 1):
+                if self.fake_cancel:
+                    f.update(state="failed", message="Abgebrochen. Es wurde nichts verändert.")
+                    return
                 f["progress"] = {"downloading": min(i * 2, total), "unpacking": max(0, i - 4),
                                  "setting_up": max(0, i - 8), "total": total}
                 f["log"] = f"Get:{i} http://repo.example ...\nUnpacking paket-{i} ...\n"
@@ -7695,6 +7762,7 @@ def main():
     Handler.srtla = SrtlaStore(os.path.join(args.state, "srtla.json"))
     Handler.pipeline = PipelineStore(os.path.join(args.state, "pipeline.json"))
     Handler.send = SendControl(args.state, Handler.srtla, Handler.pipeline, Handler.cams, args.demo)
+    Handler.send.block_fn = Handler.updates.live_block
     Handler.preview = pipbox_preview.Client() if pipbox_preview and not args.demo else None
     Handler.swupdate = SwUpdate(args.state, args.demo, Handler.send)
     if not args.demo:
