@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "Tijdslimiet bereikt: de pakketlijst kon niet op tijd worden gedownload (internet?). Probeer het later opnieuw.",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "Tijdslimiet van {1} minuten bereikt, apt-get wordt gestopt.",
   "Abbrechen erst bei Stillstand": "Alleen annuleren bij stilstand",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "Annuleren kan pas als de update 5 minuten lang niet vordert.",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "Annuleren kan pas als de update 10 minuten lang niet vordert.",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "Annuleren kan niet meer: de pakketten worden geïnstalleerd.",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "Annuleren aangevraagd, maar de pakketten worden geïnstalleerd: niet geannuleerd.",
   "Abbruch angefordert.": "Annuleren aangevraagd.",
