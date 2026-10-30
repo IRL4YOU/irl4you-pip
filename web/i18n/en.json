@@ -856,7 +856,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "Time limit reached: the package list could not be downloaded in time (internet?). Please try again later.",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "Time limit of {1} minutes reached, apt-get is being stopped.",
   "Abbrechen erst bei Stillstand": "Cancel only when stuck",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "Cancelling is only possible once the update has made no progress for 5 minutes.",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "Cancelling is only possible once the update has made no progress for 10 minutes.",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "Cancelling is no longer possible: the packages are being installed.",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "Cancel requested, but the packages are being installed: not cancelling.",
   "Abbruch angefordert.": "Cancel requested.",
