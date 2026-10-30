@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "Límite de tiempo alcanzado: la lista de paquetes no se pudo descargar a tiempo (¿Internet?). Inténtalo de nuevo más tarde.",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "Límite de {1} minutos alcanzado, se detiene apt-get.",
   "Abbrechen erst bei Stillstand": "Cancelar solo si se atasca",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "Solo se puede cancelar cuando la actualización lleva 5 minutos sin avanzar.",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "Solo se puede cancelar cuando la actualización lleva 10 minutos sin avanzar.",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "Ya no se puede cancelar: los paquetes se están instalando.",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "Cancelación solicitada, pero los paquetes se están instalando: no se cancela.",
   "Abbruch angefordert.": "Cancelación solicitada.",
