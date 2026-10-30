@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.1.11
+- Systemupdate: Hängende Updates werden erkannt und nach einer Zeitgrenze beendet, die Anzeige bleibt nicht mehr auf „läuft“ stehen.
+- Neuer Knopf „Abbrechen“, wenn ein Update nicht mehr weiterkommt.
+- Während eines Systemupdates kann nicht live gegangen werden.
+
 ## 1.1.10
 - Die Befehle für das Verpixeln im Chat (Streamer, Moderatoren und auf Wunsch VIPs; deutsch und englisch):
 - „!pixel an“ oder „!pixel aus“ (englisch „on“ und „off“): Köpfe und Kennzeichen.
