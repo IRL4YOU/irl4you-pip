@@ -1685,8 +1685,8 @@ class PipelineStore:
             c["audio"] = slot
 
     def set_facecam(self, slot):
-        if slot not in ("", "pip", "pip2", "pip3"):
-            raise ValueError("Facecam: eines der kleinen Bilder oder keine")
+        if slot not in ("", "main", "pip", "pip2", "pip3"):
+            raise ValueError("Facecam: eines der Bilder oder keine")
         with self.lock:
             c = self.cfg
             if c.get("type") != "pip":
@@ -1694,8 +1694,8 @@ class PipelineStore:
             if slot:
                 key = c.get(slot)
                 if not key:
-                    raise ValueError("Dieses kleine Bild ist nicht belegt")
-                if key in (c.get("inactive") or []):
+                    raise ValueError("Dieses Bild ist nicht belegt")
+                if slot != "main" and key in (c.get("inactive") or []):
                     raise ValueError("Diese Kamera ist deaktiviert und kann nicht die Facecam sein")
                 c["facecam"] = key
             else:
@@ -2539,7 +2539,7 @@ class SendControl:
         keys = [k for k in listed if k in slot_of] + [k for k in slot_of if k not in listed]
         cams = [{"key": k, "name": (listed.get(k) or {}).get("name") or k, "state": (listed.get(k) or {}).get("state", "unknown"),
                  "slot": slot_of[k], "main": slot_of[k] == 0, "hidden": slot_of[k] > 0 and bool(hide >> (slot_of[k] - 1) & 1),
-                 "inactive": slot_of[k] > 0 and k in (c.get("inactive") or [])} for k in keys]
+                 "inactive": slot_of[k] > 0 and k in (c.get("inactive") or []), "face": bool(c.get("facecam")) and k == c.get("facecam")} for k in keys]
         off = set(c.get("inactive") or [])
         options = [k for k in order if place[k] and (k == "main" or place[k] not in off)]
         starting = self._detail().get("state") in ("starting", "restarting")
@@ -2557,7 +2557,7 @@ class SendControl:
         nxt = options[(options.index(src) + 1) % len(options)] if src in options else (options[0] if options else "main")
         return {"cams": cams,
                 "audio": {"src": src, "key": aud_key, "name": (listed.get(aud_key) or {}).get("name") or aud_key, "mute": mute,
-                          "next": nxt}}
+                          "next": nxt, "face": bool(c.get("facecam")) and aud_key == c.get("facecam")}}
 
     def apply_view(self, hide, audio, mute):
         line = f"{int(hide)} {int(audio)} {1 if mute else 0}"
@@ -7518,7 +7518,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/pipeline/facecam":
                 slot = d.get("slot", "")
                 if not isinstance(slot, str):
-                    raise ValueError("Facecam: eines der kleinen Bilder oder keine")
+                    raise ValueError("Facecam: eines der Bilder oder keine")
                 aud = self.pipeline.set_facecam(slot)
                 return self.reply(200, dict(self.send.change_view(audio=aud), ok=True, facecam=self.pipeline.cfg.get("facecam", "")))
             if path == "/api/pipeline":
