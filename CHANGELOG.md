@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.17
+- Abfragen der Oberfläche brauchen etwas weniger Rechenzeit.
+- Twitch-Anmeldung zeigt „angemeldet“ erst, wenn alles gespeichert ist.
+
 ## 1.1.16
 - Seite lädt wieder vollständig: Stile und Skripte werden mitinstalliert.
 
