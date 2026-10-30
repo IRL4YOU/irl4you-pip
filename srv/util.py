@@ -1,4 +1,5 @@
 
+import json
 import os
 import time
 
@@ -33,3 +34,28 @@ def ttl_cached_drop(key):
 
 
 NOT_HANDLED = object()
+
+
+_JSON = {}
+JSON_MAX_AGE = 5.0
+
+
+def json_file(path):
+    try:
+        st = os.stat(path)
+    except OSError:
+        _JSON.pop(path, None)
+        return None
+    sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+    now = time.monotonic()
+    hit = _JSON.get(path)
+    if hit is not None and hit[0] == sig and now - hit[1] < JSON_MAX_AGE:
+        return hit[2]
+    try:
+        with open(path) as f:
+            val = json.load(f)
+    except (OSError, ValueError):
+        val = None
+    _JSON[path] = (sig, now, val)
+    return val
+
