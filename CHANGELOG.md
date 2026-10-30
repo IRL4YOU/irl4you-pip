@@ -1,7 +1,7 @@
 # Änderungen
 
 ## 1.1.14
-- Abgerundete Ecken der kleinen Bilder sitzen jetzt auch bei eingeschaltetem Verpixeln richtig.
+- Runde Ecken gefixt.
 
 ## 1.1.13
 - Facecam: Der Ton bleibt bei der Facecam-Kamera, auch wenn sie das Hauptbild ist. Die Facecam lässt sich auch im Hauptbild wählen, die Karte zeigt klar, wo sie gerade ist.
