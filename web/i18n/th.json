@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "ถึงขีดจำกัดเวลา: ดาวน์โหลดรายการแพ็กเกจไม่ทันเวลา (อินเทอร์เน็ต?) โปรดลองอีกครั้งภายหลัง",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "ถึงขีดจำกัด {1} นาที กำลังหยุด apt-get",
   "Abbrechen erst bei Stillstand": "ยกเลิกได้เมื่อค้างเท่านั้น",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "ยกเลิกได้เมื่อการอัปเดตไม่คืบหน้าเป็นเวลา 5 นาทีเท่านั้น",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "ยกเลิกได้เมื่อการอัปเดตไม่คืบหน้าเป็นเวลา 10 นาทีเท่านั้น",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "ไม่สามารถยกเลิกได้แล้ว: กำลังติดตั้งแพ็กเกจ",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "มีคำขอยกเลิก แต่กำลังติดตั้งแพ็กเกจจึงไม่ยกเลิก",
   "Abbruch angefordert.": "มีคำขอยกเลิก",
