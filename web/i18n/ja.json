@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "時間制限に達しました。パッケージ一覧を時間内にダウンロードできませんでした(インターネット?)。後でもう一度お試しください。",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "{1}分の時間制限に達したため、apt-getを停止します。",
   "Abbrechen erst bei Stillstand": "停止時のみキャンセル可能",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "キャンセルできるのは、アップデートが5分間進まなくなってからです。",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "キャンセルできるのは、アップデートが10分間進まなくなってからです。",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "キャンセルはできません。パッケージをインストール中です。",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "キャンセルが要求されましたが、パッケージをインストール中のためキャンセルしません。",
   "Abbruch angefordert.": "キャンセルが要求されました。",
