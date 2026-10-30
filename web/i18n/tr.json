@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "Zaman sınırına ulaşıldı: paket listesi zamanında indirilemedi (internet?). Lütfen daha sonra tekrar deneyin.",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "{1} dakikalık sınıra ulaşıldı, apt-get durduruluyor.",
   "Abbrechen erst bei Stillstand": "Yalnızca takılırsa iptal et",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "İptal, ancak güncelleme 5 dakika boyunca ilerlemediğinde mümkündür.",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "İptal, ancak güncelleme 10 dakika boyunca ilerlemediğinde mümkündür.",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "İptal artık mümkün değil: paketler kuruluyor.",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "İptal istendi, ancak paketler kuruluyor: iptal edilmiyor.",
   "Abbruch angefordert.": "İptal istendi.",
