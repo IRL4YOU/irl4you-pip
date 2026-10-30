@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.16
+- Seite lädt wieder vollständig: Stile und Skripte werden mitinstalliert.
+
 ## 1.1.15
 - Code in kleine Dateien aufgeteilt, die Seite lädt schneller.
 - Sprachdateien bereinigt und ergänzt.
