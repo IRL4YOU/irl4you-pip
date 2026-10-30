@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "Достигнут лимит времени: список пакетов не удалось загрузить вовремя (интернет?). Повторите попытку позже.",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "Достигнут лимит в {1} минут, apt-get останавливается.",
   "Abbrechen erst bei Stillstand": "Отмена только при зависании",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "Отменить можно только тогда, когда обновление 5 минут не продвигается.",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "Отменить можно только тогда, когда обновление 10 минут не продвигается.",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "Отмена уже невозможна: пакеты устанавливаются.",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "Отмена запрошена, но пакеты устанавливаются: не отменяется.",
   "Abbruch angefordert.": "Отмена запрошена.",
