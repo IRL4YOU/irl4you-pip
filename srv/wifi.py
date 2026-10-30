@@ -10,7 +10,7 @@ import time
 import dji
 
 from srv.netinfo import iface_ips, mac_suffix
-from srv.util import read, ttl_cached
+from srv.util import json_file, read, ttl_cached
 
 
 class DeviceNames:
@@ -21,12 +21,8 @@ class DeviceNames:
         self.lock = threading.Lock()
 
     def _all(self):
-        try:
-            with open(self.path) as f:
-                d = json.load(f)
-            return {k: v for k, v in d.items() if isinstance(k, str) and self.KEY_RE.match(k) and isinstance(v, str)} if isinstance(d, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        d = json_file(self.path)
+        return {k: v for k, v in d.items() if isinstance(k, str) and self.KEY_RE.match(k) and isinstance(v, str)} if isinstance(d, dict) else {}
 
     @staticmethod
     def key(usb_id="", iface="", address=""):

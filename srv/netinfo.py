@@ -43,6 +43,10 @@ def net_conflict(path=None):
 
 
 def lan_ip():
+    return ttl_cached("lan_ip", 3.0, _lan_ip_raw)
+
+
+def _lan_ip_raw():
     try:
         sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sk.connect(("203.0.113.1", 9))

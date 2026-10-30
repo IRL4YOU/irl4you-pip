@@ -7,6 +7,7 @@ import time
 
 from srv.cameras import HDMI_KEY
 from srv.netinfo import iface_ips
+from srv.util import json_file
 
 
 DJI_COMMANDS = ("state", "wifi_options", "scan", "add", "update", "use_saved", "delete_saved", "remove",
@@ -82,12 +83,8 @@ class DjiService:
             raise RuntimeError("Der Bluetooth-Dienst (pipbox-dji) läuft nicht")
 
     def _config(self):
-        try:
-            with open(self.config_path) as f:
-                d = json.load(f)
-            return (d.get("cameras") or {}) if isinstance(d, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        d = json_file(self.config_path)
+        return (d.get("cameras") or {}) if isinstance(d, dict) else {}
 
     def addr_for_key(self, key):
         if not (isinstance(key, str) and key.startswith("dji-")):
