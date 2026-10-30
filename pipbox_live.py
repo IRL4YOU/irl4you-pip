@@ -292,8 +292,8 @@ def build(c, base=RTMP_BASE, frame=None, ds=None, ds_files=None):
               f"pbpixelmask name=pmask boxes={ds_files[1]} !\n")
     out.append("compositor name=pipcomp background=black " + " ".join(pads) + " !\n"
                f"video/x-raw,format=NV12,width={CANVAS_W},height={CANVAS_H},framerate={FPS}/1,colorimetry=bt709 !\n"
-               + px
                + ("pbround name=rnd !\n" if frame else "")
+               + px
                + "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
                "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                f"h265parse config-interval=-1 ! {q} ! mux.\n")
