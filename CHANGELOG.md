@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.15
+- Code in kleine Dateien aufgeteilt, die Seite lädt schneller.
+- Sprachdateien bereinigt und ergänzt.
+
 ## 1.1.14
 - Runde Ecken gefixt.
 
