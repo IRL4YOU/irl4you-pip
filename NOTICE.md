@@ -34,7 +34,7 @@ SOFTWARE.
 
 ## DJI-Dienst (MIT-Lizenz)
 
-Sitzungsablauf, Verbindungsliste, Befehle und die Oberfläche der DJI-Kameras (`dji_daemon.py`, Karten in `web/index.html`)
+Sitzungsablauf, Verbindungsliste, Befehle und die Oberfläche der DJI-Kameras (`dji_daemon.py`, Karten in `web/js/dji.js`)
 folgen dem DJI-Dienst von Bittersweet1987, hier an IRL4YOU BOX angepasst (Dienstbenutzer mit Schutzeinstellungen, Token der
 lokalen Schnittstelle, Rollenprofile, Schlüssel `dji-xxxxxx`, Verbindungssperre, Übernahme der Kameras der früheren Version,
 deutsche Texte). Der Urheber hat die Verwendung unter der MIT-Lizenz erlaubt (Lizenzdatei in seinem Projekt vom 4. Oktober 2026).
@@ -109,7 +109,7 @@ Das Passwort wird nur an `nmcli` übergeben und von diesem Projekt nicht gespeic
 
 ## Welche Lizenz gilt wo
 
-- **MIT** (eigener Code): alles außer den unten genannten Teilen, darunter `server.py`, `web/`, `gst/` (eigenes GStreamer-Bauteil) und die Dienste.
+- **MIT** (eigener Code): alles außer den unten genannten Teilen, darunter `server.py`, `srv/`, `tw/`, `web/`, `gst/` (eigenes GStreamer-Bauteil) und die Dienste.
 - **Eigene Lizenz** (`LICENSE-ERKENNUNG.md`: Privatpersonen und Streamer frei, Unternehmen nicht): das Erkennungsmodul der Karte Datenschutz.
 - **GPL-3.0**: die Patches in `belacoder/` und das daraus gebaute Programm.
 - **AGPL-3.0**: die Patches in `srtla/` und das daraus gebaute Programm.
