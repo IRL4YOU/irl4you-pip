@@ -273,13 +273,13 @@ class TwitchLogin:
             t["owners"] = (t["owners"] + [pend])[-self.MAX_OWNERS:]
             changed = True
         self.tokens = t
-        self.pending, self.state, self.error = None, "angemeldet", ""
         if changed:
             try:
                 self._write()
                 werr = False
             except OSError:
                 werr = True
+        self.pending, self.state, self.error = None, "angemeldet", ""
         if werr:
             self.error = "Die Anmeldung konnte nicht gespeichert werden"
 
