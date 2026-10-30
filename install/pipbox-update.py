@@ -4,9 +4,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 
 STATE = "/var/lib/pipbox"
@@ -15,11 +17,23 @@ STATUS = f"{STATE}/update-status.json"
 LOG = f"{STATE}/update.log"
 SNAPSHOTS = STATE
 LOCK = "/run/pipbox-update.lock"
+CANCEL = f"{STATE}/update-cancel"
 MODES = ("check", "dry", "run", "reboot", "autocheck")
 REBOOT_PKGS = ("l4t", "belabox-linux-", "belabox-network-config")
 MIN_FREE = 1536 * 1024 * 1024
 ENV = dict(os.environ, DEBIAN_FRONTEND="noninteractive", LC_ALL="C")
 APT_LOCK = ["-o", "DPkg::Lock::Timeout=300"]
+APT_NET = ["-o", "Acquire::http::Timeout=60", "-o", "Acquire::https::Timeout=60", "-o", "Acquire::Retries=3"]
+LIST_LIMIT = 15 * 60
+DOWNLOAD_LIMIT = 45 * 60
+TIMEOUT_RC = 124
+CANCEL_RC = 130
+CANCEL_EV = threading.Event()
+APT = {"p": None, "ok": False}
+ACT = {"lines": 0, "sig": None, "t": 0.0, "mark": 0.0, "saved": 0.0}
+PARTIAL_DIRS = ("/var/cache/apt/archives/partial", "/var/lib/apt/lists/partial")
+MSG_CANCELLED = "Abgebrochen. Es wurde nichts verändert."
+MSG_TOO_LATE = "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet."
 DPKG_UPDATES = "/var/lib/dpkg/updates"
 DPKG_LOCKS = ("/var/lib/dpkg/lock-frontend", "/var/lib/dpkg/lock")
 
@@ -92,17 +106,117 @@ def belacoder_running():
     return False
 
 
-def run_apt(args, progress=None):
+def send_service_active():
+    try:
+        r = subprocess.run(["systemctl", "is-active", "pipbox-send.service"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return r.stdout.strip() in ("active", "activating")
+
+
+def sending():
+    return belacoder_running() or send_service_active()
+
+
+def handle_cancel():
+    try:
+        os.unlink(CANCEL)
+    except OSError:
+        return False
+    p = APT["p"]
+    if p is not None and not APT["ok"]:
+        log("Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.")
+        save_status(message=MSG_TOO_LATE)
+        return False
+    log("Abbruch angefordert.")
+    CANCEL_EV.set()
+    if p is not None:
+        try:
+            p.kill()
+        except OSError:
+            pass
+    return True
+
+
+def partial_bytes():
+    total = 0
+    for d in PARTIAL_DIRS:
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    try:
+                        total += e.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    return total
+
+
+def track_activity(now=None):
+    if APT["p"] is None:
+        return
+    now = time.time() if now is None else now
+    sig = (ACT["lines"], partial_bytes())
+    if sig != ACT["sig"]:
+        ACT["sig"], ACT["t"] = sig, now
+    if ACT["t"] > ACT["mark"] and now - ACT["saved"] >= 10:
+        ACT["mark"], ACT["saved"] = ACT["t"], now
+        save_status(activity=int(ACT["t"]))
+
+
+def watch_cancel():
+    while True:
+        time.sleep(1)
+        try:
+            handle_cancel()
+            track_activity()
+        except Exception as e:
+            log(f"Abbruch-Wächter: {e}")
+
+
+def run_apt(args, progress=None, limit=None, cancelable=True):
+    if cancelable and CANCEL_EV.is_set():
+        return CANCEL_RC, ""
     log("$ apt-get " + " ".join(args))
     p = subprocess.Popen(["apt-get"] + args, env=ENV, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True, errors="replace")
+    APT["p"], APT["ok"] = p, cancelable
+    cut = []
+    timer = None
+    if limit:
+        def stop():
+            cut.append(1)
+            log(f"Zeitgrenze von {int(limit // 60)} Minuten erreicht, apt-get wird beendet.")
+            try:
+                p.kill()
+            except OSError:
+                pass
+        timer = threading.Timer(limit, stop)
+        timer.daemon = True
+        timer.start()
     out = []
-    for line in p.stdout:
-        out.append(line)
-        log(line)
-        if progress:
-            progress(line)
-    return p.wait(), "".join(out)
+    try:
+        for line in p.stdout:
+            ACT["lines"] += 1
+            out.append(line)
+            log(line)
+            if progress:
+                progress(line)
+        rc = p.wait()
+    finally:
+        APT["p"] = None
+        if timer:
+            timer.cancel()
+    if cancelable and CANCEL_EV.is_set() and rc != 0:
+        rc = CANCEL_RC
+    return (TIMEOUT_RC if cut and rc != CANCEL_RC else rc), "".join(out)
+
+
+def list_failed_message(rc):
+    if rc == TIMEOUT_RC:
+        return "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen."
+    return "Paketliste konnte nicht geladen werden (Internet?)"
 
 
 def dpkg_interrupted():
@@ -205,10 +319,9 @@ def finish_plan(mode, s):
 
 
 def do_check():
-    rc, _ = run_apt(["update", "--allow-releaseinfo-change"] + APT_LOCK)
+    rc, _ = run_apt(["update", "--allow-releaseinfo-change"] + APT_LOCK + APT_NET, limit=LIST_LIMIT)
     if rc != 0:
-        save_status(state="failed", finished=now(),
-                    message="Paketliste konnte nicht geladen werden (Internet?)")
+        save_status(state="failed", finished=now(), message=list_failed_message(rc))
         return
     s = plan()
     if s["rc"] != 0:
@@ -221,9 +334,9 @@ def do_check():
 def do_autocheck(prev):
     def restore():
         save_status(**{k: prev[k] for k in ("state", "mode", "message", "finished", "started") if k in prev})
-    if belacoder_running():
+    if sending():
         return
-    rc, _ = run_apt(["update", "--allow-releaseinfo-change"] + APT_LOCK)
+    rc, _ = run_apt(["update", "--allow-releaseinfo-change"] + APT_LOCK + APT_NET, limit=LIST_LIMIT)
     if rc != 0:
         log("Automatische Suche: Paketliste nicht ladbar (Internet?), nichts geändert.")
         restore()
@@ -246,7 +359,7 @@ def do_dry():
 
 
 def do_run():
-    if belacoder_running():
+    if sending():
         save_status(state="refused", finished=now(),
                     message="Übertragung läuft. Update nur ohne laufenden Stream.")
         return
@@ -265,10 +378,9 @@ def do_run():
             return
         log("Unterbrochener Paketlauf abgeschlossen.")
         save_status(message="")
-    rc, _ = run_apt(["update", "--allow-releaseinfo-change"] + APT_LOCK)
+    rc, _ = run_apt(["update", "--allow-releaseinfo-change"] + APT_LOCK + APT_NET, limit=LIST_LIMIT)
     if rc != 0:
-        save_status(state="failed", finished=now(),
-                    message="Paketliste konnte nicht geladen werden (Internet?)")
+        save_status(state="failed", finished=now(), message=list_failed_message(rc))
         return
     s = plan()
     if s["rc"] != 0 or s["count"] == 0:
@@ -305,9 +417,23 @@ def do_run():
             save_status(progress=progress)
 
     args = ["-y", "-o", "Dpkg::Options::=--force-confdef",
-            "-o", "Dpkg::Options::=--force-confold"] + APT_LOCK
+            "-o", "Dpkg::Options::=--force-confold"] + APT_LOCK + APT_NET
     args += (["install"] + s["install_held"]) if s["install_held"] else ["dist-upgrade"]
-    rc, out = run_apt(args, on_line)
+    rc, out = run_apt(["--download-only"] + args, on_line, limit=DOWNLOAD_LIMIT)
+    if rc != 0:
+        if rc == TIMEOUT_RC:
+            msg = "Zeitgrenze erreicht: Die Pakete ließen sich nicht rechtzeitig laden (Internet?). Es wurde nichts verändert, bitte später erneut versuchen."
+        else:
+            msg = friendly_error(" ".join(out.strip().splitlines()[-3:])[:300])
+        save_status(state="failed", finished=now(), progress=progress, message=msg)
+        return
+    progress["downloading"] = total
+    save_status(progress=progress)
+    if CANCEL_EV.is_set():
+        save_status(state="failed", finished=now(), progress=progress, message=MSG_CANCELLED)
+        return
+    save_status(installing=True)
+    rc, out = run_apt(args, on_line, cancelable=False)
     reboot = rc == 0 and needs_reboot(s["packages"])
     if rc == 0:
         save_status(state="done", finished=now(), progress=progress,
@@ -319,7 +445,7 @@ def do_run():
 
 
 def do_reboot():
-    if belacoder_running():
+    if sending():
         save_status(state="refused", finished=now(),
                     message="Übertragung läuft. Neustart nur ohne laufenden Stream.")
         return
@@ -348,11 +474,26 @@ def main():
         log("Es läuft bereits ein Update; Anforderung verworfen.")
         return 0
     prev = load_status()
+
+    def on_term(signum, frame):
+        if mode not in ("reboot", "autocheck"):
+            save_status(state="failed", finished=now(), message="Das Update wurde vom System beendet (Zeitgrenze). Bitte später erneut versuchen.")
+        sys.exit(1)
+    signal.signal(signal.SIGTERM, on_term)
+    try:
+        os.unlink(CANCEL)
+    except OSError:
+        pass
+    CANCEL_EV.clear()
+    if mode != "reboot":
+        threading.Thread(target=watch_cancel, daemon=True).start()
     if mode not in ("reboot", "autocheck"):
-        save_status(state="running", mode=mode, started=now(), message="")
+        save_status(state="running", mode=mode, started=now(), message="", installing=False, activity=now())
     log(f"=== {time.strftime('%F %T')} Anforderung: {mode} ===")
     try:
         {"check": do_check, "dry": do_dry, "run": do_run, "reboot": do_reboot, "autocheck": lambda: do_autocheck(prev)}[mode]()
+        if CANCEL_EV.is_set() and mode not in ("reboot", "autocheck") and load_status().get("state") == "failed":
+            save_status(message=MSG_CANCELLED)
     except Exception as e:
         log(f"Fehler: {e}")
         save_status(state="failed", finished=now(), message=f"Interner Fehler: {e}")
