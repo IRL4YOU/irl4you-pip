@@ -5099,7 +5099,7 @@ class Updates:
         if st.get("installing"):
             raise ValueError("Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.")
         if st.get("cancel_in"):
-            raise ValueError("Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.")
+            raise ValueError("Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.")
         if self.demo:
             self.fake_cancel = True
             return
@@ -5118,7 +5118,7 @@ class Updates:
             return "Ein Systemupdate läuft gerade. Live gehen ist erst danach möglich."
         return None
 
-    STALL_S = 300
+    STALL_S = 600
     LOCK_PATH = "/run/pipbox-update.lock"
     STALE_AFTER = 30
 
