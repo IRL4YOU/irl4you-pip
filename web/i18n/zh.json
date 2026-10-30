@@ -713,7 +713,7 @@
   "Zeitgrenze erreicht: Die Paketliste ließ sich nicht rechtzeitig laden (Internet?). Bitte später erneut versuchen.": "已达到时间限制：软件包列表未能及时下载（网络？）。请稍后再试。",
   "Zeitgrenze von {1} Minuten erreicht, apt-get wird beendet.": "已达到 {1} 分钟的时间限制，正在停止 apt-get。",
   "Abbrechen erst bei Stillstand": "仅卡住时可取消",
-  "Abbrechen geht erst, wenn das Update 5 Minuten lang nicht weiterkommt.": "只有更新 5 分钟没有进展时才能取消。",
+  "Abbrechen geht erst, wenn das Update 10 Minuten lang nicht weiterkommt.": "只有更新 10 分钟没有进展时才能取消。",
   "Abbrechen ist jetzt nicht mehr möglich: Die Pakete werden eingerichtet.": "已无法取消：正在安装软件包。",
   "Abbruch angefordert, aber die Pakete werden gerade eingerichtet: wird nicht abgebrochen.": "已请求取消，但正在安装软件包，因此不取消。",
   "Abbruch angefordert.": "已请求取消。",
