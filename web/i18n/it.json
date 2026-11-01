@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "La Facecam è l'immagine principale: nulla viene pixelato",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "Suggerimento: con più Box, dai a ogni Hotspot un nome diverso. Altrimenti la telecamera confonde reti con lo stesso nome e non si collega più a nessuna.",
   "Warnung: {1} liefert nur {2}": "Avviso: {1} fornisce solo {2}",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: messaggio di debug destinazione 0x{2} ID 0x{3} tipo 0x{4} ({5} byte): {6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: messaggio di debug destinazione 0x{2} ID 0x{3} tipo 0x{4} ({5} byte): {6}",
+  "Systemwarnungen eingespielt": "Avvisi di sistema applicati",
+  "Streamerbot Deck eingespielt": "Streamerbot Deck applicato",
+  "Optionen eingespielt": "Opzioni applicate",
+  "Design und Reihenfolge der Hauptmenüs": "Design e ordine dei menu principali",
+  "Das Deck ist hier nicht verfügbar": "Il deck non è disponibile qui",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "Le impostazioni degli avvisi di sistema non sono valide",
+  "Die Einstellungen des Decks sind ungültig": "Le impostazioni del deck non sono valide",
+  "Die Optionen der Oberfläche sind ungültig": "Le opzioni dell'interfaccia non sono valide",
+  "Die Optionen sind hier nicht verfügbar": "Le opzioni non sono disponibili qui",
+  "Die Systemwarnungen sind hier nicht verfügbar": "Gli avvisi di sistema non sono disponibili qui",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "Tutte le videocamere sempre pronte: le videocamere possono unirsi, cadere e tornare in qualsiasi momento, senza che la trasmissione si riavvii.",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "Se la videocamera principale cade, subentra la successiva.",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "Senza telecamera la box trasmette nero con silenzio. Serve più potenza di calcolo, ancora di più con la scheda Privacy attivata: assicurati un raffreddamento sufficiente. L'immagine è più regolare perché ogni telecamera ha un buffer. La scheda Privacy pixela anche qui l'immagine principale; le immagini piccole restano non pixelate."
  },
  "patterns": []
 }
