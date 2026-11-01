@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam 是主画面：不进行像素化",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "提示：使用多个 Box 时，请为每个 Hotspot 设置不同的名称。否则摄像头会混淆同名网络，导致无法加入任何网络。",
   "Warnung: {1} liefert nur {2}": "警告：{1} 仅提供 {2}",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}：调试消息 目标 0x{2} ID 0x{3} 类型 0x{4}（{5} 字节）：{6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}：调试消息 目标 0x{2} ID 0x{3} 类型 0x{4}（{5} 字节）：{6}",
+  "Systemwarnungen eingespielt": "系统警告已应用",
+  "Streamerbot Deck eingespielt": "Streamerbot Deck 已应用",
+  "Optionen eingespielt": "选项已应用",
+  "Design und Reihenfolge der Hauptmenüs": "外观和主菜单的顺序",
+  "Das Deck ist hier nicht verfügbar": "此处无法使用 Deck",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "系统警告设置无效",
+  "Die Einstellungen des Decks sind ungültig": "Deck 设置无效",
+  "Die Optionen der Oberfläche sind ungültig": "界面选项无效",
+  "Die Optionen sind hier nicht verfügbar": "此处无法使用选项",
+  "Die Systemwarnungen sind hier nicht verfügbar": "此处无法使用系统警告",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "所有摄像机始终就绪：摄像机可随时加入、掉线并重新接入，直播无需重新开始。",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "主摄像机掉线时，由下一台接替。",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "没有摄像头时，盒子会发送带静音的黑屏。这需要更多处理能力，开启隐私卡片时更多：请确保散热充足。每个摄像头都有缓冲，所以画面更平稳。隐私卡片在这里同样会对主画面打马赛克；小画面保持不打马赛克。"
  },
  "patterns": []
 }
