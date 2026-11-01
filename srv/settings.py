@@ -8,10 +8,12 @@ import subprocess
 import time
 import hdmi_daemon
 from tw.store import TwitchStore
+from tw.sysalerts import SysAlerts
 
 from srv.cameras import KEY_RE, ROLES
 from srv.dji_service import DjiService
 from srv.hdmi_service import HdmiService
+from srv.layout import DeckStore, LayoutStore
 from srv.netinfo import IFACE_NAME_RE, iface_ips
 from srv.pipeline import PipelineStore
 from srv.srtla import SrtlaStore
@@ -29,6 +31,7 @@ SETTINGS_VERSION = 1
 SETTINGS_SECTIONS = (("cameras", "Kameras"), ("pipeline", "Bildaufbau"), ("srtla", "SRTLA-Server und Sendeeinstellungen"),
                      ("autostart", "Automatischer Start"), ("names", "Namen (Verbindungen, WLAN- und Bluetooth-Sticks)"),
                      ("dji", "DJI-Kameras (Einstellungen)"), ("hdmi", "HDMI-Eingang (Einstellungen)"), ("twitch", "Akku-Warnung im Twitch-Chat (Einstellungen)"),
+                     ("sysalerts", "Systemwarnungen im Twitch-Chat"), ("deck", "Streamerbot Deck"), ("layout", "Optionen"),
                      ("camnet", "Netzwerk für Kameras (Standard)"),
                      ("hotspots", "Hotspots"), ("wifi", "Gespeicherte WLAN-Netze"))
 
@@ -41,6 +44,7 @@ class SettingsTransfer:
         self.names, self.djisvc, self.wifi, self.send, self.demo = names, djisvc, wifi, send, demo
         self.progress = {"state": "idle"}
         self.iface_map = {}
+        self.deck = self.layout = self.sysalerts = None
         self.hdmi = self.twitch = self.netchoice = None
         self.backup_dir = os.path.join(state_dir, "backup")
         self.backup_path = os.path.join(self.backup_dir, "vor-einspielen.json")
@@ -86,6 +90,15 @@ class SettingsTransfer:
                 st = {}
             if st.get("service"):
                 doc["hdmi"] = {k: st["settings"][k] for k in HdmiService.ALLOWED}
+        if self.sysalerts is not None:
+            with self.sysalerts.lock:
+                doc["sysalerts"] = json.loads(json.dumps(self.sysalerts.data))
+        if self.deck is not None:
+            doc["deck"] = self.deck.get()
+        if self.layout is not None:
+            lay = self.layout.get()
+            if lay.get("set"):
+                doc["layout"] = {k: lay[k] for k in LayoutStore.PROFILES}
         if self.twitch is not None:
             with self.twitch.lock:
                 t = self.twitch.data
@@ -288,6 +301,24 @@ class SettingsTransfer:
             out.append(e)
         return out, ["Die Bluetooth-Kopplung lässt sich nicht mitnehmen: Die Kameras müssen nach dem Einspielen einmal neu verbunden werden"] if out else []
 
+    def _clean_sysalerts(self, raw):
+        if not isinstance(raw, dict):
+            raise ValueError("Die Einstellungen der Systemwarnungen sind ungültig")
+        return SysAlerts._merge(SysAlerts.DEFAULTS, raw, strict=True), []
+
+    def _clean_deck(self, raw):
+        if not isinstance(raw, dict):
+            raise ValueError("Die Einstellungen des Decks sind ungültig")
+        out = {"url": DeckStore.clean_url(raw.get("url"))}
+        for k in DeckStore.SIZE:
+            out[k] = DeckStore.clean_size(k, raw.get(k))
+        return out, []
+
+    def _clean_layout(self, raw):
+        if not isinstance(raw, dict):
+            raise ValueError("Die Optionen der Oberfläche sind ungültig")
+        return {k: LayoutStore.clean(raw.get(k)) for k in LayoutStore.PROFILES}, []
+
     def _clean_hdmi(self, raw):
         if not isinstance(raw, dict):
             raise ValueError("Die HDMI-Einstellungen sind ungültig")
@@ -441,6 +472,15 @@ class SettingsTransfer:
                     count = 1
                 elif sid == "twitch":
                     data, notes = self._clean_twitch(raw)
+                    count = 1
+                elif sid == "sysalerts":
+                    data, notes = self._clean_sysalerts(raw)
+                    count = 1
+                elif sid == "deck":
+                    data, notes = self._clean_deck(raw)
+                    count = 1
+                elif sid == "layout":
+                    data, notes = self._clean_layout(raw)
                     count = 1
                 elif sid == "camnet":
                     data, notes = self._clean_camnet(raw)
@@ -604,6 +644,25 @@ class SettingsTransfer:
             raise RuntimeError("Der HDMI-Dienst ist hier nicht verfügbar")
         self.hdmi.set(dict(d))
         return "HDMI-Einstellungen eingespielt"
+
+    def _apply_sysalerts(self, d):
+        if self.sysalerts is None:
+            raise RuntimeError("Die Systemwarnungen sind hier nicht verfügbar")
+        self.sysalerts.save(d)
+        return "Systemwarnungen eingespielt"
+
+    def _apply_deck(self, d):
+        if self.deck is None:
+            raise RuntimeError("Das Deck ist hier nicht verfügbar")
+        self.deck.put(d)
+        return "Streamerbot Deck eingespielt"
+
+    def _apply_layout(self, d):
+        if self.layout is None:
+            raise RuntimeError("Die Optionen sind hier nicht verfügbar")
+        for k in LayoutStore.PROFILES:
+            self.layout.put(k, d[k])
+        return "Optionen eingespielt"
 
     def _apply_twitch(self, d):
         if self.twitch is None:
