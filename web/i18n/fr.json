@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "La Facecam est l'image principale : rien n'est pixelisé",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "Astuce : avec plusieurs box, donnez un nom propre à chaque Hotspot. Sinon la caméra confond les réseaux portant le même nom et ne se connecte plus à aucun.",
   "Warnung: {1} liefert nur {2}": "Avertissement : {1} ne fournit que {2}",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1} : message de débogage cible 0x{2} ID 0x{3} type 0x{4} ({5} octets) : {6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1} : message de débogage cible 0x{2} ID 0x{3} type 0x{4} ({5} octets) : {6}",
+  "Systemwarnungen eingespielt": "Alertes système appliquées",
+  "Streamerbot Deck eingespielt": "Streamerbot Deck appliqué",
+  "Optionen eingespielt": "Options appliquées",
+  "Design und Reihenfolge der Hauptmenüs": "Design et ordre des menus principaux",
+  "Das Deck ist hier nicht verfügbar": "Le deck n'est pas disponible ici",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "Les réglages des alertes système ne sont pas valides",
+  "Die Einstellungen des Decks sind ungültig": "Les réglages du deck ne sont pas valides",
+  "Die Optionen der Oberfläche sind ungültig": "Les options de l'interface ne sont pas valides",
+  "Die Optionen sind hier nicht verfügbar": "Les options ne sont pas disponibles ici",
+  "Die Systemwarnungen sind hier nicht verfügbar": "Les alertes système ne sont pas disponibles ici",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "Toutes les caméras toujours prêtes : des caméras peuvent se connecter à tout moment, tomber en panne et revenir sans que la diffusion redémarre.",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "Si la caméra principale tombe en panne, la suivante prend le relais.",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "Sans caméra, le boîtier émet du noir avec du silence. Cela demande plus de puissance de calcul, et encore plus avec la carte Confidentialité activée : veillez à un refroidissement suffisant. L'image est plus régulière, car chaque caméra reçoit un tampon. La carte Confidentialité pixellise aussi ici l'image principale ; les petites images restent non pixellisées."
  },
  "patterns": []
 }
