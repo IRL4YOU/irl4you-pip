@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam이 메인 화면입니다: 픽셀화되지 않음",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "팁: Box를 여러 대 사용할 때는 Hotspot마다 서로 다른 이름을 지정해 주세요. 그렇지 않으면 카메라가 이름이 같은 네트워크를 혼동해 어느 곳에도 연결하지 못합니다.",
   "Warnung: {1} liefert nur {2}": "경고: {1}의 출력이 {2}뿐입니다",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: 디버그 메시지 대상 0x{2} ID 0x{3} 유형 0x{4} ({5} 바이트): {6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: 디버그 메시지 대상 0x{2} ID 0x{3} 유형 0x{4} ({5} 바이트): {6}",
+  "Systemwarnungen eingespielt": "시스템 경고를 적용했습니다",
+  "Streamerbot Deck eingespielt": "Streamerbot Deck을 적용했습니다",
+  "Optionen eingespielt": "옵션을 적용했습니다",
+  "Design und Reihenfolge der Hauptmenüs": "디자인 및 주 메뉴 순서",
+  "Das Deck ist hier nicht verfügbar": "여기서는 덱을 사용할 수 없습니다",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "시스템 경고 설정이 올바르지 않습니다",
+  "Die Einstellungen des Decks sind ungültig": "덱 설정이 올바르지 않습니다",
+  "Die Optionen der Oberfläche sind ungültig": "화면 옵션이 올바르지 않습니다",
+  "Die Optionen sind hier nicht verfügbar": "여기서는 옵션을 사용할 수 없습니다",
+  "Die Systemwarnungen sind hier nicht verfügbar": "여기서는 시스템 경고를 사용할 수 없습니다",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "모든 카메라 항상 준비: 송출을 다시 시작하지 않고도 카메라가 언제든 추가되거나 끊기거나 다시 돌아올 수 있습니다.",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "메인 카메라가 끊기면 다음 카메라가 이어받습니다.",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "카메라가 없으면 박스는 무음의 검은 화면을 송출합니다. 처리 부하가 더 커지며, 개인정보 보호 카드를 켜면 더 커집니다. 충분한 냉각을 확보하세요. 각 카메라에 버퍼가 주어지므로 화면이 더 고르게 나옵니다. 개인정보 보호 카드는 여기서도 메인 화면을 모자이크 처리하며, 작은 화면은 그대로 둡니다."
  },
  "patterns": []
 }
