@@ -174,6 +174,7 @@ def main():
         Handler.chatreader.events = Handler.chatevents
     Handler.hdmi = HdmiService(args.state, Handler.cams, args.demo)
     Handler.transfer.hdmi, Handler.transfer.twitch = Handler.hdmi, Handler.twitch.store
+    Handler.transfer.deck, Handler.transfer.layout, Handler.transfer.sysalerts = Handler.deck, Handler.layout, Handler.sysalerts
     if not args.demo:
         threading.Thread(target=Handler.twitch.run, daemon=True).start()
         threading.Thread(target=Handler.sysalerts.run, daemon=True).start()
