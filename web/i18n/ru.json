@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam — основное изображение: ничего не пикселизируется",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "Совет: при нескольких боксах дайте каждому Hotspot своё имя. Иначе камера путает сети с одинаковым именем и больше не подключается ни к одной.",
   "Warnung: {1} liefert nur {2}": "Предупреждение: {1} даёт только {2}",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: отладочное сообщение, цель 0x{2}, ID 0x{3}, тип 0x{4} ({5} байт): {6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: отладочное сообщение, цель 0x{2}, ID 0x{3}, тип 0x{4} ({5} байт): {6}",
+  "Systemwarnungen eingespielt": "Системные предупреждения применены",
+  "Streamerbot Deck eingespielt": "Streamerbot Deck применён",
+  "Optionen eingespielt": "Параметры применены",
+  "Design und Reihenfolge der Hauptmenüs": "Оформление и порядок главных меню",
+  "Das Deck ist hier nicht verfügbar": "Дек здесь недоступен",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "Настройки системных предупреждений недействительны",
+  "Die Einstellungen des Decks sind ungültig": "Настройки дека недействительны",
+  "Die Optionen der Oberfläche sind ungültig": "Параметры интерфейса недействительны",
+  "Die Optionen sind hier nicht verfügbar": "Параметры здесь недоступны",
+  "Die Systemwarnungen sind hier nicht verfügbar": "Системные предупреждения здесь недоступны",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "Все камеры всегда готовы: камеры могут в любой момент подключаться, отказывать и возвращаться без перезапуска трансляции.",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "Если основная камера отказывает, её заменяет следующая.",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "Без камеры бокс передаёт чёрный экран без звука. Это требует больше вычислительной мощности, а при включённой карточке «Конфиденциальность» ещё больше: позаботьтесь о достаточном охлаждении. Изображение становится ровнее, потому что у каждой камеры есть буфер. Карточка «Конфиденциальность» и здесь пикселизирует основное изображение; маленькие изображения остаются без пикселизации."
  },
  "patterns": []
 }
