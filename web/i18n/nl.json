@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam is het hoofdbeeld: er wordt niets gepixeld",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "Tip: geef bij meerdere boxen elke Hotspot een eigen naam. Anders verwisselt de camera netwerken met dezelfde naam en maakt ze met geen enkel meer verbinding.",
   "Warnung: {1} liefert nur {2}": "Waarschuwing: {1} levert slechts {2}",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: debugbericht doel 0x{2} ID 0x{3} type 0x{4} ({5} byte): {6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: debugbericht doel 0x{2} ID 0x{3} type 0x{4} ({5} byte): {6}",
+  "Systemwarnungen eingespielt": "Systeemwaarschuwingen toegepast",
+  "Streamerbot Deck eingespielt": "Streamerbot Deck toegepast",
+  "Optionen eingespielt": "Opties toegepast",
+  "Design und Reihenfolge der Hauptmenüs": "Ontwerp en volgorde van de hoofdmenu's",
+  "Das Deck ist hier nicht verfügbar": "Het deck is hier niet beschikbaar",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "De instellingen van de systeemmeldingen zijn ongeldig",
+  "Die Einstellungen des Decks sind ungültig": "De instellingen van het deck zijn ongeldig",
+  "Die Optionen der Oberfläche sind ungültig": "De opties van de interface zijn ongeldig",
+  "Die Optionen sind hier nicht verfügbar": "De opties zijn hier niet beschikbaar",
+  "Die Systemwarnungen sind hier nicht verfügbar": "De systeemmeldingen zijn hier niet beschikbaar",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "Alle camera's altijd gereed: camera's kunnen op elk moment erbij komen, uitvallen en terugkeren zonder dat de stream opnieuw start.",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "Valt de hoofdcamera uit, dan neemt de volgende het over.",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "Zonder camera zendt de box zwart met stilte. Dit vraagt meer rekenkracht, en nog meer met de kaart Privacy ingeschakeld: zorg dan voor voldoende koeling. Het beeld wordt gelijkmatiger doordat elke camera een buffer krijgt. De kaart Privacy pixelt ook hier het hoofdbeeld; de kleine beelden blijven ongepixeld."
  },
  "patterns": []
 }

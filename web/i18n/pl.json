@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam jest obrazem głównym: nic nie jest pikselizowane",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "Wskazówka: przy kilku Boxach nadaj każdemu Hotspotowi własną nazwę. W przeciwnym razie kamera myli sieci o tej samej nazwie i nie łączy się już z żadną.",
   "Warnung: {1} liefert nur {2}": "Ostrzeżenie: {1} dostarcza tylko {2}",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: komunikat debugowania cel 0x{2} ID 0x{3} typ 0x{4} ({5} bajtów): {6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: komunikat debugowania cel 0x{2} ID 0x{3} typ 0x{4} ({5} bajtów): {6}",
+  "Systemwarnungen eingespielt": "Ostrzeżenia systemowe zastosowane",
+  "Streamerbot Deck eingespielt": "Streamerbot Deck zastosowany",
+  "Optionen eingespielt": "Opcje zastosowane",
+  "Design und Reihenfolge der Hauptmenüs": "Wygląd i kolejność menu głównych",
+  "Das Deck ist hier nicht verfügbar": "Deck nie jest tu dostępny",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "Ustawienia ostrzeżeń systemowych są nieprawidłowe",
+  "Die Einstellungen des Decks sind ungültig": "Ustawienia decka są nieprawidłowe",
+  "Die Optionen der Oberfläche sind ungültig": "Opcje interfejsu są nieprawidłowe",
+  "Die Optionen sind hier nicht verfügbar": "Opcje nie są tu dostępne",
+  "Die Systemwarnungen sind hier nicht verfügbar": "Ostrzeżenia systemowe nie są tu dostępne",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "Wszystkie kamery zawsze gotowe: kamery mogą w każdej chwili dołączać, przestawać działać i wracać, bez ponownego uruchamiania transmisji.",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "Gdy kamera główna przestanie działać, przejmuje kolejna.",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "Bez kamery skrzynka nadaje czerń z ciszą. Wymaga to większej mocy obliczeniowej, a przy włączonej karcie Prywatność jeszcze większej: zadbaj o wystarczające chłodzenie. Obraz jest równiejszy, bo każda kamera dostaje bufor. Karta Prywatność również tutaj pikseluje obraz główny; małe obrazy pozostają niepikselowane."
  },
  "patterns": []
 }
