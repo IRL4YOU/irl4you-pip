@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.18
+- Einstellungen sichern nimmt jetzt auch Systemwarnungen im Twitch-Chat, Streamerbot Deck und die Optionen der Oberfläche mit.
+- Hinweis zur Hauptkamera nur noch beim Bild in Bild; Übersetzungen ergänzt.
+
 ## 1.1.17
 - Abfragen der Oberfläche brauchen etwas weniger Rechenzeit.
 - Twitch-Anmeldung zeigt „angemeldet“ erst, wenn alles gespeichert ist.
