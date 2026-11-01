@@ -2578,7 +2578,20 @@
   "Facecam ist das Hauptbild: nichts wird verpixelt": "Facecam เป็นภาพหลัก: จะไม่มีการเบลออะไรเลย",
   "Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.": "เคล็ดลับ: หากใช้หลาย Box โปรดตั้งชื่อ Hotspot ของแต่ละเครื่องให้ไม่ซ้ำกัน ไม่เช่นนั้นกล้องจะสับสนระหว่างเครือข่ายที่ชื่อเหมือนกันและไม่เชื่อมต่อกับเครือข่ายใดอีก",
   "Warnung: {1} liefert nur {2}": "คำเตือน: {1} ให้ได้เพียง {2}",
-  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: ข้อความดีบัก เป้าหมาย 0x{2} ID 0x{3} ประเภท 0x{4} ({5} ไบต์): {6}"
+  "{1}: Debug Nachricht Ziel 0x{2} ID 0x{3} Typ 0x{4} ({5} Byte): {6}": "{1}: ข้อความดีบัก เป้าหมาย 0x{2} ID 0x{3} ประเภท 0x{4} ({5} ไบต์): {6}",
+  "Systemwarnungen eingespielt": "ใช้การเตือนระบบแล้ว",
+  "Streamerbot Deck eingespielt": "ใช้ Streamerbot Deck แล้ว",
+  "Optionen eingespielt": "ใช้ตัวเลือกแล้ว",
+  "Design und Reihenfolge der Hauptmenüs": "การออกแบบและลำดับของเมนูหลัก",
+  "Das Deck ist hier nicht verfügbar": "ไม่สามารถใช้เด็คที่นี่ได้",
+  "Die Einstellungen der Systemwarnungen sind ungültig": "การตั้งค่าคำเตือนระบบไม่ถูกต้อง",
+  "Die Einstellungen des Decks sind ungültig": "การตั้งค่าเด็คไม่ถูกต้อง",
+  "Die Optionen der Oberfläche sind ungültig": "ตัวเลือกของหน้าจอไม่ถูกต้อง",
+  "Die Optionen sind hier nicht verfügbar": "ไม่สามารถใช้ตัวเลือกที่นี่ได้",
+  "Die Systemwarnungen sind hier nicht verfügbar": "ไม่สามารถใช้คำเตือนระบบที่นี่ได้",
+  "Alle Kameras immer bereit: Kameras können jederzeit dazukommen, ausfallen und zurückkehren, ohne dass die Sendung neu startet.": "กล้องทุกตัวพร้อมเสมอ: กล้องจะเข้ามาเพิ่ม ขัดข้อง และกลับมาได้ทุกเมื่อ โดยไม่ต้องเริ่มสตรีมใหม่",
+  "Fällt die Hauptkamera aus, übernimmt die nächste.": "หากกล้องหลักขัดข้อง กล้องตัวถัดไปจะรับช่วงต่อ",
+  "Ohne Kamera sendet die Box Schwarz mit Stille. Dafür braucht die Box mehr Rechenlast, mit eingeschaltetem Datenschutz noch mehr: Dann bitte für ausreichend Kühlung sorgen. Das Bild wird gleichmäßiger, weil jede Kamera einen Puffer bekommt. Die Karte Datenschutz verpixelt auch hier das Hauptbild; die kleinen Bilder bleiben unverpixelt.": "เมื่อไม่มีกล้อง กล่องจะส่งภาพดำพร้อมความเงียบ วิธีนี้ใช้กำลังประมวลผลมากขึ้น และมากขึ้นอีกเมื่อเปิดการ์ดความเป็นส่วนตัว โปรดดูแลให้ระบายความร้อนเพียงพอ ภาพจะนิ่งขึ้นเพราะกล้องแต่ละตัวมีบัฟเฟอร์ การ์ดความเป็นส่วนตัวจะทำโมเสกภาพหลักที่นี่ด้วย ส่วนภาพเล็กจะไม่ถูกทำโมเสก"
  },
  "patterns": []
 }
