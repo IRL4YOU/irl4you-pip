@@ -3,6 +3,9 @@
 *Fassung 1 vom 21. Oktober 2026. Diese Lizenz gilt nur für die unten genannten Teile (Karte „Datenschutz“); alles andere in IRL4YOU BOX
 bleibt unter seiner bisherigen Lizenz (`LICENSE`, `NOTICE.md`). Bei Abweichungen zwischen dem deutschen und dem englischen Text gilt der deutsche.*
 
+*Übersetzungen der Kurzfassung in der Oberfläche (andere Sprachen als Deutsch und Englisch) sind nur eine Lesehilfe. Verbindlich sind allein der deutsche und der englische Text.
+Translations of the short summary in the interface (languages other than German and English) are for convenience only. Only the German and English texts are binding.*
+
 Copyright (c) 2026 IRL4YOU. Alle Rechte vorbehalten, soweit sie unten nicht ausdrücklich eingeräumt werden.
 
 **Hinweis zur Art der Lizenz:** Diese Lizenz ist **keine Open-Source-Lizenz** im Sinne der Open Source Initiative, weil sie die Nutzung

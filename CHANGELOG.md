@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.27
+- Lizenzhinweis in allen Sprachen; aufgeräumt.
+
 ## 1.1.26
 - Aufgeräumt.
 
