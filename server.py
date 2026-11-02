@@ -103,7 +103,7 @@ def main():
     Handler.layout = LayoutStore(args.state)
     Handler.datenschutz = DatenschutzStore(args.state)
     Handler.deck = DeckStore(args.state)
-    Handler.uplinktest = UplinkTests(args.demo, sending=lambda: Handler.send._active())
+    Handler.uplinktest = UplinkTests(args.demo, sending=lambda: Handler.send._active(), skip=lambda: Handler.hotspot_ifaces())
     Handler.statsshare = StatsShare(args.state, demo=args.demo)
     Handler.fpsprobe = FpsProbe("rtmp://127.0.0.1:%d/%s" % (args.rtmp_port, args.rtmp_app), os.path.join(args.state, "gst-registry.bin"), demo=args.demo)
     Handler.statsserver = StatsServer(Handler.statsshare, Handler.stats_snapshot_now)
