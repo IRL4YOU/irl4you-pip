@@ -170,6 +170,7 @@ class GetRoutes:
         if path == "/api/srtla":
             out = {**self.srtla.public(), "interfaces": iface_ips(), "conn_names": self.conn_labels()}
             sel = (out.get("settings") or {}).get("uplinks") or []
+            out["hotspot_ifaces"] = sorted(self.hotspot_ifaces())
             out["diag"] = self.uplinktest.diagnose(sel, uplink_states(sel), bool(self.send._active())) if self.uplinktest else {}
             return self.reply(200, out)
         if path == "/api/uplinktest":
