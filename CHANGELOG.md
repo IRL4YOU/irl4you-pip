@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.26
+- Aufgeräumt.
+
 ## 1.1.25
 - Übersetzungen ergänzt.
 
