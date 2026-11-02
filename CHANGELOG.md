@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.23
+- Neue Quelle „Testbild“ im Abschnitt „HDMI, USB und Testbild“ (neben HDMI-Eingang und USB-Webcam): bewegtes Bild mit Zeitanzeige und Stereo-Testton, zum Prüfen der ganzen Kette bis zum Server ohne Kamera.
+
 ## 1.1.22
 - **Karten mit laufendem Hotspot der Box werden nicht getestet** (kein Knopf „Testen“, keine Meldung, „Alle Leitungen testen“ überspringt sie).
 
