@@ -148,16 +148,6 @@ class DjiService:
         self._parked = parked
         return out
 
-    def camera_kinds(self):
-        out = {}
-        try:
-            for c in self._call({"cmd": "state"}, timeout=2).get("cameras", []):
-                if c.get("rtmp_key") and c.get("kind"):
-                    out[c["rtmp_key"]] = c["kind"]
-        except (RuntimeError, ValueError):
-            pass
-        return out
-
     def parked_keys(self):
         self.camera_extras()
         return set(getattr(self, "_parked", set()))
