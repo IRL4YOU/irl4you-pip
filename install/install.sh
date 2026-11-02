@@ -136,6 +136,8 @@ PY
     install -m 644 "$HERE/install/81-pipbox-btchip.rules" /etc/udev/rules.d/81-pipbox-btchip.rules
     install -m 755 "$HERE/install/pipbox-arp.py" /opt/pipbox/pipbox-arp.py
     install -m 644 "$HERE/install/pipbox-arp.service" /etc/systemd/system/pipbox-arp.service
+    install -m 755 "$HERE/install/pipbox-uplinks.py" /opt/pipbox/pipbox-uplinks.py
+    install -m 644 "$HERE/install/pipbox-uplinks.service" /etc/systemd/system/pipbox-uplinks.service
     install -m 755 "$HERE/install/pipbox-wlandriver.py" /opt/pipbox/pipbox-wlandriver.py
     install -m 644 "$HERE/install/pipbox-wlandriver.service" /etc/systemd/system/pipbox-wlandriver.service
     install -m 644 "$HERE/install/pipbox-wlandriver.timer" /etc/systemd/system/pipbox-wlandriver.timer
@@ -247,6 +249,7 @@ PY
     systemctl restart pipbox-health.service 2>/dev/null || true
     systemctl restart pipbox-npu.service 2>/dev/null || true
     systemctl enable --now pipbox-update.path pipbox-send-ctl.path pipbox-health.service pipbox-npu.service pipbox-swupdate.path pipbox-remote.path pipbox-addon.path pipbox-remote-heal.timer pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-netaddr.path pipbox-logs.path pipbox-ssh.path pipbox-btdriver.timer pipbox-btdriver.path pipbox-wlandriver.timer pipbox-btchip.path pipbox-btchip.service pipbox-arp.service pipbox-logrotate.timer
+    systemctl enable --now pipbox-uplinks.service 2>/dev/null || true
     systemctl enable --now pipbox-preview.socket
     if [ -f "$HERE/install/install-datenschutz.sh" ]; then
       AD=/opt/pipbox/addons/datenschutz
@@ -265,6 +268,7 @@ PY
     fi
     systemctl try-restart pipbox-preview.service 2>/dev/null || true
     systemctl try-restart pipbox-arp.service 2>/dev/null || true
+    systemctl try-restart pipbox-uplinks.service 2>/dev/null || true
     systemctl restart pipbox.service
     systemctl start --no-block pipbox-btdriver.service pipbox-wlandriver.service pipbox-btchip.service 2>/dev/null || true
     [ -x /opt/pipbox/pipbox-wifi.py ] && python3 /opt/pipbox/pipbox-wifi.py migrate || true
@@ -276,6 +280,9 @@ PY
     [ -x /opt/pipbox/pipbox-wlandriver.py ] && python3 /opt/pipbox/pipbox-wlandriver.py uninstall || true
     systemctl disable --now pipbox-arp.service 2>/dev/null || true
     [ -x /opt/pipbox/pipbox-arp.py ] && python3 /opt/pipbox/pipbox-arp.py uninstall || true
+    systemctl disable --now pipbox-uplinks.service 2>/dev/null || true
+    [ -x /opt/pipbox/pipbox-uplinks.py ] && python3 /opt/pipbox/pipbox-uplinks.py uninstall || true
+    rm -f /etc/systemd/system/pipbox-uplinks.service
     [ -x /opt/pipbox/pipbox-btchip.py ] && python3 /opt/pipbox/pipbox-btchip.py uninstall || true
     [ -x /opt/pipbox/pipbox-btdriver.py ] && python3 /opt/pipbox/pipbox-btdriver.py uninstall || true
     systemctl disable --now pipbox-arp.service pipbox-btchip.path pipbox-btchip.service pipbox-btdriver.timer pipbox-btdriver.path pipbox-wlandriver.timer pipbox-funnel-guard.timer pipbox-send.service pipbox-hdmi.service pipbox-send-ctl.path pipbox-update.path pipbox-swupdate.path pipbox-remote.path pipbox-remote-heal.timer pipbox-wifi.path pipbox-power.path pipbox-logmode.path pipbox-netaddr.path pipbox-logs.path pipbox-ssh.path pipbox-health.service pipbox-npu.service pipbox-privacy.service pipbox-addon.path pipbox.service pipbox-dji.service pipbox-logrotate.timer || true
