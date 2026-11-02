@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.21
+- **Leitung ohne Antwort des SRT-Servers wird für die Box selbst nachrangig.** Geht auf einer Leitung Internet (TCP), aber der SRT-Server antwortet dort seit 45 Sekunden nicht, während er eine andere Leitung erreicht (zum Beispiel ein Netz, das UDP sperrt), nimmt die Box selbst (Tailscale, öffentliche Freigabe, Updates) eine andere Leitung. Sie bleibt nachrangig, bis der Server dort antwortet oder die Leitung ausfällt. Behebt die öffentliche Freigabe, die über so eine Leitung von außen nicht erreichbar war.
+- **Tailscale nimmt die nächste Leitung, wenn es sich nicht verbindet.** Der Leitungs-Wächter fragt Tailscale jetzt selbst: Ist es länger als 45 Sekunden ohne Verbindung zur Zentrale, obwohl mehrere Leitungen Internet haben (die einfache Prüfung genügte nicht, wenn eine Leitung zwar TCP-Verbindungen annimmt, Tailscale darüber aber nicht ankommt), wird nacheinander jede Leitung für die Box selbst bevorzugt und 45 Sekunden ausprobiert. Die, mit der sich Tailscale verbindet, bleibt bevorzugt, bis sie ausfällt. Die Sendewege ändert das nicht. Der Zustand steht im Protokoll (`status.json`, Feld `tailscale`).
+
 ## 1.1.20
 - Die stündliche Suche der Box nach Updates (apt-get) läuft jetzt mit niedrigster Priorität und stört die Sendung nicht mehr.
 

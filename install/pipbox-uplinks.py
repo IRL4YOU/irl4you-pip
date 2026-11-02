@@ -16,7 +16,9 @@ Was es tut:
      Die Box nimmt dann die nächste Leitung. Die Standardroute ohne Metrik, die der DHCP-Dienst der ersten Karte setzt, wird dafür durch die mit Metrik ersetzt.
      Die Sendewege (srtla) ändert das nicht: Ihre Quelladress-Regeln stehen vor der allgemeinen Tabelle.
   3. Stimmt die Tabelle einer Karte für die Sendewege nicht (kein Router darin, falsche Karte, fehlende Regel), wird sie aus dem Router der Karte neu gebaut.
-  4. Das Ergebnis steht in /run/pipbox-uplinks/status.json (die Oberfläche zeigt daraus Meldungen je Leitung).
+  4. Verbindet sich Tailscale länger als 45 Sekunden nicht, obwohl mehrere Leitungen Internet haben, wird nacheinander jede Leitung zur bevorzugten (Metrik 20 + Karte)
+     und ausprobiert; die, mit der Tailscale verbindet, bleibt bevorzugt, bis sie ausfällt.
+  5. Das Ergebnis steht in /run/pipbox-uplinks/status.json (die Oberfläche zeigt daraus Meldungen je Leitung).
 WLAN, Mobilfunk und PPP-Verbindungen werden geprüft und angezeigt, ihre Routen aber nicht angefasst.
 """
 import ipaddress
@@ -40,7 +42,10 @@ ROUTE_TEST = "1.1.1.1"
 SKIP_PREFIX = ("lo", "docker", "veth", "br-", "virbr", "p2p", "tailscale", "tun", "tap", "wg", "zt")
 IFACE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
 MANAGED_RE = re.compile(r"^(eth|en|usb|rndis)[A-Za-z0-9_.-]*$")
-GOOD_BASE, BAD_BASE = 100, 900
+GOOD_BASE, BAD_BASE, PREF_BASE = 100, 900, 20
+LINKS_FILE = "/run/pipbox-send/srtla-links.txt"
+SRT_MUTE_AFTER = 45             # Sekunden, die der SRT-Server auf einer Leitung schweigen muss, bevor sie für die Box selbst nachrangig wird
+TS_WAIT = 45                    # Sekunden ohne Tailscale, bevor die nächste Leitung drankommt
 RT_TABLES = ("/etc/iproute2/rt_tables", "/etc/iproute2/rt_tables.d")
 
 
@@ -199,6 +204,97 @@ def probe_all(addrs, timeout=PROBE_TIMEOUT):
 
 # ------------------------------------------------------------------ Entscheiden (reine Funktionen)
 
+def tailscale_state(text):
+    """Ausgabe von "tailscale status --json" -> True (verbunden), False (läuft, aber ohne Verbindung zur Zentrale) oder None (nicht eingerichtet/gestoppt)."""
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    if d.get("BackendState") != "Running":
+        return None if d.get("BackendState") in ("Stopped", "NeedsLogin", "NoState", "NeedsMachineAuth") else False
+    me = d.get("Self") or {}
+    return False if me.get("Online") is False else True
+
+
+def srtla_evidence(text, by_ip):
+    """Letzte Zeile je Sendeweg aus srtla-links.txt -> {Karte: True (Server antwortet) / False (keine Antwort, srtt=-1)}."""
+    last = {}
+    for ln in text.splitlines()[-60:]:
+        m = re.match(r"\S+ links: (\S+) (?:stall=\d+ )?srtt=(-?\d+)ms ", ln)
+        if m and m.group(1) in by_ip:
+            last[by_ip[m.group(1)]] = int(m.group(2)) >= 0
+    return last
+
+
+class Mute:
+    """Merkt sich Leitungen, auf denen Internet (TCP) geht, der SRT-Server (UDP) aber schweigt, während eine andere Leitung ihn erreicht.
+    Das sind Leitungen, die für Tailscale (und die Freigabe von außen) nicht taugen. Bleibt bestehen, bis der Server dort antwortet oder die Leitung ausfällt."""
+
+    def __init__(self, after=SRT_MUTE_AFTER):
+        self.after = after
+        self.since = {}
+        self.muted = set()
+
+    def update(self, now, evidence, alive):
+        """evidence: srtla_evidence oder {} (kein Senden); alive: Karten mit Internet."""
+        if evidence and any(evidence.values()):
+            for n, ok in evidence.items():
+                if ok:
+                    self.since.pop(n, None)
+                    self.muted.discard(n)
+                elif n in alive:
+                    t = self.since.setdefault(n, now)
+                    if now - t >= self.after:
+                        self.muted.add(n)
+        else:
+            self.since.clear()                  # kein Sendeweg antwortet: nichts daraus schließen
+        self.muted &= set(alive)
+        for n in [n for n in self.since if n not in alive]:
+            del self.since[n]
+        return set(self.muted)
+
+
+class Rotor:
+    """Hilft Tailscale zur nächsten Leitung: Ist Tailscale länger als TS_WAIT Sekunden ohne Verbindung, obwohl Leitungen Internet haben,
+    wird die nächste Leitung zur bevorzugten (kleinste Metrik). Verbindet es, bleibt sie es, bis sie ausfällt."""
+
+    def __init__(self, wait=TS_WAIT):
+        self.wait = wait
+        self.pref = None
+        self.tried = []
+        self.bad_since = None
+        self.switched = 0
+
+    def update(self, now, ts, good):
+        """ts: True/False/None (tailscale_state); good: Karten mit Internet in fester Reihenfolge. -> bevorzugte Karte oder None"""
+        if self.pref and self.pref not in good:
+            self.pref, self.bad_since = None, None
+        if ts is not False or len(good) < 2:
+            self.bad_since = None
+            if ts:
+                self.tried = []
+            return self.pref
+        if self.bad_since is None:
+            self.bad_since = now
+            return self.pref
+        if now - self.bad_since < self.wait:
+            return self.pref
+        # Zeit um: die nächste Leitung, die noch nicht dran war (zuerst die, die nach der jetzigen kommt)
+        cur = self.pref or (self.tried[-1] if self.tried else good[0])
+        order = good[good.index(cur) + 1:] + good[:good.index(cur) + 1] if cur in good else list(good)
+        if cur and cur not in self.tried:
+            self.tried.append(cur)
+        nxt = next((n for n in order if n not in self.tried), None)
+        if nxt is None:
+            self.tried = []
+            nxt = order[0]
+        self.pref, self.bad_since = nxt, now
+        self.switched += 1
+        return self.pref
+
+
 class Health:
     """Hält je Karte fest, ob sie gilt oder ausgefallen ist (Verzögerung gegen kurze Aussetzer)."""
 
@@ -233,7 +329,7 @@ def plan_routes(managed, current):
     for name, m in managed.items():
         if not m.get("gw") or not m.get("idx"):
             continue
-        want[name] = (m["gw"], (GOOD_BASE if m["ok"] else BAD_BASE) + m["idx"])
+        want[name] = (m["gw"], (PREF_BASE if m["ok"] and m.get("pref") else GOOD_BASE if m["ok"] else BAD_BASE) + m["idx"])
     for name, (gw, metric) in want.items():
         have = [r for r in current if r["dev"] == name]
         if not any(r["via"] == gw and r["metric"] == metric for r in have):
@@ -243,7 +339,7 @@ def plan_routes(managed, current):
         for r in [r for r in current if r["dev"] == name]:
             if (r["via"], r["metric"]) == (gw, metric):
                 continue
-            if r["metric"] not in (0, GOOD_BASE + idx, BAD_BASE + idx):
+            if r["metric"] not in (0, PREF_BASE + idx, GOOD_BASE + idx, BAD_BASE + idx):
                 continue                                    # fremde Route (zum Beispiel vom NetworkManager): nicht anfassen
             if r["metric"] == 0:
                 cmds.append(["ip", "route", "del", "default", "via", r["via"], "dev", name] if r["via"] else ["ip", "route", "del", "default", "dev", name])
@@ -299,6 +395,11 @@ class Watcher:
         self.health = Health()
         self.started = time.time()
         self.last = {}
+        self.rotor = Rotor()
+        self.mute = Mute()
+        self.muted_logged = set()
+        self.ts_next = 0
+        self.ts = None
 
     def snapshot(self):
         rc, out = run(["ip", "-4", "-o", "addr", "show", "scope", "global"])
@@ -359,6 +460,32 @@ class Watcher:
             if entry["managed"] and entry["gw"]:
                 managed[name] = {"gw": entry["gw"], "idx": entry["idx"], "ok": entry["ok"]}
         self.health.forget(set(info))
+        # Tailscale ohne Verbindung trotz Internet: die nächste Leitung ausprobieren
+        if time.time() >= self.ts_next:
+            self.ts_next = time.time() + 5
+            rc, tout = run(["tailscale", "status", "--json"], 6)
+            self.ts = tailscale_state(tout) if rc == 0 else None
+        by_ip = {ip: n for n, e in info.items() for ip in e["ips"]}
+        try:
+            with open(LINKS_FILE) as f:
+                fresh = time.time() - os.fstat(f.fileno()).st_mtime < 20
+                evidence = srtla_evidence(f.read(), by_ip) if fresh else {}
+        except OSError:
+            evidence = {}
+        muted = self.mute.update(time.time(), evidence, {n for n, m in managed.items() if m["ok"]})
+        for n, m in managed.items():
+            m["ok"] = m["ok"] and n not in muted         # Metrik 900+: die Box selbst nimmt eine Leitung, auf der der Server antwortet
+            info[n]["srt"] = "stumm" if n in muted else (True if evidence.get(n) else None)
+        for n in muted - self.muted_logged:
+            log(f"{n}: Internet geht, aber der SRT-Server antwortet dort nicht; die Box nimmt für sich eine andere Leitung")
+        self.muted_logged = set(muted)
+        good = [n for n in sorted(managed, key=lambda n: managed[n]["idx"]) if managed[n]["ok"]]
+        before = self.rotor.pref
+        pref = self.rotor.update(time.time(), self.ts, good)
+        if pref != before and pref:
+            log(f"Tailscale ohne Verbindung: die Box versucht {pref}")
+        for n, m in managed.items():
+            m["pref"] = (n == pref)
         grace = time.time() - self.started < 20
         if not grace:
             cmds = plan_routes(managed, defaults)
@@ -374,7 +501,7 @@ class Watcher:
             self.last[name] = entry["ok"]
         for n in [n for n in self.last if n not in info]:
             del self.last[n]
-        return {"time": now, "interval": INTERVAL, "ifaces": info, "dry": self.dry}
+        return {"time": now, "interval": INTERVAL, "ifaces": info, "dry": self.dry, "tailscale": {"online": self.ts, "preferred": self.rotor.pref}}
 
     def apply(self, cmds, what):
         for c in cmds:
@@ -404,7 +531,7 @@ def write_status(data):
 def uninstall():
     rc, text = run(["ip", "-4", "route", "show", "default"])
     for r in parse_default_routes(text) if rc == 0 else []:
-        if r["metric"] >= GOOD_BASE and r["metric"] < GOOD_BASE + 800 or r["metric"] >= BAD_BASE and r["metric"] < BAD_BASE + 100:
+        if r["metric"] >= PREF_BASE and r["metric"] < GOOD_BASE + 800 or r["metric"] >= BAD_BASE and r["metric"] < BAD_BASE + 100:
             run(["ip", "route", "del", "default"] + (["via", r["via"]] if r["via"] else []) + ["dev", r["dev"], "metric", str(r["metric"])])
     try:
         os.remove(STATUS)
