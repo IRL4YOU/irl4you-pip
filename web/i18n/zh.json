@@ -2665,7 +2665,8 @@
   "Testbild-Kamera": "测试画面摄像头",
   "Testton": "立体声测试音",
   "Quelle: HDMI-Eingang, USB-Webcam oder Testbild": "来源：HDMI 输入、USB 网络摄像头或测试画面",
-  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "带时钟和立体声测试音的动态测试画面（左边低音，右边高音）"
+  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "带时钟和立体声测试音的动态测试画面（左边低音，右边高音）",
+  "Privatpersonen und Streamer dürfen sie kostenlos für den Eigengebrauch benutzen, auch mit Einnahmen aus ihren Streams. Unternehmen dürfen sie in keiner Form nutzen (nur nach Rückfrage und ausdrücklicher Zustimmung), und sie darf nicht verkauft oder weitergegeben werden.": "个人和主播可以免费使用，仅限个人使用，包括来自其直播的收入。企业不得以任何形式使用（仅在询问并获得明确同意后可以），且不得出售或转让。"
  },
  "patterns": []
 }
