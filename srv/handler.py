@@ -22,7 +22,7 @@ from srv.routes_get import GetRoutes
 from srv.routes_post import PostRoutes
 from srv.static import WebFiles
 from srv.status import status_light
-from srv.util import NOT_HANDLED, WEB_DIR, read
+from srv.util import NOT_HANDLED, WEB_DIR, read, ttl_cached
 
 
 class Handler(PostRoutes, GetRoutes, BaseHTTPRequestHandler):
@@ -90,6 +90,16 @@ class Handler(PostRoutes, GetRoutes, BaseHTTPRequestHandler):
     statsserver = None
     fpsprobe = None
     uplinktest = None
+
+    @classmethod
+    def hotspot_ifaces(cls):
+        """Karten, auf denen gerade der Hotspot der Box läuft (dort ergibt ein Leitungstest keinen Sinn)."""
+        if not getattr(cls, "wifi", None):
+            return set()
+        try:
+            return set(ttl_cached("hotspot_ifaces", 10.0, lambda: {c["iface"] for c in cls.wifi.cards() if (c.get("hotspot") or {}).get("running")}) or ())
+        except Exception:
+            return set()
 
     def log_message(self, *a):
         pass
