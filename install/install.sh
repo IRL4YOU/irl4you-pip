@@ -241,6 +241,17 @@ PY
     install -m 755 "$HERE/install/pipbox-nginx-guard.sh" /opt/pipbox/pipbox-nginx-guard.sh
     install -m 644 "$HERE/install/99pipbox-nginx" /etc/apt/apt.conf.d/99pipbox-nginx
     /opt/pipbox/pipbox-nginx-guard.sh
+    if [ -x /usr/bin/apt-get ]; then
+      cat > /usr/local/bin/apt-get <<'APTEOF'
+#!/bin/sh
+# PIPBOX: apt-get mit niedrigster Prioritaet, damit die Sendung nicht gestoert wird
+if command -v ionice >/dev/null 2>&1; then
+  exec nice -n 19 ionice -c2 -n7 /usr/bin/apt-get "$@"
+fi
+exec nice -n 19 /usr/bin/apt-get "$@"
+APTEOF
+      chmod 755 /usr/local/bin/apt-get
+    fi
     echo "PIPBOX-STEP start"
     systemctl daemon-reload
     systemctl enable pipbox.service pipbox-dji.service pipbox-hdmi.service
@@ -302,7 +313,7 @@ PY
       rm -f /etc/nginx/conf.d/pipbox-log.conf
       nginx -t >/dev/null 2>&1 && nginx -s reload 2>/dev/null || true
     fi
-    rm -f /usr/local/bin/srtla_send
+    rm -f /usr/local/bin/srtla_send /usr/local/bin/apt-get
     rm -f /etc/systemd/journald.conf.d/pipbox-journal.conf /etc/systemd/journald.conf.d/pipbox-persistent.conf
     rm -rf /etc/pipbox
     systemctl restart systemd-journald 2>/dev/null || true
