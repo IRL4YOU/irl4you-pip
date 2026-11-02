@@ -260,8 +260,9 @@ def read_health(path=None):
 
 
 class UplinkTests:
-    def __init__(self, demo=False, sending=lambda: False, ips=iface_ips):
+    def __init__(self, demo=False, sending=lambda: False, ips=iface_ips, skip=lambda: set()):
         self.demo = demo
+        self.skip = skip
         self.sending = sending
         self.ips = ips
         self.lock = threading.Lock()
@@ -283,8 +284,11 @@ class UplinkTests:
         now = time.time()
         out = {}
         sel = set(selected or [])
+        skip = self.skip()
         for o in self.ips():
             name = o["iface"]
+            if name in skip:
+                continue
             h = health.get(name) or {}
             if h.get("ok") is False:
                 text, hint = ERRORS.get(h.get("err") or "", (h.get("text") or "Kein Internet über diese Leitung.", ""))
@@ -303,11 +307,14 @@ class UplinkTests:
 
     # ---- Starten
     def start(self, ifaces, allow_all=False):
-        known = {o["iface"]: o["ip"] for o in self.ips() if o.get("ip")}
+        skip = self.skip()
+        known = {o["iface"]: o["ip"] for o in self.ips() if o.get("ip") and o["iface"] not in skip}
         names = []
         for n in ifaces:
             if not isinstance(n, str) or not IFACE_RE.match(n):
                 raise ValueError("Leitung ungültig")
+            if n in skip:
+                raise ValueError("Auf dieser Karte läuft der Hotspot der Box; ein Test ist dort nicht sinnvoll")
             if n not in names:
                 names.append(n)
         if allow_all:
