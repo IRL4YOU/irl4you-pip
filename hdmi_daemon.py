@@ -23,7 +23,9 @@ HDMI_STATUS = "/sys/kernel/debug/hdmirx/status"
 HDMI_AUDIO = "hw:CARD=rockchiphdmiin"
 KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 DEFAULTS = {"enabled": False, "key": "hdmi", "bitrate": 8000, "fps": 30, "audio": "hdmi", "source": "hdmi", "usb_format": "auto"}
-SOURCE_CHOICES = ("hdmi", "usb")
+SOURCE_CHOICES = ("hdmi", "usb", "test")
+TEST_SIZE = (1280, 720)
+TEST_TONES = ((440, "0x1"), (660, "0x2"))
 USB_FORMAT_CHOICES = ("auto", "mjpeg", "h264")
 SYS_V4L = "/sys/class/video4linux"
 PROC_ASOUND = "/proc/asound"
@@ -104,7 +106,7 @@ def clean_settings(d, current=None):
         out["audio"] = d["audio"]
     if "source" in d:
         if d["source"] not in SOURCE_CHOICES:
-            raise ValueError("Quelle: HDMI-Eingang oder USB-Webcam")
+            raise ValueError("Quelle: HDMI-Eingang, USB-Webcam oder Testbild")
         out["source"] = d["source"]
     if "usb_format" in d:
         if d["usb_format"] not in USB_FORMAT_CHOICES:
@@ -132,6 +134,29 @@ def feeder_argv(cfg, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP, device=HDMI_DEVICE,
     else:
         a = ["audiotestsrc", "wave=silence", "is-live=true", "!", "audio/x-raw,rate=48000,channels=2", "!",
              "voaacenc", "bitrate=128000", "!", "aacparse", "!", "queue", "!", "mux."]
+    sink = ["flvmux", "name=mux", "streamable=true", "!", "rtmpsink", "location=rtmp://127.0.0.1:%d/%s/%s" % (rtmp_port, rtmp_app, cfg["key"])]
+    return ["gst-launch-1.0", "-q"] + v + a + sink
+
+
+def test_feeder_argv(cfg, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP):
+    cfg = clean_settings(cfg)
+    if not (isinstance(rtmp_app, str) and re.match(r"^[a-z0-9_]{1,20}$", rtmp_app)) or not isinstance(rtmp_port, int):
+        raise ValueError("RTMP-Ziel ungültig")
+    w, h = TEST_SIZE
+    v = ["videotestsrc", "is-live=true", "pattern=ball", "!", "video/x-raw,format=NV12,width=%d,height=%d,framerate=%d/1" % (w, h, cfg["fps"]), "!",
+         "textoverlay", "text=IRL4YOU BOX Testbild", "valignment=top", "halignment=left", "font-desc=Monospace 28", "!",
+         "timeoverlay", "valignment=bottom", "halignment=left", "font-desc=Monospace 28", "!",
+         "mpph264enc", "bitrate=%d" % (cfg["bitrate"] * 1000), "gop=%d" % cfg["fps"], "!",
+         "h264parse", "config-interval=-1", "!", "queue", "!", "mux."]
+    if cfg["audio"] == "hdmi":
+        a = []
+        for pad, (freq, mask) in enumerate(TEST_TONES):
+            a += ["audiotestsrc", "is-live=true", "wave=sine", "freq=%d" % freq, "volume=0.1", "!", "audio/x-raw,rate=48000,channels=1,channel-mask=(bitmask)%s" % mask, "!",
+                  "queue", "!", "il.sink_%d" % pad]
+        a += ["interleave", "name=il", "!", "audio/x-raw,rate=48000,channels=2", "!"]
+    else:
+        a = ["audiotestsrc", "is-live=true", "wave=silence", "!", "audio/x-raw,rate=48000,channels=2", "!"]
+    a += ["voaacenc", "bitrate=128000", "!", "aacparse", "!", "queue", "!", "mux."]
     sink = ["flvmux", "name=mux", "streamable=true", "!", "rtmpsink", "location=rtmp://127.0.0.1:%d/%s/%s" % (rtmp_port, rtmp_app, cfg["key"])]
     return ["gst-launch-1.0", "-q"] + v + a + sink
 
@@ -363,7 +388,7 @@ class Daemon:
 
     @property
     def available(self):
-        if self.cfg.get("source") == "usb":
+        if self.cfg.get("source") in ("usb", "test"):
             return True
         return os.path.exists(self.device)
 
@@ -430,6 +455,11 @@ class Daemon:
             return f.read(4096)
 
     async def read_signal(self):
+        if self.cfg.get("source") == "test":
+            self.signal_known = True
+            sig = parse_hdmirx_status("")
+            sig.update(plugged=True, locked=True, width=TEST_SIZE[0], height=TEST_SIZE[1], fps=float(self.cfg["fps"]), device="test")
+            return sig
         if self.cfg.get("source") == "usb":
             cam = self._usb_pick()
             self.signal_known = True
@@ -484,6 +514,8 @@ class Daemon:
                 return
             self.usb_cur = (self.usb["node"], cand)
             sig = dict(sig, width=cand[1], height=cand[2], fps=float(cand[3]), device=self.usb["node"])
+        elif self.cfg.get("source") == "test":
+            argv = test_feeder_argv(self.cfg, self.rtmp_port, self.rtmp_app)
         else:
             argv = feeder_argv(self.cfg, self.rtmp_port, self.rtmp_app, self.device, self.audio_device)
         self.tail.clear()
