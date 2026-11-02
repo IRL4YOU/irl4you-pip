@@ -2665,7 +2665,8 @@
   "Testbild-Kamera": "กล้องภาพทดสอบ",
   "Testton": "เสียงทดสอบสเตอริโอ",
   "Quelle: HDMI-Eingang, USB-Webcam oder Testbild": "แหล่งที่มา: อินพุต HDMI, เว็บแคม USB หรือภาพทดสอบ",
-  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "ภาพทดสอบเคลื่อนไหวพร้อมนาฬิกาและเสียงทดสอบสเตอริโอ (เสียงต่ำด้านซ้าย เสียงสูงด้านขวา)"
+  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "ภาพทดสอบเคลื่อนไหวพร้อมนาฬิกาและเสียงทดสอบสเตอริโอ (เสียงต่ำด้านซ้าย เสียงสูงด้านขวา)",
+  "Privatpersonen und Streamer dürfen sie kostenlos für den Eigengebrauch benutzen, auch mit Einnahmen aus ihren Streams. Unternehmen dürfen sie in keiner Form nutzen (nur nach Rückfrage und ausdrücklicher Zustimmung), und sie darf nicht verkauft oder weitergegeben werden.": "บุคคลทั่วไปและสตรีมเมอร์ใช้ได้ฟรีเฉพาะการใช้งานส่วนตัว รวมถึงกรณีมีรายได้จากสตรีมของตน บริษัทห้ามใช้ในทุกรูปแบบ (ต้องสอบถามและได้รับความยินยอมอย่างชัดแจ้งเท่านั้น) และห้ามขายหรือส่งต่อ"
  },
  "patterns": []
 }

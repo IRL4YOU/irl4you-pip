@@ -2665,7 +2665,8 @@
   "Testbild-Kamera": "Камера с тестовым изображением",
   "Testton": "Стереотестовый тон",
   "Quelle: HDMI-Eingang, USB-Webcam oder Testbild": "Источник: вход HDMI, USB-вебкамера или тестовое изображение",
-  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "Движущееся тестовое изображение с часами и стереотестовым тоном (низкий слева, высокий справа)"
+  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "Движущееся тестовое изображение с часами и стереотестовым тоном (низкий слева, высокий справа)",
+  "Privatpersonen und Streamer dürfen sie kostenlos für den Eigengebrauch benutzen, auch mit Einnahmen aus ihren Streams. Unternehmen dürfen sie in keiner Form nutzen (nur nach Rückfrage und ausdrücklicher Zustimmung), und sie darf nicht verkauft oder weitergegeben werden.": "Частные лица и стримеры могут пользоваться им бесплатно только для личных целей, в том числе при доходах от своих трансляций. Компании не вправе использовать его ни в какой форме (только по запросу и с явного согласия), а продавать его или передавать другим нельзя."
  },
  "patterns": []
 }
