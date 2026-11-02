@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.25
+- Übersetzungen ergänzt.
+
 ## 1.1.24
 - Ton wird in Stereo gesendet.
 
