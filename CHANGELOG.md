@@ -1,5 +1,12 @@
 # Änderungen
 
+## 1.1.19
+- **Geschwindigkeits- und Verbindungstest je Leitung** (Karte „Verbindungen“, Knopf „Testen“ je Leitung und „Alle Leitungen testen“, auch während der Sendung): misst Herunterladen, Hochladen und Antwortzeit über Cloudflare (höchstens etwa 45 MB je Leitung) und nennt bei einem Fehlschlag den Grund im Klartext (keine Adresse, kein Router, keine Route, keine Antwort aus dem Internet, DNS, gesicherte Verbindung, falsche Karte). Während der Sendung fragt die Oberfläche vorher nach.
+- **Leitungs-Wächter** (`pipbox-uplinks`, läuft im Hintergrund): prüft alle 10 Sekunden jede Leitung mit kurzen Verbindungen, die an die Adresse der Leitung gebunden sind. Fällt eine aus, nimmt die Box selbst (Tailscale, Updates, Zeit) automatisch die nächste Leitung; kehrt sie zurück, gilt wieder die alte Reihenfolge. Die Sendewege ändert das nicht. Eine ausgefallene Leitung erscheint mit Meldung in der Liste der Verbindungen.
+- **Quelladress-Routing für die Sendewege wird geprüft und bei Bedarf neu gebaut.** Behoben: Hängt neben der DHCP-Adresse einer Karte eine feste Zusatzadresse im selben Netz und ist diese die erste Adresse, fehlte für sie die Regel, und die Pakete der Sendewege verließen die Box über die falsche Karte (der Sendeweg blieb ohne Antwort des Servers). Jede Adresse im Netz des Routers bekommt jetzt ihre Regel; auch eine falsche oder leere Tabelle einer Karte wird neu aus dem Router der Karte gebaut.
+- **Meldung bei der Sendung:** Hat eine Leitung Internet, aber der SRT-Server antwortet auf ihr länger als 25 Sekunden nicht, steht das mit Hinweis in der Liste der Verbindungen.
+- Die Protokolle enthalten jetzt alle Routen-Tabellen, den Weg jeder Absenderadresse ins Internet und das Ergebnis des Leitungs-Wächters.
+
 ## 1.1.18
 - Einstellungen sichern nimmt jetzt auch Systemwarnungen im Twitch-Chat, Streamerbot Deck und die Optionen der Oberfläche mit.
 - Hinweis zur Hauptkamera nur noch beim Bild in Bild; Übersetzungen ergänzt.

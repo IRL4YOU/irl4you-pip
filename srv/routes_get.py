@@ -9,7 +9,7 @@ except ImportError:
 from srv.auth import Auth
 from srv.datenschutz import neustart_noetig
 from srv.httpd import PHONE_FRAME
-from srv.netinfo import iface_ips
+from srv.netinfo import iface_ips, uplink_states
 from srv.static import ASSET_RE
 from srv.wifi import label_bluetooth
 from srv.util import NOT_HANDLED
@@ -168,7 +168,12 @@ class GetRoutes:
         if path == "/api/network":
             return self.reply(200, self.netchoice.status())
         if path == "/api/srtla":
-            return self.reply(200, {**self.srtla.public(), "interfaces": iface_ips(), "conn_names": self.conn_labels()})
+            out = {**self.srtla.public(), "interfaces": iface_ips(), "conn_names": self.conn_labels()}
+            sel = (out.get("settings") or {}).get("uplinks") or []
+            out["diag"] = self.uplinktest.diagnose(sel, uplink_states(sel), bool(self.send._active())) if self.uplinktest else {}
+            return self.reply(200, out)
+        if path == "/api/uplinktest":
+            return self.reply(200, self.uplinktest.status() if self.uplinktest else {"tests": {}, "busy": False, "health": None, "sending": False})
         if path == "/api/pipeline":
             st = self.pipeline.status(self.cams.listing(""))
             st["live"] = {"main": self.send.delay_live(), "pips": self.send.delay_live_pips()}
