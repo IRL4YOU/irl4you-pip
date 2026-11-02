@@ -2665,7 +2665,8 @@
   "Testbild-Kamera": "테스트 화면 카메라",
   "Testton": "스테레오 테스트 음",
   "Quelle: HDMI-Eingang, USB-Webcam oder Testbild": "소스: HDMI 입력, USB 웹캠 또는 테스트 화면",
-  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "시계와 스테레오 테스트 음이 있는 움직이는 테스트 화면(왼쪽은 낮은 음, 오른쪽은 높은 음)"
+  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "시계와 스테레오 테스트 음이 있는 움직이는 테스트 화면(왼쪽은 낮은 음, 오른쪽은 높은 음)",
+  "Privatpersonen und Streamer dürfen sie kostenlos für den Eigengebrauch benutzen, auch mit Einnahmen aus ihren Streams. Unternehmen dürfen sie in keiner Form nutzen (nur nach Rückfrage und ausdrücklicher Zustimmung), und sie darf nicht verkauft oder weitergegeben werden.": "개인과 스트리머는 개인 용도로만 무료로 사용할 수 있으며, 자신의 스트림에서 얻은 수익이 있어도 됩니다. 기업은 어떤 형태로도 사용할 수 없으며(문의 후 명시적 동의가 있는 경우에만 가능), 판매하거나 다른 사람에게 넘겨서는 안 됩니다."
  },
  "patterns": []
 }

@@ -2665,7 +2665,8 @@
   "Testbild-Kamera": "テスト映像カメラ",
   "Testton": "ステレオテスト音",
   "Quelle: HDMI-Eingang, USB-Webcam oder Testbild": "ソース：HDMI入力、USBウェブカメラ、またはテスト映像",
-  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "時計とステレオテスト音付きの動くテスト映像（左は低音、右は高音）"
+  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "時計とステレオテスト音付きの動くテスト映像（左は低音、右は高音）",
+  "Privatpersonen und Streamer dürfen sie kostenlos für den Eigengebrauch benutzen, auch mit Einnahmen aus ihren Streams. Unternehmen dürfen sie in keiner Form nutzen (nur nach Rückfrage und ausdrücklicher Zustimmung), und sie darf nicht verkauft oder weitergegeben werden.": "個人および配信者は、自分用の利用に限り、無料で使用できます。配信による収入があっても構いません。企業はいかなる形でも使用できません（問い合わせの上、明示的な同意がある場合のみ）。また、販売や第三者への提供はできません。"
  },
  "patterns": []
 }
