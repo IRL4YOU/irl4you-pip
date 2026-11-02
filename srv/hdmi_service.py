@@ -13,6 +13,7 @@ class HdmiService:
     HOST, PORT = "127.0.0.1", 9102
     CAMERA_NAMES = ("HDMI", "HDMI-Eingang", "HDMI 2")
     USB_NAMES = ("USB-Kamera", "USB-Webcam", "USB 2")
+    TEST_NAMES = ("Testbild", "Testbild 2")
     ALLOWED = ("enabled", "bitrate", "fps", "audio", "source", "usb_format")
     TTL = 1.5
     DOWN = "Der HDMI-Dienst läuft nicht (Software-Update oder install.sh ausführen)"
@@ -64,8 +65,9 @@ class HdmiService:
     def _fake_status(self):
         f = self.fake
         usb = f.get("source") == "usb"
+        test = f.get("source") == "test"
         return {"ok": True, "available": True, "state": "streaming" if f["enabled"] else "off", "message": "", "settings": dict(f),
-                "signal": ({"plugged": True, "locked": True, "width": 1280, "height": 720, "fps": 30.0, "interlaced": False, "format": "", "depth": 0} if usb else
+                "signal": ({"plugged": True, "locked": True, "width": 1280, "height": 720, "fps": float(f["fps"]) if test else 30.0, "interlaced": False, "format": "", "depth": 0} if usb or test else
                            {"plugged": True, "locked": True, "width": 1920, "height": 1080, "fps": 60.0, "interlaced": False, "format": "RGB", "depth": 8}),
                 "usb": ({"present": True, "name": "Beispiel-Webcam", "node": "/dev/video2", "format": "MJPEG 1280x720@30", "audio": "plughw:CARD=Beispiel"} if usb else
                         {"present": False, "name": "", "node": "", "format": "", "audio": ""}),
@@ -80,8 +82,8 @@ class HdmiService:
         roles = {c["role"] for c in self.cams.cams}
         role = "main" if "main" not in roles else "pip" if "pip" not in roles else "extra"
         taken = {c["name"].casefold() for c in self.cams.cams}
-        names = self.USB_NAMES if source == "usb" else self.CAMERA_NAMES
-        name = next((n for n in names if n.casefold() not in taken), "USB-Kamera 2" if source == "usb" else "HDMI-Kamera")
+        names = self.TEST_NAMES if source == "test" else self.USB_NAMES if source == "usb" else self.CAMERA_NAMES
+        name = next((n for n in names if n.casefold() not in taken), "Testbild-Kamera" if source == "test" else "USB-Kamera 2" if source == "usb" else "HDMI-Kamera")
         try:
             self.cams.add(name, HDMI_KEY, role)
         except ValueError:
