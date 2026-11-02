@@ -298,7 +298,7 @@ def build(c, base=RTMP_BASE, frame=None, ds=None, ds_files=None):
                "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                f"h265parse config-interval=-1 ! {q} ! mux.\n")
     ad = f"queue name=pdelay_a max-size-time={(dly + 1500) * 1000000} max-size-buffers=0 max-size-bytes=0 min-threshold-time={dly * 1000000} ! " if px and dly else ""
-    out.append("input-selector name=asel ! audiomixer name=amix ! identity name=a_delay signal-handoffs=TRUE ! volume name=avol ! " + ad +
+    out.append("input-selector name=asel ! audiomixer name=amix ! " + f"capsfilter name=a_caps caps=\"{AUDIO_CAPS}\" ! " + "identity name=a_delay signal-handoffs=TRUE ! volume name=avol ! " + ad +
                f"opusenc bitrate=128000 ! opusparse ! {q} ! mux.\n")
     out.append(f"audiotestsrc is-live=true wave=silence ! capsfilter caps=\"{AUDIO_CAPS}\" ! queue ! asel.sink_0\n")
     out.append(f"audiotestsrc is-live=true wave=silence ! capsfilter caps=\"{AUDIO_CAPS}\" ! queue ! amix.\n")
