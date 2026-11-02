@@ -134,13 +134,6 @@ class Auth:
     def _hash(pw, salt):
         return hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, 300000, dklen=32)
 
-    def throttled(self, ip):
-        now = time.time()
-        with self.lock:
-            f = [t for t in self.fails.get(ip, []) if now - t < FAIL_WINDOW]
-            self.fails[ip] = f
-            return len(f) >= MAX_FAILS
-
     def fail(self, ip):
         with self.lock:
             self.fails.setdefault(ip, []).append(time.time())
