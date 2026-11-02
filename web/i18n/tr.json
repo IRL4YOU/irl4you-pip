@@ -2665,7 +2665,8 @@
   "Testbild-Kamera": "Test görüntüsü kamerası",
   "Testton": "Stereo test sesi",
   "Quelle: HDMI-Eingang, USB-Webcam oder Testbild": "Kaynak: HDMI girişi, USB web kamerası veya test görüntüsü",
-  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "Saat ve stereo test sesi olan hareketli test görüntüsü (solda alçak, sağda yüksek)"
+  "Bewegtes Testbild mit Zeitanzeige und Stereo-Testton (links tief, rechts hoch)": "Saat ve stereo test sesi olan hareketli test görüntüsü (solda alçak, sağda yüksek)",
+  "Privatpersonen und Streamer dürfen sie kostenlos für den Eigengebrauch benutzen, auch mit Einnahmen aus ihren Streams. Unternehmen dürfen sie in keiner Form nutzen (nur nach Rückfrage und ausdrücklicher Zustimmung), und sie darf nicht verkauft oder weitergegeben werden.": "Bireyler ve yayıncılar bunu yalnızca kişisel kullanım için ücretsiz kullanabilir, yayınlarından elde ettikleri gelir de buna dahildir. Şirketler bunu hiçbir şekilde kullanamaz (yalnızca sorup açık izin alındıktan sonra), ayrıca satılamaz veya başkalarına verilemez."
  },
  "patterns": []
 }
