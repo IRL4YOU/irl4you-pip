@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.20
+- Die stündliche Suche der Box nach Updates (apt-get) läuft jetzt mit niedrigster Priorität und stört die Sendung nicht mehr.
+
 ## 1.1.19
 - **Geschwindigkeits- und Verbindungstest je Leitung** (Karte „Verbindungen“, Knopf „Testen“ je Leitung und „Alle Leitungen testen“, auch während der Sendung): misst Herunterladen, Hochladen und Antwortzeit über Cloudflare (höchstens etwa 45 MB je Leitung) und nennt bei einem Fehlschlag den Grund im Klartext (keine Adresse, kein Router, keine Route, keine Antwort aus dem Internet, DNS, gesicherte Verbindung, falsche Karte). Während der Sendung fragt die Oberfläche vorher nach.
 - **Leitungs-Wächter** (`pipbox-uplinks`, läuft im Hintergrund): prüft alle 10 Sekunden jede Leitung mit kurzen Verbindungen, die an die Adresse der Leitung gebunden sind. Fällt eine aus, nimmt die Box selbst (Tailscale, Updates, Zeit) automatisch die nächste Leitung; kehrt sie zurück, gilt wieder die alte Reihenfolge. Die Sendewege ändert das nicht. Eine ausgefallene Leitung erscheint mit Meldung in der Liste der Verbindungen.
