@@ -95,22 +95,6 @@ def shift_ok():
     return bool(_ENG["shift"])
 
 
-def audio_tap_ok():
-    force = os.environ.get("PIPBOX_AUDIO_TAP")
-    if force in ("0", "1"):
-        return force == "1"
-    engine_level()
-    return bool(_ENG["aud"])
-
-
-def video_tap_ok():
-    force = os.environ.get("PIPBOX_VIDEO_TAP")
-    if force in ("0", "1"):
-        return force == "1"
-    engine_level()
-    return bool(_ENG["vid"])
-
-
 def enabled(cfg):
     return bool(cfg.get("type") in ("pip", "single") and cfg.get("always_ready") is True and cfg.get("main") and supported())
 

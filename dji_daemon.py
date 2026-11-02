@@ -974,21 +974,6 @@ def _read_json(path):
         return {}
 
 
-def iface_ip(name):
-    import socket
-    import struct
-    try:
-        import fcntl
-        sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            return socket.inet_ntoa(fcntl.ioctl(sk.fileno(), 0x8915,
-                                                struct.pack("256s", name[:15].encode()))[20:24])
-        finally:
-            sk.close()
-    except (ImportError, OSError):
-        return None
-
-
 def migrate_legacy(state_dir, wifi_options=None):
     known = _read_json(os.path.join(state_dir, "dji-known.json"))
     settings = _read_json(os.path.join(state_dir, "dji-settings.json"))
