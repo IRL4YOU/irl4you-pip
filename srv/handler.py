@@ -89,6 +89,7 @@ class Handler(PostRoutes, GetRoutes, BaseHTTPRequestHandler):
     statsshare = None
     statsserver = None
     fpsprobe = None
+    uplinktest = None
 
     def log_message(self, *a):
         pass

@@ -904,11 +904,31 @@ def net_journal(boot, first, last):
     return collapse_repeats(nl.join(lines)) 
 
 
+def route_tables():
+    nl = chr(10)
+    text = run(["ip", "-4", "route", "show", "table", "all"], 8)
+    return nl.join(l for l in text.splitlines() if l.strip() and not l.startswith(("local ", "broadcast ")))
+
+
+def source_routes():
+    nl = chr(10)
+    out = []
+    for line in run(["ip", "-4", "-o", "addr", "show", "scope", "global"], 8).splitlines():
+        m = re.match(r"^\d+:\s+(\S+)\s+inet (\d+\.\d+\.\d+\.\d+)/", line)
+        if m and not m.group(1).startswith(("tailscale", "docker", "veth", "br-", "lo")):
+            r = run(["ip", "-4", "route", "get", "1.1.1.1", "from", m.group(2)], 5).strip().splitlines()
+            out.append("%s %s -> %s" % (m.group(1), m.group(2), (r[0] if r else "keine Antwort")))
+    return nl.join(out)
+
+
 def network_report():
     nl = chr(10)
     out = ["Adressen je Netzkarte (fest = bleibt, per DHCP = vom Router mit Lebensdauer):", net_addresses().rstrip(nl), "",
            "Karten und Kabel (ip -br link):", run(["ip", "-br", "link"], 8).rstrip(nl), "",
            "Routen und Regeln:", run(["ip", "-4", "route"], 8).rstrip(nl), run(["ip", "-4", "rule"], 8).rstrip(nl), "",
+           "Alle Routen-Tabellen (Tabelle je Netzkarte für die Sendewege; ohne local und broadcast):", route_tables().rstrip(nl), "",
+           "Weg ins Internet je Absenderadresse (ip route get 1.1.1.1 from <Adresse>; verlässt das Paket die Box über die richtige Karte?):", source_routes().rstrip(nl), "",
+           "Leitungs-Wächter (/run/pipbox-uplinks/status.json):", tail_file("/run/pipbox-uplinks/status.json", 40, 6000).rstrip(nl), "",
            "Dienste fürs Netz:"]
     for u in ("networking", "ifplugd", "NetworkManager", "systemd-networkd", "dhcpcd"):
         out.append("%-18s %s" % (u, run(["systemctl", "is-active", u + ".service"], 5).strip()))

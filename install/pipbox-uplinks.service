@@ -1,0 +1,28 @@
+[Unit]
+Description=IRL4YOU BOX Leitungs-Wächter (prüft jede Internetleitung und lässt die Box selbst die nächste nehmen, wenn eine ausfällt)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/pipbox/pipbox-uplinks.py watch
+Restart=on-failure
+RestartSec=10
+Nice=10
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run
+ProtectHome=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

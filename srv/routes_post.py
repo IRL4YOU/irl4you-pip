@@ -36,6 +36,11 @@ class PostRoutes:
         if path == "/api/network":
             self.netchoice.select(d.get("iface"))
             return self.reply(200, {"ok": True})
+        if path == "/api/uplinktest":
+            if not self.uplinktest:
+                raise ValueError("Der Test ist nicht verfügbar")
+            ifs = d.get("ifaces") if isinstance(d.get("ifaces"), list) else ([d["iface"]] if d.get("iface") else [])
+            return self.reply(200, self.uplinktest.start(ifs[:8], allow_all=d.get("all") is True))
         if path == "/api/send":
             self.send.request(d.get("action"), d.get("confirm") is True)
             if d.get("action") in ("stop", "start"):
