@@ -32,7 +32,7 @@ MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (sieh
 
 ## Hilfe
 
-Webseite: [irl4you.de](https://irl4you.de). Fragen und Fehler: [Discord](https://discord.gg/nrBCEarMup). Bei Hardware-Fragen (Kameras, Bluetooth-Sticks, WLAN, Strom) bitte dort an **Akinos01** wenden.
+Webseite: [irl4you.de](https://irl4you.de/irl4you-box.html). Fragen und Fehler: [Discord](https://discord.gg/nrBCEarMup). Bei Hardware-Fragen (Kameras, Bluetooth-Sticks, WLAN, Strom) bitte dort an **Akinos01** wenden.
 
 ## Herkunft und Dank
 
