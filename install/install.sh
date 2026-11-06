@@ -183,6 +183,12 @@ PY
     install -d /opt/pipbox/web/js
     rm -f /opt/pipbox/web/js/*.js
     for f in "$HERE"/web/js/*.js; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/js/$(basename "$f")"; done
+    rm -rf /opt/pipbox/web/neu
+    for d in "$HERE"/web/neu "$HERE"/web/neu/ds "$HERE"/web/neu/views; do
+      [ -d "$d" ] || continue
+      install -d "/opt/pipbox/web/${d#$HERE/web/}"
+      for f in "$d"/*; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/${f#$HERE/web/}"; done
+    done
     install -d /opt/pipbox/web/i18n
     rm -f /opt/pipbox/web/i18n/*.json
     for f in "$HERE"/web/i18n/*.json; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/i18n/$(basename "$f")"; done

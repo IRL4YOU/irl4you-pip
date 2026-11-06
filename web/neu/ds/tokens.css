@@ -1,0 +1,125 @@
+/* ==========================================================================
+   IRL4YOU BOX · Designsystem · TOKENS
+   --------------------------------------------------------------------------
+   Einzige Stelle für Farben, Abstände, Schrift, Radien, Schatten, Bewegung.
+   Regel: Komponenten und Seiten benutzen NUR diese Variablen, nie eigene Werte.
+   Farben sind semantisch benannt (wofür), nicht nach Aussehen (wie).
+   Hell/Dunkel: light-dark() + color-scheme. Folgt dem System, lässt sich per
+   <html data-theme="light|dark"> festlegen.
+   Alle Textfarben erreichen WCAG AA (4,5:1), Rahmen von Eingabefeldern 3:1.
+   ========================================================================== */
+
+@layer reset, tokens, base, components, layout, utilities;
+
+@layer tokens {
+  :root {
+    color-scheme: light dark;
+
+    /* ---- Flächen (von hinten nach vorn) ------------------------------- */
+    --surface-0: light-dark(oklch(0.975 0.004 250), oklch(0.17 0.015 255));  /* Seitenhintergrund */
+    --surface-1: light-dark(oklch(1 0 0),           oklch(0.21 0.017 255));  /* Karten, Leisten */
+    --surface-2: light-dark(oklch(0.96 0.006 250),  oklch(0.25 0.018 255));  /* Eingabefelder, Kacheln in Karten */
+    --surface-3: light-dark(oklch(0.93 0.008 250),  oklch(0.29 0.02 255));   /* Hover, gedrückt */
+    --surface-overlay: light-dark(oklch(1 0 0),     oklch(0.24 0.018 255));  /* Dialoge, Menüs */
+    --scrim: oklch(0.1 0.02 255 / 0.6);
+
+    /* ---- Text ---------------------------------------------------------- */
+    --text-1: light-dark(oklch(0.22 0.02 255), oklch(0.96 0.005 255));       /* Haupttext */
+    --text-2: light-dark(oklch(0.43 0.02 255), oklch(0.80 0.015 255));       /* Beschreibungen */
+    --text-3: light-dark(oklch(0.50 0.02 255), oklch(0.68 0.02 255));        /* Hinweise, Platzhalter */
+
+    /* ---- Linien -------------------------------------------------------- */
+    --border:        light-dark(oklch(0.89 0.008 250), oklch(0.34 0.02 255)); /* Trennlinien, Kartenrand */
+    --border-strong: light-dark(oklch(0.62 0.015 250), oklch(0.56 0.02 255)); /* Rand von Bedienelementen (3:1) */
+
+    /* ---- Markenfarbe (Hauptaktion, Auswahl, Fokus) ---------------------- */
+    --accent:        light-dark(oklch(0.50 0.13 235), oklch(0.78 0.13 215));
+    --accent-hover:  light-dark(oklch(0.45 0.13 235), oklch(0.83 0.12 215));
+    --accent-press:  light-dark(oklch(0.40 0.12 235), oklch(0.72 0.13 215));
+    --on-accent:     light-dark(oklch(1 0 0),         oklch(0.20 0.03 230));
+    --accent-subtle: light-dark(oklch(0.94 0.03 225), oklch(0.30 0.06 215));
+    --accent-text:   light-dark(oklch(0.42 0.13 235), oklch(0.84 0.12 215));
+
+    /* ---- Zustandsfarben (immer mit Symbol/Text, nie nur Farbe) ---------- */
+    --ok:            light-dark(oklch(0.45 0.12 155), oklch(0.80 0.16 155));
+    --ok-subtle:     light-dark(oklch(0.94 0.05 155), oklch(0.30 0.06 155));
+    --warn:          light-dark(oklch(0.46 0.11 65),  oklch(0.84 0.15 75));
+    --warn-subtle:   light-dark(oklch(0.95 0.06 85),  oklch(0.32 0.07 75));
+    --danger:        light-dark(oklch(0.50 0.17 25),  oklch(0.76 0.15 25));
+    --danger-subtle: light-dark(oklch(0.95 0.03 25),  oklch(0.30 0.08 25));
+    --live:          oklch(0.62 0.22 27);                                      /* nur für „Live“-Punkt und Aufnahme */
+
+    /* ---- Abstände (4-Punkt-Raster) ------------------------------------- */
+    --space-1: 0.25rem;  /*  4 */
+    --space-2: 0.5rem;   /*  8 */
+    --space-3: 0.75rem;  /* 12 */
+    --space-4: 1rem;     /* 16 */
+    --space-5: 1.5rem;   /* 24 */
+    --space-6: 2rem;     /* 32 */
+    --space-7: 3rem;     /* 48 */
+    --space-8: 4rem;     /* 64 */
+
+    /* ---- Schrift (Systemschrift, funktioniert ohne Internet) ------------ */
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --text-xs:  0.75rem;   /* 12  Beschriftung, Badge */
+    --text-sm:  0.875rem;  /* 14  Hinweise, Tabellen */
+    --text-md:  1rem;      /* 16  Fließtext, Eingabe (verhindert Zoom auf iOS) */
+    --text-lg:  1.125rem;  /* 18  Kartentitel */
+    --text-xl:  1.375rem;  /* 22  Seitentitel */
+    --text-2xl: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);  /* Kennzahlen, Hero */
+    --leading-tight: 1.25;
+    --leading-normal: 1.5;
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-bold: 650;
+
+    /* ---- Form ----------------------------------------------------------- */
+    --radius-s: 6px;      /* Badge, Tastenkürzel */
+    --radius-m: 10px;     /* Buttons, Eingabefelder */
+    --radius-l: 16px;     /* Karten, Dialoge */
+    --radius-full: 999px; /* Schalter, Chips */
+    --control-h: 2.5rem;       /* 40 Standardhöhe Bedienelemente (Desktop) */
+    --control-h-sm: 2rem;      /* 32 */
+    --control-h-lg: 3rem;      /* 48 */
+    --touch-min: 2.75rem;      /* 44 Mindestgröße zum Tippen */
+    --focus-ring: 0 0 0 2px var(--surface-0), 0 0 0 4px var(--accent);
+
+    /* ---- Tiefe ---------------------------------------------------------- */
+    --shadow-1: 0 1px 2px oklch(0 0 0 / 0.08), 0 1px 1px oklch(0 0 0 / 0.04);
+    --shadow-2: 0 4px 12px oklch(0 0 0 / 0.14), 0 1px 3px oklch(0 0 0 / 0.08);
+    --shadow-3: 0 16px 40px oklch(0 0 0 / 0.28), 0 4px 12px oklch(0 0 0 / 0.12);
+
+    /* ---- Bewegung ------------------------------------------------------- */
+    --dur-fast: 120ms;
+    --dur-med: 200ms;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+
+    /* ---- Ebenen --------------------------------------------------------- */
+    --z-sticky: 10;
+    --z-nav: 20;
+    --z-overlay: 40;
+    --z-toast: 60;
+
+    /* ---- Layout --------------------------------------------------------- */
+    --content-max: 72rem;
+    --sidebar-w: 15rem;
+    --bar-h: 3.5rem;
+  }
+
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"]  { color-scheme: dark; }
+
+  /* Touchgeräte: größere Bedienelemente (WCAG 2.2 AA verlangt 24 px, wir nehmen 44 px als Ziel) */
+  @media (pointer: coarse) {
+    :root { --control-h: 2.75rem; --control-h-sm: 2.5rem; }
+  }
+
+  /* Hoher Kontrast auf Wunsch des Systems */
+  @media (prefers-contrast: more) {
+    :root {
+      --border: var(--border-strong);
+      --text-3: var(--text-2);
+    }
+  }
+}
