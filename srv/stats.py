@@ -326,7 +326,7 @@ class StatsShare:
             return snap
 
 
-def build_stats_snapshot(m, send, labels, groups, now=None):
+def build_stats_snapshot(m, send, labels, groups, now=None, hotspots=None):
     def num(v, nd=1):
         return round(v, nd) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
@@ -355,13 +355,15 @@ def build_stats_snapshot(m, send, labels, groups, now=None):
         ups = m.get("uplinks") if isinstance(m.get("uplinks"), dict) else {}
         rates = m.get("net") if isinstance(m.get("net"), dict) else {}
         names = labels if isinstance(labels, dict) else {}
+        hot = set(hotspots or ())
         rows = []
         for n, r in rates.items():
             if not isinstance(r, dict) or n == "lo" or n.startswith(("tailscale", "docker", "veth")):
                 continue
             u = ups.get(n) if isinstance(ups.get(n), dict) else None
             rows.append({"id": text(n, 20), "name": text(names.get(n) or net_label(n), 40), "rx_mbit": num(r.get("rx_mbit"), 2), "tx_mbit": num(r.get("tx_mbit"), 2),
-                         "uplink": u is not None, "state": text(u.get("state"), 10) if u else "", "srtt_ms": num(u.get("srtt"), 0) if u else None})
+                         "uplink": u is not None, "state": text(u.get("state"), 10) if u else "", "srtt_ms": num(u.get("srtt"), 0) if u else None,
+                         "hotspot": n in hot})
         rows.sort(key=lambda r: (not r["uplink"], r["id"]))
         out["net"] = rows
         out["uplink_tx_mbit"] = num(sum(r["tx_mbit"] or 0 for r in rows if r["uplink"]), 2)

@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.1.28
+- **Neue Oberfläche** (Adresse `/neu`; in der bisherigen Oberfläche unter „Optionen“ › „Design“ als „Neue Oberfläche“ wählbar, die Wahl merkt sich der Browser, zurück über „Bisherige Oberfläche“): feste Navigation (Live, Kameras, Bild, Netzwerk, System), Suche über alle Einstellungen (Strg+K), Live-Seite mit anordenbaren Karten, am Handy Live-/Stop-Knopf und Schnellsteuerung (Hauptkamera wechseln, kleines Bild aus- und einblenden, Kamera deaktivieren, Tonquelle, stumm; Tippen, Doppeltippen und langes Drücken wie in der bisherigen Fußleiste), Ampel, Verbindungskurve mit Skala und Kamera-Punkte in der Kopfzeile, Schalter für Streammodus, Verpixeln und Bildschirm wach halten, Hilfetexte einzeln oder alle ein- und ausblendbar (am Handy standardmäßig aus), Sprachumschaltung, helles und dunkles Design. Alle Funktionen der bisherigen Oberfläche sind enthalten. Die neuen Texte sind bisher nur ins Englische übersetzt, die anderen Sprachen zeigen sie englisch.
+- **Statistik-Seite** (OBS und Homepage): Glas-Design, Hintergrundfarbe wählbar (`&bg=`, in der neuen Oberfläche per Auswahl) mit dazu passenden Schriftfarben (`&scheme=light|dark`), bei nicht erreichbarer Box steht nur „offline“, der Hotspot der Box ist als solcher gekennzeichnet (neues Feld `hotspot` je Sendeweg), Name „IRL4YOU BOX“ mit Logo.
+- Der Hinweis „Karten liegen im selben Netz“ nennt jetzt das Netz; die Anzeige der festen Zusatzadresse (LAN) nennt die Netzkarte.
+
 ## 1.1.27
 - Lizenzhinweis in allen Sprachen; aufgeräumt.
 

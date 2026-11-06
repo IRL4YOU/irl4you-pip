@@ -374,7 +374,7 @@ class Handler(PostRoutes, GetRoutes, BaseHTTPRequestHandler):
     def stats_snapshot_now(cls):
         h = object.__new__(cls)
         h.headers = {}
-        return cls.statsshare.snapshot(lambda: build_stats_snapshot(h.metrics_data(light=True), {"active": h.send.live_fast()}, h.conn_labels(), h.statsshare.groups()))
+        return cls.statsshare.snapshot(lambda: build_stats_snapshot(h.metrics_data(light=True), {"active": h.send.live_fast()}, h.conn_labels(), h.statsshare.groups(), hotspots=cls.hotspot_ifaces()))
 
     def stats_status(self):
         st = self.statsshare.status()
