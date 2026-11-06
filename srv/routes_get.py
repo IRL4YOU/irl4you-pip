@@ -23,6 +23,8 @@ class GetRoutes:
             if self.authed() and "app=1" not in self.path and self.phone_view_wanted():
                 return self.send_bytes(200, PHONE_FRAME.encode("utf-8"), "text/html; charset=utf-8")
             return self.page("index.html" if self.authed() else "login.html")
+        if path in ("/neu", "/neu/", "/neu/index.html"):
+            return self.page("neu/index.html" if self.authed() else "login.html")
         if path == "/api/auth":
             out = {"configured": self.auth.configured, "mode": self.auth.mode, "authed": self.authed()}
             if self.auth.mode == "demo":

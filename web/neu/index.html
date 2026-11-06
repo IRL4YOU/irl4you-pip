@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#12213c">
+<script src="/i18n.js"></script>
+<title>IRL4YOU BOX</title>
+<link rel="stylesheet" href="/neu/ds/tokens.css">
+<link rel="stylesheet" href="/neu/ds/components.css">
+<link rel="stylesheet" href="/neu/app.css">
+<script src="/neu/ds/ds.js"></script>
+</head>
+<body data-state="idle">
+<div class="app">
+  <aside class="side">
+    <a class="brand" href="#live" data-view-link="live" aria-label="IRL4YOU BOX, zur Live-Ansicht">
+      <svg viewBox="0 0 1024 1024" aria-hidden="true"><circle cx="512" cy="512" r="472" fill="#12213c"/><circle cx="512" cy="512" r="448" fill="none" stroke="#1cdaf5" stroke-width="48"/><path d="M599 252 295 612H715M599 252V757" fill="none" stroke="#f8fafc" stroke-width="100" stroke-linecap="round" stroke-linejoin="round"/><circle cx="757" cy="267" r="72" fill="#ffa14f"/></svg>
+      <span>IRL4YOU BOX</span>
+    </a>
+    <nav class="nav" aria-label="Hauptnavigation">
+      <a href="#live" data-view-link="live"><svg class="icon"><use href="#i-live"/></svg><span>Live</span></a>
+      <a href="#kameras" data-view-link="kameras"><svg class="icon"><use href="#i-camera"/></svg><span>Kameras</span><i class="dot nav-dot" id="nd-kameras" hidden></i></a>
+      <a href="#bild" data-view-link="bild"><svg class="icon"><use href="#i-layout"/></svg><span>Bild</span></a>
+      <a href="#netz" data-view-link="netz"><svg class="icon"><use href="#i-wifi"/></svg><span>Netzwerk</span><i class="dot nav-dot" id="nd-netz" hidden></i></a>
+      <a href="#system" data-view-link="system"><svg class="icon"><use href="#i-settings"/></svg><span>System</span><i class="dot nav-dot" id="nd-system" hidden></i></a>
+    </nav>
+    <div class="side__foot">
+      <a class="muted" href="/" id="oldui">Bisherige Oberfläche</a>
+      <span id="ver"></span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <div class="top__status">
+        <span class="badge" id="hb-live"><span class="dot"></span><span>Verbinde …</span></span>
+        <button type="button" class="badge" id="hb-light" hidden></button>
+      </div>
+      <div class="top__meters" id="hb-meters" hidden>
+        <span class="hsig" id="hb-sig" hidden role="img"><span class="hlbl">Verbindung</span><span class="hsig__scale" aria-hidden="true"><i id="hb-smax"></i><i id="hb-smid"></i><i id="hb-smin"></i></span><svg viewBox="0 0 60 28" preserveAspectRatio="none" aria-hidden="true"><path class="sg" d="M0 1H60M0 14H60M0 27H60"/><polyline id="hb-line" points=""/></svg><span class="hsig__v" id="hb-sigv"></span><span class="hsig__u">Mbit/s</span></span>
+        <span class="hcams"><span class="hlbl">Kameras</span><span class="hdots" id="hb-dots" role="img"></span></span>
+      </div>
+      <div class="top__actions">
+        <button class="btn hide-sm" id="hb-go" type="button" hidden></button>
+        <button class="btn" id="sm-btn" aria-pressed="false" title="Streammodus: sperrt Server, Bitrate und Fernzugriff gegen versehentliches Ändern"><svg class="icon" data-size="sm"><use href="#i-lock"/></svg><span class="hide-sm">Streammodus: aus</span></button>
+        <button class="btn" id="px-btn" type="button" aria-pressed="false" data-dim title="Verpixeln (Datenschutz) ein- oder ausschalten"><svg class="icon" data-size="sm"><use href="#i-shield"/></svg><span class="hide-sm">Verpixeln: aus</span></button>
+        <button class="btn" data-icon id="awake-btn" aria-pressed="false" aria-label="Bildschirm wach halten" title="Bildschirm wach halten"><svg class="icon"><use href="#i-monitor"/></svg></button>
+        <button class="btn" id="open-search" aria-label="Einstellungen durchsuchen"><svg class="icon"><use href="#i-search"/></svg><span class="hide-sm">Suchen</span><span class="kbd hide-sm">Strg K</span></button>
+        <button class="btn" data-icon id="help-btn" data-hide-sm aria-pressed="true" aria-label="Hilfetexte ein- oder ausblenden" title="Hilfetexte ein- oder ausblenden"><svg class="icon"><use href="#i-help"/></svg></button>
+        <button class="btn" data-icon id="lang-btn" data-hide-sm aria-label="Sprache wählen" title="Sprache"><svg class="icon"><use href="#i-globe"/></svg></button>
+        <button class="btn" data-icon id="more-btn" aria-label="Weitere Einstellungen" title="Sprache, Hell oder Dunkel, Bildschirm"><svg class="icon"><use href="#i-more"/></svg></button>
+        <button class="btn" data-icon data-theme-toggle aria-label="Hell oder Dunkel" data-hide-sm><svg class="icon"><use href="#i-sun"/></svg></button>
+      </div>
+    </header>
+    <main class="content" id="views" aria-live="polite"></main>
+  </div>
+</div>
+
+<dialog class="dialog" id="palette" data-top aria-label="Einstellungen durchsuchen">
+  <div class="pal__in"><svg class="icon"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Einstellung suchen, zum Beispiel „Bitrate“" autocomplete="off" aria-controls="pl" aria-label="Suchbegriff"><span class="kbd">Esc</span></div>
+  <div class="pal__list" id="pl" role="listbox" aria-label="Ergebnisse"></div>
+  <div class="pal__foot"><span><span class="kbd">↑</span> <span class="kbd">↓</span> wählen</span><span><span class="kbd">Enter</span> öffnen</span><span class="grow"></span><span id="pc"></span></div>
+</dialog>
+<dialog class="dialog" id="confirm" aria-labelledby="cf-t"><form method="dialog" class="dialog__form">
+  <div class="dialog__head"><h2 id="cf-t"></h2></div><div class="dialog__body"><p class="muted" id="cf-x"></p></div>
+  <div class="dialog__foot"><button class="btn" value="no">Abbrechen</button><button class="btn" value="yes" id="cf-ok" data-variant="primary">OK</button></div></form></dialog>
+<dialog class="dialog" id="sheet" data-sheet aria-labelledby="sh-t">
+  <div class="grabber"></div><div class="dialog__head"><h2 id="sh-t"></h2><button class="btn" data-icon data-size="sm" data-variant="ghost" data-close aria-label="Schließen"><svg class="icon"><use href="#i-x"/></svg></button></div>
+  <div class="dialog__body" id="sh-b"></div><div class="dialog__foot" id="sh-f"></div></dialog>
+
+<script defer src="/neu/core.js"></script>
+<script defer src="/neu/qr.js"></script>
+<script defer src="/neu/hilfe.js"></script>
+<script defer src="/neu/views/chat.js"></script>
+<script defer src="/neu/views/schnell.js"></script>
+<script defer src="/neu/views/live.js"></script>
+<script defer src="/neu/views/kameras.js"></script>
+<script defer src="/neu/views/bild.js"></script>
+<script defer src="/neu/views/netz.js"></script>
+<script defer src="/neu/views/fern.js"></script>
+<script defer src="/neu/views/wlan.js"></script>
+<script defer src="/neu/views/bt.js"></script>
+<script defer src="/neu/views/zugriff.js"></script>
+<script defer src="/neu/views/datenschutz.js"></script>
+<script defer src="/neu/views/system.js"></script>
+<script defer src="/neu/kopf.js"></script>
+<script defer src="/neu/boot.js"></script>
+</body>
+</html>
