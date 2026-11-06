@@ -29,8 +29,8 @@
         if (c === 5) { x = f.x / 1000 * (W - cw); y = f.y / 1000 * (H - chh); } else if (c === 4) { x = (W - cw) / 2; y = H - chh - m; } else { x = (c & 1) ? W - cw - m : m; y = (c & 2) ? H - chh - m : m; }
         x = Math.max(0, Math.min(W - cw, x)); y = Math.max(0, Math.min(H - chh, y));
         const sc = 1 / 19.2, bw = st.border.enabled ? Math.max(0.15, st.border.width * sc) : 0, rad = st.radius ? Math.min(st.radius * sc, Math.min(cw, chh) / 2) : 0;
-        const el = h('div', { class: `layer layer--p${i}`, data: { k: i }, style: `left:${x}%;top:${y / H * 100}%;width:${cw}%;height:${chh / H * 100}%;opacity:${st.visible ? 1 : 0.2};border-radius:${rad}%;cursor:${canFree ? 'grab' : 'default'}` }, `${i} · ${nm(cam)}${st.visible ? '' : ' (aus)'}`);
-        if (bw) el.style.boxShadow = `inset 0 0 0 ${Math.max(1, bw * 4)}px ${hexRgba(st.border.color, st.border.opacity / 100)}`;
+        const el = h('div', { class: `layer layer--p${i}`, data: { k: i }, style: `left:${x}%;top:${y / H * 100}%;width:${cw}%;height:${chh / H * 100}%;opacity:${st.visible ? 1 : 0.2};border-radius:${rad}cqw;cursor:${canFree ? 'grab' : 'default'}` }, `${i} · ${nm(cam)}${st.visible ? '' : ' (aus)'}`);
+        if (bw) el.style.boxShadow = `inset 0 0 0 max(1px, ${bw}cqw) ${hexRgba(st.border.color, st.border.opacity / 100)}`;
         kids.push(el);
       });
       canvas.replaceChildren(...kids);
@@ -102,9 +102,13 @@
     }
 
     /* ---------- Laden und Speichern ---------- */
+    let lastSig = '';
     async function load(force) {
-      if (dirty && !force) { try { d = await api('GET', '/api/pipeline'); cams = d.cameras || []; live = d.live || {}; techPre.textContent = d.preview || ''; renderSwitch(); renderFace(); } catch (e) { /* nichts */ } return; }
-      try { d = await api('GET', '/api/pipeline'); } catch (e) { return; }
+      let nd; try { nd = await api('GET', '/api/pipeline'); } catch (e) { return; }
+      const sg = JSON.stringify([nd.config, nd.cameras, nd.corners, nd.live, nd.preview]);
+      if (!force && sg === lastSig) return;                                  // nichts geändert: nichts neu bauen
+      if (dirty && !force) { lastSig = sg; d = nd; cams = d.cameras || []; live = d.live || {}; techPre.textContent = d.preview || ''; renderSwitch(); renderFace(); return; }
+      lastSig = sg; d = nd;
       cfg = JSON.parse(JSON.stringify(d.config)); cams = d.cameras || []; corners = d.corners || []; live = d.live || {};
       free = { 1: { x: cfg.x ?? 500, y: cfg.y ?? 500 }, 2: { x: cfg.x2 ?? 500, y: cfg.y2 ?? 500 }, 3: { x: cfg.x3 ?? 500, y: cfg.y3 ?? 500 } };
       [1, 2, 3].forEach(k => { const s0 = (cfg.styles || {})[k] || {}; styles[k] = Object.assign(STYLE(), s0); styles[k].crop = Object.assign({ l: 0, r: 0, t: 0, b: 0 }, styles[k].crop); styles[k].border = Object.assign(STYLE().border, styles[k].border); styles[k].opacity = 100; delete styles[k].border.radius; });

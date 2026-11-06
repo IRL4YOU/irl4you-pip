@@ -196,4 +196,11 @@
     });
     paint();
   })();
+
+  /* Höhe der Kopfzeile merken (die Vorschau im Bild-Aufbau bleibt darunter stehen, während rechts gescrollt wird) */
+  (() => {
+    const top = $('.top'); if (!top) return;
+    const set = () => document.documentElement.style.setProperty('--top-h', top.offsetHeight + 'px');
+    if (window.ResizeObserver) new ResizeObserver(set).observe(top); window.addEventListener('resize', set); set();
+  })();
 })();

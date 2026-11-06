@@ -46,7 +46,7 @@
   .cam__meta { display: flex; justify-content: space-between; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-2); }
 
   .editor { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
-  .canvas { position: relative; aspect-ratio: 16 / 9; border-radius: var(--radius-m); background: linear-gradient(135deg, oklch(0.30 0.04 255), oklch(0.2 0.02 255)); overflow: hidden; border: 1px solid var(--border-strong); }
+  .canvas { container-type: inline-size; position: relative; aspect-ratio: 16 / 9; border-radius: 0; background: linear-gradient(135deg, oklch(0.30 0.04 255), oklch(0.2 0.02 255)); overflow: hidden; border: 1px solid var(--border-strong); }
   .layer { position: absolute; display: grid; place-items: center; font-size: var(--text-xs); font-weight: var(--weight-bold); color: oklch(1 0 0); border: 2px solid oklch(1 0 0 / 0.55); border-radius: 10px; text-align: center; padding: 2px; overflow: hidden; }
   .layer--main { inset: 0; border-radius: 0; border: 0; background: oklch(0.34 0.05 250 / 0.55); }
   .layer--p1 { background: oklch(0.45 0.12 215 / 0.9); } .layer--p2 { background: oklch(0.45 0.12 155 / 0.9); } .layer--p3 { background: oklch(0.5 0.14 60 / 0.9); }
@@ -338,4 +338,11 @@
   /* Tasten der Schnellsteuerung: langes Drücken und Doppeltippen ohne Textauswahl oder Zoom */
   .qchip, .qtool, .qlive { touch-action: manipulation; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
   .qchip:active, .qtool:active { transform: scale(0.97); }
+}
+
+@layer layout {
+  /* Bild > Aufbau am Computer: Vorschau links bleibt beim Scrollen stehen, es scrollen nur die Einstellungen der Kameras rechts */
+  @media (min-width: 64.01rem) {
+    .editor > .card:first-child { position: sticky; top: calc(var(--top-h, 4rem) + var(--space-4)); max-height: calc(100dvh - var(--top-h, 4rem) - var(--space-8)); overflow: auto; align-self: start; }
+  }
 }
