@@ -3188,7 +3188,11 @@
   "Die laufende Sendung startet dafür kurz neu (etwa 5 Sekunden ohne Bild).": "The running stream restarts briefly for this (about 5 seconds without picture).",
   "Danach werden Köpfe und Kennzeichen nicht mehr verpixelt. Die laufende Sendung startet dafür kurz neu (etwa 5 Sekunden ohne Bild).": "Afterwards heads and license plates are no longer blurred. The running stream restarts briefly for this (about 5 seconds without picture).",
   "Wird installiert …": "Installing …",
-  "Tipp für die Leiste: Eine Kamera kurz antippen macht sie zum Hauptbild, doppelt antippen blendet ihr kleines Bild aus oder ein, lang drücken deaktiviert oder aktiviert die Kamera. Beim Ton-Knopf wechselt kurz die Tonquelle, lang schaltet stumm.": "Tip for the bar: tapping a camera once makes it the main picture, double-tapping hides or shows its small picture, a long press deactivates or activates the camera. On the audio button a short tap changes the audio source, a long press mutes."
+  "Tipp für die Leiste: Eine Kamera kurz antippen macht sie zum Hauptbild, doppelt antippen blendet ihr kleines Bild aus oder ein, lang drücken deaktiviert oder aktiviert die Kamera. Beim Ton-Knopf wechselt kurz die Tonquelle, lang schaltet stumm.": "Tip for the bar: tapping a camera once makes it the main picture, double-tapping hides or shows its small picture, a long press deactivates or activates the camera. On the audio button a short tap changes the audio source, a long press mutes.",
+  "ACHTUNG: Verpixeln ist ausgeschaltet, die laufende Sendung verpixelt aber noch. Die Sendung muss neu gestartet werden.": "ATTENTION: Pixelation is switched off, but the running stream is still pixelating. The stream must be restarted.",
+  "Gespeichert, aber die Sendung wurde nicht neu gestartet. Bitte „Sendung neu starten“ drücken.": "Saved, but the stream was not restarted. Please press “Restart stream”.",
+  "Gespeichert. Die Sendung startet kurz neu, sobald der Erkennungsdienst läuft.": "Saved. The stream restarts briefly as soon as the detection service is running.",
+  "Gespeichert. Die Sendung wurde neu gestartet.": "Saved. The stream was restarted."
  },
  "patterns": []
 }
