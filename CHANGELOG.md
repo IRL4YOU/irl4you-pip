@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.30
+- Erkennung verbessert.
+
 ## 1.1.29
 - **Neue Oberfläche wird nicht mehr von selbst aktiv:** Nach dem Update startet jede Box mit der bisherigen Oberfläche. Eine frühere Auswahl aus der Testphase wird verworfen; die neue Oberfläche gilt erst, wenn du sie unter „Optionen“ › „Design“ › „Neue Oberfläche“ selbst wählst; der Link „Neue Oberfläche ausprobieren“ unten auf der Seite öffnet sie nur einmal. „Bisherige Oberfläche“ in der neuen Oberfläche löscht die Wahl wieder.
 
