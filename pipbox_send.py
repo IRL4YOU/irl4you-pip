@@ -226,6 +226,11 @@ def write_pipeline(cfg):
     with open(f"{WORK}/pipeline", "w") as f:
         f.write(text)
     try:
+        from srv.datenschutz import signatur_text
+        put_state_file("pipeline-datenschutz", signatur_text(text))
+    except Exception as e:
+        print(f"send: Signatur der Kette nicht geschrieben: {e}", flush=True)
+    try:
         vals = server.PipelineStore.delay_values(cfg)
         put_state_file("main-delay-ms", " ".join(map(str, vals)) + "\n")
     except OSError:
