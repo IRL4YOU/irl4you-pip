@@ -138,14 +138,32 @@ def feeder_argv(cfg, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP, device=HDMI_DEVICE,
     return ["gst-launch-1.0", "-q"] + v + a + sink
 
 
+TEST_LOGO = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='3' y='3' width='58' height='58' rx='14' fill='#0f172a' stroke='#22d3ee' stroke-width='4'/><path d='M38 49V14L17 39h29' fill='none' stroke='#f8fafc' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/><circle cx='49' cy='15' r='6' fill='#fb923c' stroke='#0f172a' stroke-width='2'/></svg>"
+
+
+_ELEMENT_DA = {}
+
+
+def gst_element_da(name):
+    if name not in _ELEMENT_DA:
+        try:
+            _ELEMENT_DA[name] = subprocess.run(["gst-inspect-1.0", name], capture_output=True, timeout=10).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _ELEMENT_DA[name] = False
+    return _ELEMENT_DA[name]
+
+
 def test_feeder_argv(cfg, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP):
     cfg = clean_settings(cfg)
     if not (isinstance(rtmp_app, str) and re.match(r"^[a-z0-9_]{1,20}$", rtmp_app)) or not isinstance(rtmp_port, int):
         raise ValueError("RTMP-Ziel ungültig")
     w, h = TEST_SIZE
-    v = ["videotestsrc", "is-live=true", "pattern=ball", "!", "video/x-raw,format=NV12,width=%d,height=%d,framerate=%d/1" % (w, h, cfg["fps"]), "!",
-         "textoverlay", "text=IRL4YOU BOX Testbild", "valignment=top", "halignment=left", "font-desc=Monospace 28", "!",
-         "timeoverlay", "valignment=bottom", "halignment=left", "font-desc=Monospace 28", "!",
+    logo = max(64, int(h * 0.18))
+    v = ["videotestsrc", "is-live=true", "pattern=zone-plate", "kx2=15", "ky2=15", "kt=3", "!", "video/x-raw,format=NV12,width=%d,height=%d,framerate=%d/1" % (w, h, cfg["fps"]), "!",
+         "textoverlay", "text=IRL4YOU BOX Testbild", "valignment=top", "halignment=left", "font-desc=Monospace Bold 36", "color=4294967040", "outline-color=4278190080", "shaded-background=true", "!",
+         "timeoverlay", "valignment=bottom", "halignment=left", "font-desc=Monospace Bold 36", "color=4294967040", "outline-color=4278190080", "shaded-background=true", "!",
+         *(["videoconvert", "!", "rsvgoverlay", "data=" + TEST_LOGO, "x=%d" % (w - logo - 26), "y=%d" % (h - logo - 22), "width=%d" % logo, "height=%d" % logo, "!",
+            "videoconvert", "!", "video/x-raw,format=NV12", "!"] if gst_element_da("rsvgoverlay") else []),
          "mpph264enc", "bitrate=%d" % (cfg["bitrate"] * 1000), "gop=%d" % cfg["fps"], "!",
          "h264parse", "config-interval=-1", "!", "queue", "!", "mux."]
     if cfg["audio"] == "hdmi":
