@@ -34,13 +34,35 @@ def kette_signatur(text):
     return ("pbpixelmask" in text, sorted(re.findall(r"min-threshold-time=(\d+)", text)))
 
 
-def neustart_noetig(build_text, pfad=None):
+SENDE_SIGNATUR = "/var/lib/pipbox/pipeline-datenschutz"
+
+
+def signatur_text(text):
+    maske, verz = kette_signatur(text)
+    return json.dumps({"maske": bool(maske), "verz": list(verz)}) + "\n"
+
+
+def laufende_signatur(pfad=None):
     try:
         with open(pfad or SENDE_PIPELINE) as f:
-            laufend = f.read()
+            return kette_signatur(f.read())
     except OSError:
+        pass
+    try:
+        with open(SENDE_SIGNATUR) as f:
+            d = json.load(f)
+        return bool(d["maske"]), sorted(str(x) for x in d["verz"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def neustart_noetig(build_text, pfad=None, an_geaendert=False):
+    if not build_text:
         return False
-    return bool(build_text) and kette_signatur(laufend) != kette_signatur(build_text)
+    laufend = laufende_signatur(pfad)
+    if laufend is None:
+        return bool(an_geaendert)
+    return laufend != kette_signatur(build_text)
 
 
 def pixel_stand(store):
@@ -49,14 +71,55 @@ def pixel_stand(store):
 
 
 def pixel_umschalten(store, send, pipeline, an, kopf, kennz):
+    vorher = bool(store.config().get("an"))
     try:
         store.put({"an": an, "kopf": kopf, "kennz": kennz})
     except ValueError as e:
         return False, str(e)
-    if send._active() and neustart_noetig(pipeline.build()):
+    if send._active() and neustart_noetig(pipeline.build(), an_geaendert=bool(an) != vorher):
         restarted, note = send.restart_if_live()
         return True, "Sendung startet kurz neu" if restarted else note
     return True, ""
+
+
+_NACHZIEHEN = threading.Lock()
+
+
+def _nachziehen(store, send, pipeline, frist=120.0, takt=1.0, schlaf=time.sleep):
+    if not _NACHZIEHEN.acquire(blocking=False):
+        return
+    try:
+        warte = 0.0
+        while warte <= frist:
+            if not (store.config().get("an") and send._active() and neustart_noetig(pipeline.build())):
+                return
+            if privacy_status().get("up"):
+                send.restart_if_live()
+                return
+            schlaf(takt)
+            warte += takt
+    finally:
+        _NACHZIEHEN.release()
+
+
+def speichern_mit_neustart(store, send, pipeline, req, nachziehen=True):
+    vorher = bool(store.config().get("an"))
+    res = store.put(req)
+    geaendert = bool((res.get("config") or {}).get("an")) != vorher
+    res["sending"] = bool(send._active())
+    res["neustart_noetig"] = bool(res["sending"] and neustart_noetig(pipeline.build(), an_geaendert=geaendert))
+    res["restarted"], res["note"], res["wartet"] = False, "", False
+    if not res["neustart_noetig"]:
+        return res
+    if not (res.get("config") or {}).get("an"):
+        res["restarted"], res["note"] = send.restart_if_live()
+        res["neustart_noetig"] = bool(not res["restarted"] and neustart_noetig(pipeline.build(), an_geaendert=geaendert))
+    else:
+        res["wartet"] = True
+        res["note"] = "Gespeichert. Die Sendung startet kurz neu, sobald der Erkennungsdienst läuft."
+        if nachziehen:
+            threading.Thread(target=_nachziehen, args=(store, send, pipeline), daemon=True).start()
+    return res
 
 
 def privacy_status():

@@ -7,7 +7,7 @@ try:
 except ImportError:
     pipbox_preview = None
 from srv.auth import REMEMBER_SECONDS, SESSION_SECONDS
-from srv.datenschutz import neustart_noetig
+from srv.datenschutz import neustart_noetig, speichern_mit_neustart
 from srv.httpd import scene_swap
 from srv.netinfo import iface_ips
 from srv.pipeline import DELAY_KEYS, PipelineStore, always_compatible, view_only_change
@@ -89,7 +89,7 @@ class PostRoutes:
                         res["restarted"], res["note"] = self.send.restart_if_live()
                     res["neustart_noetig"] = False
                     return self.reply(200, res)
-                return self.reply(200, self.datenschutz.put(d))
+                return self.reply(200, speichern_mit_neustart(self.datenschutz, self.send, self.pipeline, d))
             except ValueError as e:
                 return self.reply(400, {"error": str(e)})
         return NOT_HANDLED
