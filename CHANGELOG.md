@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.32
+- **Neues Testbild:** bewegtes Wellenmuster mit gelber Beschriftung, Zeitanzeige und IRL4YOU-Logo. Es erzeugt so viele Daten wie ein echtes Kamerabild, verteilt die Arbeit auf mehrere Prozessorkerne und startet zuverlässig.
+
 ## 1.1.31
 - Testbild verbessert.
 
