@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.31
+- Testbild verbessert.
+
 ## 1.1.30
 - Erkennung verbessert.
 
