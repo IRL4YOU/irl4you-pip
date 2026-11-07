@@ -159,19 +159,20 @@ def test_feeder_argv(cfg, rtmp_port=RTMP_PORT, rtmp_app=RTMP_APP):
         raise ValueError("RTMP-Ziel ungültig")
     w, h = TEST_SIZE
     logo = max(64, int(h * 0.18))
-    v = ["videotestsrc", "is-live=true", "pattern=zone-plate", "kx2=15", "ky2=15", "kt=3", "!", "video/x-raw,format=NV12,width=%d,height=%d,framerate=%d/1" % (w, h, cfg["fps"]), "!",
-         "textoverlay", "text=IRL4YOU BOX Testbild", "valignment=top", "halignment=left", "font-desc=Monospace Bold 36", "color=4294967040", "outline-color=4278190080", "shaded-background=true", "!",
-         "timeoverlay", "valignment=bottom", "halignment=left", "font-desc=Monospace Bold 36", "color=4294967040", "outline-color=4278190080", "shaded-background=true", "!",
-         *(["videoconvert", "!", "rsvgoverlay", "data=" + TEST_LOGO, "x=%d" % (w - logo - 26), "y=%d" % (h - logo - 22), "width=%d" % logo, "height=%d" % logo, "!",
-            "videoconvert", "!", "video/x-raw,format=NV12", "!"] if gst_element_da("rsvgoverlay") else []),
+    q = ["queue", "max-size-buffers=4", "max-size-bytes=0", "max-size-time=0", "!"]
+    v = ["videotestsrc", "is-live=true", "pattern=zone-plate", "kx2=15", "ky2=15", "kt=3", "!", "video/x-raw,format=BGRA,width=%d,height=%d,framerate=%d/1" % (w, h, cfg["fps"]), "!"] + q + [
+         "textoverlay", "text=IRL4YOU BOX Testbild", "valignment=top", "halignment=left", "font-desc=Monospace Bold 36", "color=4294967040", "outline-color=4278190080", "shaded-background=true", "!"] + q + [
+         "timeoverlay", "valignment=bottom", "halignment=left", "font-desc=Monospace Bold 36", "color=4294967040", "outline-color=4278190080", "shaded-background=true", "!"] + q + [
+         *(["rsvgoverlay", "data=" + TEST_LOGO, "x=%d" % (w - logo - 26), "y=%d" % (h - logo - 22), "width=%d" % logo, "height=%d" % logo, "!"] if gst_element_da("rsvgoverlay") else []),
+         "videoconvert", "!", "video/x-raw,format=NV12", "!"] + q + [
          "mpph264enc", "bitrate=%d" % (cfg["bitrate"] * 1000), "gop=%d" % cfg["fps"], "!",
          "h264parse", "config-interval=-1", "!", "queue", "!", "mux."]
     if cfg["audio"] == "hdmi":
         a = []
-        for pad, (freq, mask) in enumerate(TEST_TONES):
-            a += ["audiotestsrc", "is-live=true", "wave=sine", "freq=%d" % freq, "volume=0.1", "!", "audio/x-raw,rate=48000,channels=1,channel-mask=(bitmask)%s" % mask, "!",
-                  "queue", "!", "il.sink_%d" % pad]
-        a += ["interleave", "name=il", "!", "audio/x-raw,rate=48000,channels=2", "!"]
+        for freq, mask in TEST_TONES:
+            a += ["audiotestsrc", "is-live=true", "wave=sine", "freq=%d" % freq, "volume=0.1", "!", "audio/x-raw,rate=48000,channels=1", "!", "audioconvert", "!",
+                  "audiopanorama", "panorama=%s" % ("-1" if mask == "0x1" else "1"), "!", "queue", "!", "amix."]
+        a += ["audiomixer", "name=amix", "!", "audio/x-raw,rate=48000,channels=2", "!"]
     else:
         a = ["audiotestsrc", "is-live=true", "wave=silence", "!", "audio/x-raw,rate=48000,channels=2", "!"]
     a += ["voaacenc", "bitrate=128000", "!", "aacparse", "!", "queue", "!", "mux."]
