@@ -220,5 +220,23 @@
     if (tabId) setTimeout(() => { const t = document.querySelector(`[role="tab"][aria-controls="${tabId}"]`); if (t) t.click(); }, 30);
   }
 
-  window.Neu = { named, iconBtn, loc, askText, goto, slots, copyText, copyBtn, prog, md, tabbed, kv, fdate, ftime, sleep, note, ownerKey, h, ico, $, $$, fmt, dur, api, App, poll, ask, sheet, closeSheet, toast, run, badge, btn, alertBox, card, row, list, sw, field, input, select, seg, range, disclosure, pageHead, toneOf, view, views };
+  /* ---- Upload: eine gemeinsame Zahl und Kurve für Kopfzeile, Live-Karte und Kennzahlen ----
+     Wert wie in der bisherigen Oberfläche: bei vorhandenen Nutzdaten der kleinere von Nutzdaten und Leitungsrate (ohne Wiederholungen);
+     Kurve: die letzten 30 Sekunden nach Uhrzeit, Skala in festen Stufen. */
+  const up = (() => {
+    const WIN = 30000, pts = [];
+    const wire = m => { const upl = ((App.data.srtla || {}).settings || {}).uplinks || []; let nets = Object.entries(m.net || {}); const sel = nets.filter(([n]) => upl.includes(n)); if (sel.length) nets = sel; return nets.reduce((a, [, r]) => a + (+r.tx_mbit || 0), 0); };
+    const shown = m => { const w = wire(m), p = m.payload_mbit == null ? null : +m.payload_mbit; return p == null || isNaN(p) ? w : Math.min(p, w); };
+    const nice = v => { for (const c of [5, 10, 15, 20, 30, 50, 100]) if (v * 1.05 <= c) return c; return Math.ceil(v / 10) * 10; };
+    App.on('metrics', m => { pts.push({ t: Date.now(), v: m.details && m.details.send ? Math.max(0, shown(m)) : 0 }); });
+    function view() {
+      if (!pts.length) return null;
+      const now = Date.now(), cut = now - WIN; while (pts.length > 1 && pts[1].t <= cut) pts.shift();
+      const p = pts.map(x => ({ t: Math.max(cut, x.t), v: x.v })), top = nice(Math.max(...p.map(x => x.v)));
+      return { plot: p.length === 1 ? [{ t: Math.max(cut, now - 2000), v: p[0].v }, p[0]] : p, cut, top, last: p[p.length - 1].v, WIN };
+    }
+    return { wire, shown, view };
+  })();
+
+  window.Neu = { up, named, iconBtn, loc, askText, goto, slots, copyText, copyBtn, prog, md, tabbed, kv, fdate, ftime, sleep, note, ownerKey, h, ico, $, $$, fmt, dur, api, App, poll, ask, sheet, closeSheet, toast, run, badge, btn, alertBox, card, row, list, sw, field, input, select, seg, range, disclosure, pageHead, toneOf, view, views };
 })();

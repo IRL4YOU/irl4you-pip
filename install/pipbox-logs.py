@@ -1050,7 +1050,8 @@ def sections():
            ("Zustandsprotokoll (alle 10 s, letzte Stunde)", tail_file("/var/log/pipbox-health.log", 360) if os.path.exists("/var/log/pipbox-health.log")
             else tail_file("/run/pipbox-health.log", 360)),
            ("Zustand der Sendekette (nur während des Sendens vorhanden)", tail_file("/run/pipbox-send/status.json", 80)),
-           ("Sendewege (srtla_send)", tail_file("/run/pipbox-send/srtla-links.txt", 40)),
+           ("Sendewege (srtla_send; je Weg alle 5 s, etwa 3 Minuten)", tail_file("/run/pipbox-send/srtla-links.txt", 120)),
+           ("Verluste der Sendekette (alle 5 s, Änderung seit der Zeile davor: verloren = laut Empfänger fehlend, wiederholt, verworfen = endgültig weg; Uhrzeit mit den Sendewegen vergleichen)", tail_file("/run/pipbox-send/srt-loss.txt", 120)),
            ("Regler (belacoder, letzte Zeilen)", tail_file("/run/pipbox-send/belacoder-stats.txt", 40)),
            ("Kameras am Eingang (nginx-Statistik)", rtmp_inputs()),
            ("Verbindungen am RTMP-Eingang (auch ohne Bild, zum Beispiel GoPro)", rtmp_clients()),

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.33
+- **Neue Oberfläche, Upload-Anzeige einheitlich:** Kopfzeile, Kachel „Upload“ und Live-Karte zeigen jetzt dieselbe Zahl und dieselbe Kurve (wie in der bisherigen Oberfläche: Nutzdaten ohne Wiederholungen, letzte 30 Sekunden, gleiche Skala). Vorher zeigte die Kachel die Leitungsrate mit Wiederholungen, die Kopfzeile die Nutzdaten und die Live-Karte die schwankende SRT-Senderate (oft 0,0).
+- **Protokolle:** Neuer Abschnitt „Verluste der Sendekette“: alle 5 Sekunden eine Zeile mit den verlorenen, wiederholten und verworfenen Paketen der Verbindung seit der Zeile davor (mit Prozent, Antwortzeit, Puffer und Bitrate). Damit lässt sich bei Einbrüchen erkennen, ob Verluste zu einem schwachen Sendeweg gehören oder auch bei sauberen Wegen auftreten. Der Abschnitt „Sendewege“ reicht jetzt etwa 3 Minuten zurück statt knapp einer.
+
 ## 1.1.32
 - **Neues Testbild:** bewegtes Wellenmuster mit gelber Beschriftung, Zeitanzeige und IRL4YOU-Logo. Es erzeugt so viele Daten wie ein echtes Kamerabild, verteilt die Arbeit auf mehrere Prozessorkerne und startet zuverlässig.
 
