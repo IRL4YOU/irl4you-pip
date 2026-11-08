@@ -3,15 +3,9 @@
   'use strict';
   const { h, $, App, fmt } = Neu;
   const box = $('#hb-meters'), sig = $('#hb-sig'), dots = $('#hb-dots'), line = $('#hb-line'), val = $('#hb-sigv'), smax = $('#hb-smax'), smid = $('#hb-smid'), smin = $('#hb-smin');
-  const WIN = 30000, pts = []; let okAt = 0, lastM = null;
+  let okAt = 0, lastM = null;
+  const upTotal = m => Neu.up.wire(m);   // Upload-Wert und Kurve kommen aus Neu.up (gemeinsam mit der Live-Seite)
 
-  /* Upload der gewählten Leitungen (Mbit/s); bei Nutzdaten der kleinere Wert, wie in der bisherigen Oberfläche */
-  function upTotal(m) {
-    const upl = ((App.data.srtla || {}).settings || {}).uplinks || []; let nets = Object.entries(m.net || {});
-    const sel = nets.filter(([n]) => upl.includes(n)); if (sel.length) nets = sel;
-    return nets.reduce((a, [, r]) => a + (+r.tx_mbit || 0), 0);
-  }
-  function upShown(m) { const wire = upTotal(m), pay = m.payload_mbit == null ? null : +m.payload_mbit; return pay == null || isNaN(pay) ? wire : Math.min(pay, wire); }
   /* 0 (nichts geht durch) bis 4 (gut); null = es wird nicht gesendet */
   function level(m) {
     const s = m.details && m.details.send; if (!s) return null;
@@ -24,13 +18,10 @@
     if (s.snd_buf_ms != null) { if (s.snd_buf_ms > 3000) q -= 2; else if (s.snd_buf_ms > 1500) q -= 1; }
     return Math.max(0, Math.min(4, q));
   }
-  const nice = v => { for (const c of [5, 10, 15, 20, 30, 50, 100]) if (v * 1.05 <= c) return c; return Math.ceil(v / 10) * 10; };
   function draw() {
-    if (!pts.length) return;
-    const now = Date.now(), cut = now - WIN; while (pts.length > 1 && pts[1].t <= cut) pts.shift();
-    const p = pts.map(x => ({ t: Math.max(cut, x.t), v: x.v })), top = nice(Math.max(...p.map(x => x.v)));
-    const plot = p.length === 1 ? [{ t: Math.max(cut, now - 2000), v: p[0].v }, p[0]] : p;
-    val.textContent = fmt(p[p.length - 1].v, 1);
+    const vw = Neu.up.view(); if (!vw) return;
+    const { plot, cut, top, WIN } = vw;
+    val.textContent = fmt(vw.last, 1);
     smax.textContent = fmt(top, top % 1 ? 1 : 0); smid.textContent = fmt(top / 2, 1); smin.textContent = '0';   // Skala wie in der bisherigen Oberfläche (Mbit/s)
     line.setAttribute('points', plot.map(x => (Math.min(60, (x.t - cut) / WIN * 60)).toFixed(1) + ',' + (27 - Math.max(0, Math.min(top, x.v)) / top * 26).toFixed(1)).join(' '));
   }
@@ -57,7 +48,6 @@
   }
   App.on('metrics', m => {
     okAt = Date.now(); lastM = m;
-    const q = level(m); pts.push({ t: Date.now(), v: q == null ? 0 : Math.max(0, upShown(m)) });
     drawDots(m); draw(); paint();
   });
   App.on('send', paint);

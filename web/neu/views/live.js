@@ -147,7 +147,7 @@
       if (active) {
         title = running ? 'Du bist live' : (LABEL[s.state] || s.state);
         const since = s.since ? dur(Date.now() / 1000 - s.since) : null;
-        sub = [since && `Seit ${since}`, s.server && s.server.name, send.send_mbps != null && `${fmt(send.send_mbps)} Mbit/s`].filter(Boolean).join(' · ');
+        sub = [since && `Seit ${since}`, s.server && s.server.name, `${fmt(Neu.up.shown(m))} Mbit/s`].filter(Boolean).join(' · ');
         action = btn(running ? 'Beenden' : 'Bitte warten', { variant: running ? 'danger' : null, size: 'lg', ico: 'stop', disabled: !running, run: async () => {
           await api('POST', '/api/send', { action: 'stop' }); setTimeout(() => App.data['send:refresh'] && App.data['send:refresh'](), 600);
         } });
@@ -192,19 +192,18 @@
         actions: [btn('Sendung neu starten', { size: 'sm', variant: 'primary', run: async () => { if (await ask({ title: 'Sendung neu starten?', text: 'Das Bild ist dabei einige Sekunden weg.', ok: 'Neu starten' })) await api('POST', '/api/send', { action: 'restart', confirm: true }); } })] })] : []));
     }
 
-    const upHist = [];
     function renderKpi() {
       const s = App.data.send || {}, m = App.data.metrics || {}, sr = App.data.srtla;
       const sel = sr && sr.settings ? sr.settings.uplinks : null, net = m.net || {};
-      const up = Object.entries(net).filter(([k]) => !sel || sel.includes(k)).reduce((a, [, v]) => a + (v.tx_mbit || 0), 0);
+      const up = Neu.up.shown(m);
       const send = (m.details || {}).send || {};
-      upHist.push(up); if (upHist.length > 30) upHist.shift();
-      const spark = () => { const mx = Math.max(1, ...upHist), pts = upHist.map((v, i) => `${(i / 29 * 100).toFixed(1)},${(22 - v / mx * 20).toFixed(1)}`).join(' '); const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'spark'); svg.setAttribute('viewBox', '0 0 100 24'); svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('aria-hidden', 'true'); const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); pl.setAttribute('points', pts); svg.append(pl); return svg; };
+      const vw = Neu.up.view() || { plot: [], cut: 0, top: 5, WIN: 30000 };
+      const spark = () => { const pts = vw.plot.map(x => `${(Math.min(100, (x.t - vw.cut) / vw.WIN * 100)).toFixed(1)},${(22 - Math.max(0, Math.min(vw.top, x.v)) / vw.top * 20).toFixed(1)}`).join(' '); const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'spark'); svg.setAttribute('viewBox', '0 0 100 24'); svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('aria-hidden', 'true'); const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); pl.setAttribute('points', pts); svg.append(pl); return svg; };
       const stat = (label, value, unit, bar, tone, extra) => h('div', { class: 'card' }, h('div', { class: 'card__body' }, h('div', { class: 'stat' }, h('span', { class: 'stat__label', text: label }), h('span', { class: 'stat__value' }, value, h('span', { class: 'stat__unit', text: unit }))),
         bar != null && h('div', { class: 'meter', data: tone ? { tone } : {} }, h('span', { style: `--value:${Math.max(0, Math.min(100, bar))}%` })), extra));
       const cpu = (m.cpu || {}).avg, temp = m.temp_c, mem = m.mem || {};
       const cards = [
-        stat('Upload', fmt(up), 'Mbit/s', null, null, (() => { const mx = Math.max(1, ...upHist); return h('div', { class: 'spark-box' }, h('span', { class: 'spark__scale', 'aria-hidden': 'true' }, h('i', null, fmt(mx, 1)), h('i', null, fmt(mx / 2, 1)), h('i', null, '0')), spark()); })()),
+        stat('Upload', fmt(up), 'Mbit/s', null, null, h('div', { class: 'spark-box' }, h('span', { class: 'spark__scale', 'aria-hidden': 'true' }, h('i', null, fmt(vw.top, vw.top % 1 ? 1 : 0)), h('i', null, fmt(vw.top / 2, 1)), h('i', null, '0')), spark())),
         stat('Prozessor', fmt(cpu, 0), '%', cpu, cpu > 90 ? 'danger' : cpu > 75 ? 'warn' : undefined),
         stat('Temperatur', fmt(temp, 0), '°C', temp != null ? temp / 100 * 100 : null, temp > 80 ? 'danger' : temp > 70 ? 'warn' : 'ok'),
         s.active && send.rtt_ms != null ? stat('Antwortzeit', fmt(send.rtt_ms, 0), 'ms', null) : stat('Speicher frei', fmt((mem.avail_mb || 0) / 1024), 'GiB')];
