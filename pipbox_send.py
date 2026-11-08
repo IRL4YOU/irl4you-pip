@@ -367,6 +367,9 @@ class Sender:
         self.stats = collections.deque(maxlen=STATS_KEEP)
         self.events = collections.deque(maxlen=120)
         self.links = collections.deque(maxlen=300)
+        self.loss = collections.deque(maxlen=720)      # eine Zeile je 5 s, eine Stunde
+        self._loss_prev = None
+        self._loss_t = 0.0
         self.watch = pipbox_watch.HangWatch() if pipbox_watch else None
         self.hang_n = 0
         self._hang_t = 0.0
@@ -559,10 +562,43 @@ class Sender:
                     continue
                 self.stats.append((time.strftime("%H:%M:%S", time.gmtime()), t[:200]))
 
+    def sample_loss(self):
+        """Alle 5 s eine Zeile fuer die Protokolle: verlorene, wiederholte und verworfene Pakete der SRT-Verbindung seit der letzten Zeile.
+        So sieht man, ob Verluste zu einem schwachen Weg gehoeren (Zeit mit den Sendewegen vergleichen) oder auch bei sauberen Wegen auftreten."""
+        now = time.monotonic()
+        if now - self._loss_t < 5:
+            return
+        self._loss_t = now
+        try:
+            with open(BC_STATS) as f:
+                d = json.load(f)
+            if not isinstance(d, dict) or time.time() - int(d.get("time") or 0) > 6:
+                self._loss_prev = None
+                return
+        except (OSError, ValueError, TypeError, OverflowError):
+            return
+        keys = ("sent_total", "loss_total", "retrans_total", "drop_total")
+        cur = {k: d.get(k) for k in keys}
+        if any(not isinstance(v, (int, float)) or isinstance(v, bool) or v < 0 for v in cur.values()):
+            self._loss_prev = None
+            return
+        prev, self._loss_prev = self._loss_prev, cur
+        if prev is None or any(cur[k] < prev[k] for k in keys):
+            return
+        ds, dl, dr, dd = (cur[k] - prev[k] for k in keys)
+        pct = lambda x: f"{100.0 * x / ds:.1f}%" if ds > 0 else "-"
+        def num(k, nd=0):
+            v = d.get(k)
+            return "?" if not isinstance(v, (int, float)) or v < 0 else (f"{v:.{nd}f}")
+        self.loss.append((time.strftime("%H:%M:%S", time.gmtime()),
+                          f"srt: gesendet=+{int(ds)} verloren=+{int(dl)} ({pct(dl)}) wiederholt=+{int(dr)} ({pct(dr)}) verworfen=+{int(dd)} ({pct(dd)}) "
+                          f"rtt={num('rtt_ms')}ms puffer={num('snd_buf_ms')}ms rate={num('send_mbps', 1)}Mbit/s kodiert={num('bitrate_kbps')}kbit/s"))
+
     def flush_stats(self):
         try:
             os.makedirs(RUN, exist_ok=True)
-            for path, rows in ((STATS, self.stats), (f"{RUN}/srtla-links.txt", self.links), (EVENTS, self.events)):
+            self.sample_loss()
+            for path, rows in ((STATS, self.stats), (f"{RUN}/srtla-links.txt", self.links), (f"{RUN}/srt-loss.txt", self.loss), (EVENTS, self.events)):
                 tmp = path + ".tmp"
                 with open(tmp, "w") as f:
                     f.write("".join(f"{t} {l}\n" for t, l in list(rows)))
@@ -911,7 +947,7 @@ class Sender:
                 p.kill()
         if self.live:
             self.boost.off()
-        for f in (STATUS, STATS, BC_STATS, f"{RUN}/srtla-links.txt", server.VIEW_STATE, server.CAM_LIVE):
+        for f in (STATUS, STATS, BC_STATS, f"{RUN}/srtla-links.txt", f"{RUN}/srt-loss.txt", server.VIEW_STATE, server.CAM_LIVE):
             try:
                 os.remove(f)
             except OSError:
