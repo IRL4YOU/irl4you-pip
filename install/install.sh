@@ -19,7 +19,7 @@ case "${1:-install}" in
     ts_snapshot "vor der Installation"
     echo "PIPBOX-STEP pakete"
     need=""
-    for p in bluez python3-dbus python3-gi gstreamer1.0-tools; do dpkg -s "$p" >/dev/null 2>&1 || need="$need $p"; done
+    for p in bluez python3-dbus python3-gi gstreamer1.0-tools iw; do dpkg -s "$p" >/dev/null 2>&1 || need="$need $p"; done
     if [ -n "$need" ]; then
       echo "Installiere fehlende Pakete:$need"
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $need \

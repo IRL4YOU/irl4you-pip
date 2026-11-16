@@ -20,7 +20,7 @@ HS_PREFIX = "pipbox-hotspot-"
 SYS_NET = "/sys/class/net"
 MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
 HOTSPOT_FILE = f"{STATE}/hotspot.json"
-HS_BANDS = {"bg": tuple(range(1, 14)), "a": (36, 40, 44, 48)}
+HS_BANDS = {"bg": tuple(range(1, 14)), "a": (36, 40, 44, 48, 149, 153, 157, 161, 165)}
 
 
 def nm(*args, stdin=None, timeout=60):
@@ -172,6 +172,46 @@ def wifi_caps(iface):
     v = [x.strip().lower() == "yes" for x in r.stdout.splitlines()]
     v += [False] * (3 - len(v))
     return {"ap": v[0], "2ghz": v[1], "5ghz": v[2]}
+
+CH_RE = re.compile(r"^\s*\*\s+(\d+)(?:\.\d+)? MHz \[(\d+)\](.*)$")
+AUTO_NEED = {"bg": (1, 6, 11), "a": (36, 40, 44, 48)}
+IW_PATHS = ("/usr/sbin/iw", "/sbin/iw", "/usr/bin/iw")
+
+
+def parse_channels(text):
+    out = {"bg": [], "a": []}
+    seen = False
+    for line in text.splitlines():
+        m = CH_RE.match(line)
+        if not m:
+            continue
+        mhz, ch, rest = int(m.group(1)), int(m.group(2)), m.group(3).lower()
+        band = "bg" if mhz < 3000 else "a" if mhz < 5900 else None
+        if band is None:
+            continue
+        seen = True
+        if any(w in rest for w in ("disabled", "no ir", "no-ir", "radar", "passive")):
+            continue
+        if ch in HS_BANDS[band]:
+            out[band].append(ch)
+    return {k: sorted(set(v)) for k, v in out.items()} if seen else None
+
+
+def wifi_channels(iface):
+    try:
+        with open(f"{SYS_NET}/{iface}/phy80211/name") as f:
+            phy = f.read().strip()
+    except OSError:
+        return None
+    iw = next((p for p in IW_PATHS if os.path.exists(p)), None)
+    if not iw or not re.match(r"^phy[0-9]+$", phy):
+        return None
+    try:
+        r = subprocess.run([iw, "phy", phy, "info"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return parse_channels(r.stdout) if r.returncode == 0 else None
+
 
 
 def camera_iface():
@@ -472,7 +512,7 @@ def hs_values(req, saved):
     return ssid, pw, band, ch
 
 
-def hs_check_caps(iface, band):
+def hs_check_caps(iface, band, ch=0):
     caps = wifi_caps(iface)
     if not caps["ap"]:
         raise ValueError("Diese WLAN-Karte kann keinen Hotspot aufbauen (kein Zugangspunkt-Betrieb)")
@@ -480,6 +520,13 @@ def hs_check_caps(iface, band):
         raise ValueError("Diese WLAN-Karte kann kein 5 GHz")
     if band == "bg" and not caps["2ghz"] and caps["5ghz"]:
         raise ValueError("Diese WLAN-Karte kann nur 5 GHz")
+    allowed = wifi_channels(iface)
+    if allowed is not None:
+        ok = allowed.get(band, [])
+        if ch and ch not in ok:
+            raise ValueError("Dieser Kanal ist bei dieser Karte nicht erlaubt")
+        if not ch and not all(n in ok for n in AUTO_NEED[band]):
+            raise ValueError("Bei dieser Karte bitte einen festen Kanal wählen")
 
 
 def do_hotspot_save(req):
@@ -490,7 +537,7 @@ def do_hotspot_save(req):
     saved = hs_load().get(iface)
     saved = saved if isinstance(saved, dict) else {}
     ssid, pw, band, ch = hs_values(req, saved)
-    hs_check_caps(iface, band)
+    hs_check_caps(iface, band, ch)
     data = hs_load()
     data[iface] = {"ssid": ssid, "password": pw, "band": band, "channel": ch}
     hs_store(data)
@@ -503,7 +550,7 @@ def do_hotspot_start(req):
     saved = hs_load().get(iface)
     saved = saved if isinstance(saved, dict) else {}
     ssid, pw, band, ch = hs_values(req, saved)
-    hs_check_caps(iface, band)
+    hs_check_caps(iface, band, ch)
     name = hs_name(iface)
     mine = hwaddr(iface)
     if name in [p[0] for p in connection_names()]:
@@ -526,6 +573,8 @@ def do_hotspot_start(req):
     r = nm("con", "up", "id", name, "ifname", iface, timeout=60)
     if r.returncode != 0:
         msg = (r.stderr or r.stdout).strip().replace(pw, "***")[:160] or "unbekannter Fehler"
+        if "supplicant took too long" in msg:
+            msg = "Die Karte baut den Hotspot nicht auf, vermutlich ist der Kanal bei ihr nicht erlaubt. Bitte einen anderen Kanal wählen."
         nm("con", "delete", "id", name)
         try:
             nm("dev", "connect", iface, timeout=30)
