@@ -2,7 +2,8 @@
 (() => {
   'use strict';
   const { h, ico, api, App, ask, toast, run, badge, btn, alertBox, card, row, list, sw, field, input, select, sleep, note } = Neu;
-  const HS_CH = { bg: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], a: [0, 36, 40, 44, 48] };
+  const HS_CH = { bg: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], a: [0, 36, 40, 44, 48, 149, 153, 157, 161, 165] }, HS_AUTO = { bg: [1, 6, 11], a: [36, 40, 44, 48] };
+  const hsChs = (c, b) => { const k = b === 'a' ? 'a' : 'bg', st = HS_CH[k], ok = c && c.channels && c.channels[k]; if (!Array.isArray(ok)) return st; const l = st.filter(n => n && ok.includes(n)); return HS_AUTO[k].every(n => ok.includes(n)) ? [0, ...l] : l; };
   const T = Neu.slots.netz, box = h('div', { class: 'stack', style: '--gap:var(--space-5)' }), msg = note();
   T.add('n-wlan', 'WLAN und Hotspot', box);
   let drafts = {}, open = {}, pwShown = {}, sig = '', connDraft = { iface: '', ssid: '', pw: '', hidden: false };
@@ -25,8 +26,9 @@
     const ssid = input({ value: dr.ssid, maxlength: 32, autocomplete: 'off', oninput: e => { dr.ssid = e.target.value; tip.hidden = dr.ssid !== 'IRL4YOU-BOX'; } });
     const tip = h('p', { class: 'field__hint', hidden: dr.ssid !== 'IRL4YOU-BOX', text: 'Tipp: Mit mehreren Boxen bitte jedem Hotspot einen eigenen Namen geben. Die Kamera verwechselt sonst Netze mit gleichem Namen und tritt keinem mehr bei.' });
     const pw = input({ value: dr.pw, maxlength: 63, autocomplete: 'off', placeholder: c.hotspot ? 'leer = gespeichertes Passwort' : '', oninput: e => { dr.pw = e.target.value; } });
-    const chSel = select(HS_CH[dr.band].map(n => [n, n ? `Kanal ${n}` : 'automatisch']), dr.ch, v => { dr.ch = parseInt(v, 10) || 0; });
-    const band = select([['bg', '2,4 GHz (reicht weiter)'], ['a', '5 GHz (schneller, weniger Störungen)']], dr.band, v => { dr.band = v; const chs = HS_CH[v]; if (!chs.includes(+dr.ch)) dr.ch = 0; chSel.replaceChildren(...chs.map(n => h('option', { value: n, selected: +dr.ch === n }, n ? `Kanal ${n}` : 'automatisch'))); });
+    const chs0 = hsChs(c, dr.band); if (!chs0.includes(+dr.ch)) dr.ch = chs0[0] ?? 0;
+    const chSel = select(chs0.map(n => [n, n ? `Kanal ${n}` : 'automatisch']), dr.ch, v => { dr.ch = parseInt(v, 10) || 0; });
+    const band = select([['bg', '2,4 GHz (reicht weiter)'], ['a', '5 GHz (schneller, weniger Störungen)']], dr.band, v => { dr.band = v; const chs = hsChs(c, v); if (!chs.includes(+dr.ch)) dr.ch = chs[0] ?? 0; chSel.replaceChildren(...chs.map(n => h('option', { value: n, selected: +dr.ch === n }, n ? `Kanal ${n}` : 'automatisch'))); });
     if (c.band5 === false) band.options[1].disabled = true;
     return h('div', { class: 'tile stack' }, field({ label: 'Name des Hotspots', control: ssid }), tip, field({ label: 'Passwort (8 bis 63 Zeichen)', control: pw }), h('div', { class: 'grid-auto', style: '--min:12rem' }, field({ label: 'Band', control: band }), field({ label: 'Kanal', control: chSel })),
       h('div', { class: 'cluster' }, btn('Speichern', { variant: 'primary', size: 'sm', disabled: busy, onclick: async () => { if (await post({ action: 'hotspot_save', iface: c.iface, ssid: (dr.ssid || '').trim(), password: dr.pw || '', band: dr.band, channel: parseInt(dr.ch, 10) || 0 }, 'Speichere die Einstellungen …')) { open[c.iface] = false; delete drafts[c.iface]; sig = ''; } } }),
