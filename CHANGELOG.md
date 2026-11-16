@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.35
+- Neues Design „Rot-Grün“ für Rot-Grün-Schwäche: Blau und Orange statt Grün und Rot, Zustände zusätzlich mit Formen und Symbolen.
+
 ## 1.1.34
 - Hotspot: Die Kanalauswahl richtet sich nach den Möglichkeiten der WLAN-Karte, weitere 5-GHz-Kanäle.
 
