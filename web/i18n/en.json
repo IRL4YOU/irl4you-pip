@@ -1327,6 +1327,8 @@
   "Mini Controller": "Mini controller",
   "Mir ist bewusst, dass die Vorschau Rechenleistung kostet. Ich möchte sie in diesem Browser dauerhaft eingeschaltet lassen.": "I understand that the preview uses processing power. I want to keep it switched on permanently in this browser.",
   "Mischpult": "Mixing desk",
+  "Rot-Grün": "Red-green",
+  "Für Rot-Grün-Schwäche: Blau und Orange statt Grün und Rot, Zustände zusätzlich mit Formen und Symbolen.": "For red-green colour blindness: blue and orange instead of green and red, states also shown with shapes and symbols.",
   "Mit Passwörtern bitte ein Passwort eingeben (mind. {1} Zeichen).": "With passwords, please enter a password (at least {1} characters).",
   "Mit Twitch anmelden": "Sign in with Twitch",
   "Mit „Alle Kameras immer bereit“ werden Verzögerungen über 750 ms auf 750 ms begrenzt. Größere Werte ließen das Hauptbild ruckeln.": "With “All cameras always ready”, delays above 750 ms are limited to 750 ms. Larger values made the main picture stutter.",
