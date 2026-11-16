@@ -8,7 +8,7 @@ import urllib.parse
 
 class LayoutStore:
     PROFILES = ("desktop", "mobile")
-    DESIGNS = ("", "klar", "kompakt", "kompakt-std", "kontrast", "cockpit", "mischpult")
+    DESIGNS = ("", "klar", "kompakt", "kompakt-std", "kontrast", "cockpit", "mischpult", "rotgruen")
     ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
     MAX_IDS = 200
 
