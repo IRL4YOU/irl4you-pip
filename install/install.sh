@@ -210,6 +210,26 @@ PY
     if [ ! -f /opt/pipbox/gst/libgstpbpip.so ] || [ ! -f /opt/pipbox/gst/libgstpbpixel.so ] || [ "$gst_changed" = 1 ]; then
       sh /opt/pipbox/gst-src/build.sh || echo "WARNUNG: Der PiP-Baustein konnte nicht gebaut werden; Bild-in-Bild bleibt gesperrt."
     fi
+    if [ -f "$HERE/privacy-modelle/VOLL" ]; then
+      read -r vn vsha rest < "$HERE/privacy-modelle/VOLL"
+      vdst="/opt/pipbox/gst/$vn"
+      if [ ! -f "$vdst" ] || [ "$(sha256sum "$vdst" | cut -d' ' -f1)" != "$vsha" ]; then
+        vf="$HERE/privacy-modelle/$vn"
+        if [ ! -f "$vf" ] || [ "$(sha256sum "$vf" | cut -d' ' -f1)" != "$vsha" ]; then
+          vf="/var/tmp/$vn.laden"
+          python3 - "${PB_VOLL_URL:-https://github.com/IRL4YOU/irl4you-pip/releases/download/erkennung-10}/$vn" "$vf" <<'P' 2>/dev/null || true
+import sys, urllib.request
+open(sys.argv[2], "wb").write(urllib.request.urlopen(sys.argv[1], timeout=120).read())
+P
+        fi
+        if [ -f "$vf" ] && [ "$(sha256sum "$vf" | cut -d' ' -f1)" = "$vsha" ]; then
+          install -m 755 "$vf" "$vdst.neu" && mv -f "$vdst.neu" "$vdst"
+        else
+          echo "WARNUNG: Der Baustein für das ganze Bild konnte nicht geladen werden (Internet?)."
+        fi
+        rm -f "/var/tmp/$vn.laden"
+      fi
+    fi
     echo "PIPBOX-STEP srtla"
     install -d /opt/pipbox/srtla
     srtla_changed=0
