@@ -1,7 +1,11 @@
 # Änderungen
 
+## 1.1.37
+- Alle Oberflächentexte in den 12 weiteren Sprachen ergänzt, Chat-Befehle jetzt auch in der README.
+
 ## 1.1.36
-- Neu: Ganzes Bild verpixeln.
+- Neu: Ganzes Bild verpixeln (Karte „Verpixeln“ oder Chat): „!pixel voll an“, „!pixel voll aus“, „!pixel voll grob“, „!pixel voll mittel“, „!pixel voll fein“ (englisch „full on“, „full off“, „coarse“, „medium“, „fine“).
+- Weitere Chat-Befehle: „!pixel“ (Stand), „!pixel an/aus“, „!pixel kopf an/aus“, „!pixel kennz an/aus“, „!status“, „!temp“.
 
 ## 1.1.35
 - Neues Design „Rot-Grün“ für Rot-Grün-Schwäche: Blau und Orange statt Grün und Rot, Zustände zusätzlich mit Formen und Symbolen.
