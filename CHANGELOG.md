@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.36
+- Neu: Ganzes Bild verpixeln.
+
 ## 1.1.35
 - Neues Design „Rot-Grün“ für Rot-Grün-Schwäche: Blau und Orange statt Grün und Rot, Zustände zusätzlich mit Formen und Symbolen.
 

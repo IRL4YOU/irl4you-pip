@@ -252,7 +252,11 @@ def hold_delays(delays, buffer, big_key=None, big_lead=None, uniform=False, shif
     return {k: max(int(v), floor_big if k == big_key else floor) for k, v in delays.items()}
 
 
-def build(c, base=RTMP_BASE, frame=None, ds=None, ds_files=None):
+def _voll_filter(v):
+    return f"pbpixelfull cells={int(v['zellen'])} !\n"
+
+
+def build(c, base=RTMP_BASE, frame=None, ds=None, ds_files=None, voll=None):
     global FRAME_BUILT
     frame = frame_ok() if frame is None else bool(frame)
     FRAME_BUILT = frame
@@ -279,6 +283,7 @@ def build(c, base=RTMP_BASE, frame=None, ds=None, ds_files=None):
                + ("pbround name=rnd !\n" if frame else "")
                + px
                + "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
+               + (_voll_filter(voll) if voll else "") +
                "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                f"h265parse config-interval=-1 ! {q} ! mux.\n")
     ad = f"queue name=pdelay_a max-size-time={(dly + 1500) * 1000000} max-size-buffers=0 max-size-bytes=0 min-threshold-time={dly * 1000000} ! " if px and dly else ""

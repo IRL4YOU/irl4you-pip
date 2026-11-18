@@ -162,8 +162,8 @@ def main():
         return {k: {"name": names.get(k) or k, "rates": list(v)} for k, v in rates.items()}
     def pixel_get():
         return pixel_stand(Handler.datenschutz)
-    def pixel_set(an, kopf, kennz):
-        return pixel_umschalten(Handler.datenschutz, Handler.send, Handler.pipeline, an, kopf, kennz)
+    def pixel_set(an, kopf, kennz, voll=None, stufe=None):
+        return pixel_umschalten(Handler.datenschutz, Handler.send, Handler.pipeline, an, kopf, kennz, voll, stufe)
     Handler.sysalerts.pixel_get, Handler.sysalerts.pixel_set = pixel_get, pixel_set
     Handler.sysalerts.fps_fn = fps_status
     Handler.sysalerts.reader = Handler.chatreader
