@@ -5,7 +5,7 @@ import threading
 import pipbox_live
 
 from srv.cameras import KEY_RE
-from srv.datenschutz import PBPIXEL_BOXES, PBPIXEL_TAP, datenschutz_aktiv
+from srv.datenschutz import PBPIXEL_BOXES, PBPIXEL_TAP, datenschutz_aktiv, datenschutz_voll, voll_filter
 from srv.plugin import CAM_LIVE, FEED_AUDIO_CAPS, FEED_FILL_VIDEO, FEED_PORT, FEED_VIDEO_CAPS, FREE, PIP_CORNERS, SEND_STATUS, feeder_tool, pip_corners, plugin_fill, plugin_multi, plugin_style, plugin_swap, plugin_view
 from srv.style import SIZE_MAX, SIZE_MIN, STYLE_SLOTS, clean_styles, pip_size, small_decode, style_text
 
@@ -33,9 +33,17 @@ class PipelineStore:
     DATENSCHUTZ_FEST = "datei"
 
     @classmethod
+    def voll(cls):
+        if cls.DATENSCHUTZ_FEST != "datei":
+            return None
+        return datenschutz_voll(cls.DATENSCHUTZ_PFAD)
+
+    @classmethod
     def datenschutz(cls):
         if cls.DATENSCHUTZ_FEST != "datei":
             return cls.DATENSCHUTZ_FEST
+        if cls.voll():
+            return None
         return datenschutz_aktiv(cls.DATENSCHUTZ_PFAD)
 
     def __init__(self, path):
@@ -443,6 +451,10 @@ class PipelineStore:
                 vals.append(pd)
         return vals
 
+    @classmethod
+    def _voll_filter(cls):
+        return voll_filter(cls.voll())
+
     def build(self, cfg=None, rtmp_port=1935, rtmp_app="publish"):
         c = self._safe_cfg(cfg or self.cfg)
         if not KEY_RE.match(c.get("main", "")):
@@ -451,7 +463,7 @@ class PipelineStore:
         base = f"rtmp://127.0.0.1:{rtmp_port}/{rtmp_app}"
         pip, pip2, pip3, multi = self._layout(c)
         if pipbox_live.enabled(c):
-            return pipbox_live.build(c, base, ds=self.datenschutz(), ds_files=(PBPIXEL_TAP, PBPIXEL_BOXES))
+            return pipbox_live.build(c, base, ds=self.datenschutz(), ds_files=(PBPIXEL_TAP, PBPIXEL_BOXES), voll=self.voll())
 
         def xy(cfg_, kx, ky, corner_):
             if corner_ != FREE:
@@ -507,7 +519,8 @@ class PipelineStore:
         else:
             v = (f"{vsrc}{qv if ds else q} !\nidentity name=v_delay signal-handoffs=TRUE ! h264parse ! mppvideodec !\n"
                  f"{mask}videorate ! video/x-raw,framerate=30/1,format=NV12 ! queue !\n")
-        v += ("mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
+        v += (self._voll_filter()
+              + "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
               f"h265parse config-interval=-1 ! {q} ! mux.\n")
         out.append(v)
         vol = "volume name=avol ! " if pip and plugin_view() else ""
@@ -574,6 +587,7 @@ class PipelineStore:
                    + (f" slot2=1 corner2={c['corner2']}{xy(c, 'x2', 'y2', c['corner2'])}{sty(1, 2)}" if pip2 else "")
                    + (f" slot3=2 corner3={c['corner3']}{xy(c, 'x3', 'y3', c['corner3'])}{sty(2, 3)}" if pip3 else "") + " !\n"
                    "queue max-size-time=500000000 max-size-buffers=4 leaky=downstream !\n"
+                   + self._voll_filter() +
                    "mpph265enc zero-copy-pkt=0 qp-max=51 gop=60 name=venc_bps !\n"
                    f"h265parse config-interval=-1 ! {q} ! mux.\n")
         vol = "volume name=avol ! " if plugin_view() else ""

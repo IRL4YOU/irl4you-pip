@@ -12,6 +12,12 @@ from srv.util import BASE_DIR
 DATENSCHUTZ_DATEI = "/var/lib/pipbox/datenschutz.json"
 
 
+VOLL_STUFEN = {"grob": 17, "mittel": 34, "fein": 68}
+
+
+VOLL_BAUSTEIN = "/opt/pipbox/gst/libgstpbvoll.so"
+
+
 DATENSCHUTZ_PY = "/opt/pipbox/privacy/venv/bin/python"
 
 
@@ -31,15 +37,16 @@ SENDE_PIPELINE = "/var/tmp/pipbox/pipeline"
 
 
 def kette_signatur(text):
-    return ("pbpixelmask" in text, sorted(re.findall(r"min-threshold-time=(\d+)", text)))
+    voll = tuple(re.findall(r"pbpixelfull cells=\d+", text))
+    return ("pbpixelmask" in text, sorted(re.findall(r"min-threshold-time=(\d+)", text)), voll)
 
 
 SENDE_SIGNATUR = "/var/lib/pipbox/pipeline-datenschutz"
 
 
 def signatur_text(text):
-    maske, verz = kette_signatur(text)
-    return json.dumps({"maske": bool(maske), "verz": list(verz)}) + "\n"
+    maske, verz, voll = kette_signatur(text)
+    return json.dumps({"maske": bool(maske), "verz": list(verz), "voll": list(voll)}) + "\n"
 
 
 def laufende_signatur(pfad=None):
@@ -51,7 +58,10 @@ def laufende_signatur(pfad=None):
     try:
         with open(SENDE_SIGNATUR) as f:
             d = json.load(f)
-        return bool(d["maske"]), sorted(str(x) for x in d["verz"])
+        v = d.get("voll", [])
+        if isinstance(v, bool):
+            v = ["pbpixelfull cells=%d" % VOLL_STUFEN["grob"]] if v else []
+        return bool(d["maske"]), sorted(str(x) for x in d["verz"]), tuple(str(x) for x in v)
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -67,16 +77,23 @@ def neustart_noetig(build_text, pfad=None, an_geaendert=False):
 
 def pixel_stand(store):
     c = store.config()
-    return {"an": c["an"], "kopf": c["kopf"], "kennz": c["kennz"]}
+    return {"an": c["an"], "kopf": c["kopf"], "kennz": c["kennz"], "voll": c["voll"], "stufe": c["voll_stufe"]}
 
 
-def pixel_umschalten(store, send, pipeline, an, kopf, kennz):
-    vorher = bool(store.config().get("an"))
+def pixel_umschalten(store, send, pipeline, an, kopf, kennz, voll=None, stufe=None):
+    alt = store.config()
+    vorher = bool(alt.get("an")) or bool(alt.get("voll"))
+    req = {"an": an, "kopf": kopf, "kennz": kennz}
+    if voll is not None:
+        req["voll"] = bool(voll)
+    if stufe is not None:
+        req["voll_stufe"] = stufe
     try:
-        store.put({"an": an, "kopf": kopf, "kennz": kennz})
+        store.put(req)
     except ValueError as e:
         return False, str(e)
-    if send._active() and neustart_noetig(pipeline.build(), an_geaendert=bool(an) != vorher):
+    jetzt = bool(an) or bool(store.config().get("voll"))
+    if send._active() and neustart_noetig(pipeline.build(), an_geaendert=(jetzt != vorher) or alt.get("voll_stufe") != store.config().get("voll_stufe")):
         restarted, note = send.restart_if_live()
         return True, "Sendung startet kurz neu" if restarted else note
     return True, ""
@@ -103,15 +120,17 @@ def _nachziehen(store, send, pipeline, frist=120.0, takt=1.0, schlaf=time.sleep)
 
 
 def speichern_mit_neustart(store, send, pipeline, req, nachziehen=True):
-    vorher = bool(store.config().get("an"))
+    alt = store.config()
+    vorher = bool(alt.get("an")) or bool(alt.get("voll"))
     res = store.put(req)
-    geaendert = bool((res.get("config") or {}).get("an")) != vorher
+    cfg_neu = res.get("config") or {}
+    geaendert = (bool(cfg_neu.get("an")) or bool(cfg_neu.get("voll"))) != vorher or alt.get("voll_stufe") != cfg_neu.get("voll_stufe")
     res["sending"] = bool(send._active())
     res["neustart_noetig"] = bool(res["sending"] and neustart_noetig(pipeline.build(), an_geaendert=geaendert))
     res["restarted"], res["note"], res["wartet"] = False, "", False
     if not res["neustart_noetig"]:
         return res
-    if not (res.get("config") or {}).get("an"):
+    if not cfg_neu.get("an") or cfg_neu.get("voll"):
         res["restarted"], res["note"] = send.restart_if_live()
         res["neustart_noetig"] = bool(not res["restarted"] and neustart_noetig(pipeline.build(), an_geaendert=geaendert))
     else:
@@ -138,7 +157,7 @@ def privacy_status():
 
 
 class DatenschutzStore:
-    DEFAULT = {"an": False, "kopf": True, "kennz": True, "zweit": True, "delay_ms": 2000, "zonen": [], "lizenz_ok": False, "lizenz_sha": ""}
+    DEFAULT = {"an": False, "voll": False, "voll_stufe": "grob", "kopf": True, "kennz": True, "zweit": True, "delay_ms": 2000, "zonen": [], "lizenz_ok": False, "lizenz_sha": ""}
     MAX_ZONEN = 16
     MIN_DELAY, MAX_DELAY = 2000, 12000
 
@@ -151,9 +170,10 @@ class DatenschutzStore:
     def clean(cls, d):
         d = d if isinstance(d, dict) else {}
         out = dict(cls.DEFAULT)
-        for k in ("an", "kopf", "kennz", "zweit", "lizenz_ok"):
+        for k in ("an", "voll", "kopf", "kennz", "zweit", "lizenz_ok"):
             if isinstance(d.get(k), bool):
                 out[k] = d[k]
+        out["voll_stufe"] = d["voll_stufe"] if d.get("voll_stufe") in VOLL_STUFEN else "grob"
         try:
             out["delay_ms"] = max(cls.MIN_DELAY, min(cls.MAX_DELAY, int(d.get("delay_ms", cls.DEFAULT["delay_ms"]))))
         except (TypeError, ValueError):
@@ -267,7 +287,9 @@ class DatenschutzStore:
         with self.lock:
             cur = self.config()
             new = dict(cur)
-            for k in ("an", "kopf", "kennz", "zweit", "delay_ms", "zonen"):
+            if "voll_stufe" in req and req["voll_stufe"] not in VOLL_STUFEN:
+                raise ValueError("Unbekannte Stufe")
+            for k in ("an", "voll", "voll_stufe", "kopf", "kennz", "zweit", "delay_ms", "zonen"):
                 if k in req:
                     new[k] = req[k]
             if "lizenz_ok" in req:
@@ -282,6 +304,8 @@ class DatenschutzStore:
                 raise ValueError("Zuerst die Lizenz der Erkennung annehmen")
             if new["an"] and not self.installiert():
                 raise ValueError("Die Erkennung ist auf dieser Box nicht eingerichtet (zuerst einrichten)")
+            if new["voll"] and not os.path.exists(VOLL_BAUSTEIN):
+                raise ValueError("Der Baustein für das ganze Bild fehlt (Software-Update ausführen)")
             if not new["kopf"] and not new["kennz"]:
                 raise ValueError("Mindestens Köpfe oder Kennzeichen einschalten")
             self._write(new)
@@ -298,3 +322,21 @@ def datenschutz_aktiv(pfad=None):
     if not (c["an"] and c["lizenz_ok"] and DatenschutzStore.installiert()):
         return None
     return {"delay_ms": c["delay_ms"]}
+
+
+
+
+def datenschutz_voll(pfad=None):
+    pfad = pfad or DATENSCHUTZ_DATEI
+    try:
+        with open(pfad) as f:
+            c = DatenschutzStore.clean(json.load(f))
+    except (OSError, ValueError):
+        return None
+    return {"zellen": VOLL_STUFEN[c["voll_stufe"]], "stufe": c["voll_stufe"]} if c["voll"] else None
+
+
+def voll_filter(v):
+    if not v:
+        return ""
+    return f"pbpixelfull cells={int(v['zellen'])} !\n"
