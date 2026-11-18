@@ -163,7 +163,7 @@
     function paint() {
       const s = st(); b.setAttribute('aria-pressed', String(s.on)); b.toggleAttribute('data-dim', !s.ready); b.toggleAttribute('data-warn', s.on && !s.up);
       lab.textContent = s.on ? 'Verpixeln: an' : 'Verpixeln: aus';
-      b.title = !s.ready ? 'Verpixeln (Datenschutz): noch nicht eingerichtet, Antippen öffnet die Einrichtung'
+      b.title = !s.ready ? 'Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung'
         : s.on ? (s.up ? 'Köpfe und Kennzeichen werden verpixelt. Antippen schaltet aus.' : 'Verpixeln ist an, der Erkennungsdienst startet noch. Antippen schaltet aus.') : 'Verpixeln ist aus. Antippen schaltet ein.';
       b.setAttribute('aria-label', 'Verpixeln ' + (s.on ? 'an' : 'aus') + ': ' + (s.ready ? 'umschalten' : 'einrichten'));
     }
