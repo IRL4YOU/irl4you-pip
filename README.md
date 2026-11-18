@@ -30,6 +30,23 @@ MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (sieh
 
 Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
+## Chat-Befehle
+
+Im Twitch-Chat für Streamer und Moderatoren (VIPs, wenn der Haken in der Chat-Karte gesetzt ist). Zuerst in der Chat-Karte die Befehle einschalten.
+
+| Befehl | Wirkung |
+|---|---|
+| `!status` | Ampel der Box |
+| `!temp` | Temperatur |
+| `!pixel` | Stand des Verpixelns |
+| `!pixel an` / `!pixel aus` | Köpfe und Kennzeichen (englisch `on` / `off`) |
+| `!pixel kopf an` / `aus` | nur Köpfe (englisch `head on` / `off`) |
+| `!pixel kennz an` / `aus` | nur Kennzeichen (englisch `plate on` / `off`) |
+| `!pixel voll an` / `aus` | ganzes Bild verpixeln, Ton läuft weiter (englisch `full on` / `off`) |
+| `!pixel voll grob` / `mittel` / `fein` | Stufe des ganzen Bildes (englisch `coarse` / `medium` / `fine`) |
+
+Köpfe ausschalten, das ganze Bild wieder zeigen und feiner stellen darf nur der Streamer (Moderatoren mit dem Haken „Moderatoren dürfen auch Köpfe ausschalten“). Zwischen zwei `!pixel`-Befehlen müssen 10 Sekunden liegen. Beim Ein- oder Ausschalten startet die Sendung kurz neu.
+
 ## Hilfe
 
 Webseite: [irl4you.de](https://irl4you.de/irl4you-box.html). Fragen und Fehler: [Discord](https://discord.gg/nrBCEarMup). Bei Hardware-Fragen (Kameras, Bluetooth-Sticks, WLAN, Strom) bitte dort an **Akinos01** wenden.
