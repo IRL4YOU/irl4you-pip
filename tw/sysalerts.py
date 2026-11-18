@@ -31,6 +31,9 @@ class SysAlerts:
     CMD_FLAG = {"!temp": "cmd_temp", "!status": "cmd_status", "!pixel": "cmd_pixel"}
     PIXEL_ON, PIXEL_OFF = ("an", "on"), ("aus", "off")
     PIXEL_HEAD = ("kopf", "köpfe", "koepfe", "kopfe", "head", "heads", "gesicht", "gesichter", "face", "faces")
+    PIXEL_FULL = ("voll", "full", "alles", "all", "komplett", "ganz")
+    PIXEL_STUFE = {"grob": "grob", "coarse": "grob", "mittel": "mittel", "medium": "mittel", "fein": "fein", "fine": "fein"}
+    STUFEN = ("grob", "mittel", "fein")
     PIXEL_PLATE = ("kennz", "kennzeichen", "plate", "plates", "nummernschild", "nummernschilder")
     PIXEL_GAP_S = 10
     CMD_POLL_S = 2
@@ -288,7 +291,9 @@ class SysAlerts:
         return text + (": " + " · ".join(why) if why else "")
 
     @staticmethod
-    def _pixel_state(an, kopf, kennz):
+    def _pixel_state(an, kopf, kennz, voll=False, stufe="grob"):
+        if voll:
+            return "Verpixeln: ganzes Bild an, Stufe %s" % stufe
         h, k = bool(an and kopf), bool(an and kennz)
         return "Verpixeln: Köpfe %s, Kennzeichen %s" % ("an" if h else "aus", "an" if k else "aus")
 
@@ -299,16 +304,46 @@ class SysAlerts:
             st = self.pixel_get() or {}
         except Exception:
             return "Verpixeln: Stand nicht lesbar"
-        an, kopf, kennz = bool(st.get("an")), st.get("kopf") is not False, st.get("kennz") is not False
+        an, kopf, kennz, voll = bool(st.get("an")), st.get("kopf") is not False, st.get("kennz") is not False, bool(st.get("voll"))
+        stufe = st.get("stufe") if st.get("stufe") in self.STUFEN else "grob"
         cur_h, cur_k = an and kopf, an and kennz
         words = [w.lower() for w in str(item.get("text") or "").split()[1:]]
         if not words:
-            return self._pixel_state(an, kopf, kennz)
+            return self._pixel_state(an, kopf, kennz, voll, stufe)
+        if len(words) == 2 and words[0] in self.PIXEL_FULL and words[1] in self.PIXEL_STUFE:
+            neu = self.PIXEL_STUFE[words[1]]
+            badges = item.get("badges") or []
+            if self.STUFEN.index(neu) > self.STUFEN.index(stufe) and "broadcaster" not in badges and not (data.get("pixel_head_mod") and "moderator" in badges):
+                return "Feiner stellen darf nur der Streamer"
+            if voll and neu == stufe:
+                return self._pixel_state(an, kopf, kennz, voll, stufe) + " (schon so)"
+            try:
+                ok, note = self.pixel_set(an, kopf, kennz, True, neu)
+            except Exception:
+                return "Verpixeln nicht geändert"
+            if not ok:
+                return "Verpixeln nicht geändert: " + str(note)
+            return self._pixel_state(an, kopf, kennz, True, neu) + (" (%s)" % note if note else "")
         on = [w for w in words if w in self.PIXEL_ON + self.PIXEL_OFF]
-        target = [w for w in words if w in self.PIXEL_HEAD + self.PIXEL_PLATE]
+        target = [w for w in words if w in self.PIXEL_HEAD + self.PIXEL_PLATE + self.PIXEL_FULL]
         if len(on) != 1 or len(target) > 1 or len(words) != len(on) + len(target):
-            return "Nutzung: !pixel an|aus, !pixel kopf an|aus, !pixel kennz an|aus"
+            return "Nutzung: !pixel an|aus, !pixel kopf an|aus, !pixel kennz an|aus, !pixel voll an|aus|grob|mittel|fein"
         want = on[0] in self.PIXEL_ON
+        badges = item.get("badges") or []
+        if target and target[0] in self.PIXEL_FULL:
+            if want == voll:
+                return self._pixel_state(an, kopf, kennz, voll, stufe) + " (schon so)"
+            if voll and not want and "broadcaster" not in badges and not (data.get("pixel_head_mod") and "moderator" in badges):
+                return "Das ganze Bild wieder zeigen darf nur der Streamer"
+            try:
+                ok, note = self.pixel_set(an, kopf, kennz, want)
+            except Exception:
+                return "Verpixeln nicht geändert"
+            if not ok:
+                return "Verpixeln nicht geändert: " + str(note)
+            return self._pixel_state(an, kopf, kennz, want, stufe) + (" (%s)" % note if note else "")
+        if voll:
+            return "Das ganze Bild ist verpixelt. Zuerst: !pixel voll aus"
         new_h, new_k = cur_h, cur_k
         if not target:
             new_h = new_k = want
