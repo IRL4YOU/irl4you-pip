@@ -355,7 +355,7 @@ INSTALL_STEPS = {
     "srtla": (78, "Prüfe den SRTLA-Sender (wird neu gebaut, wenn er sich geändert hat)"),
     "belacoder": (88, "Prüfe den Encoder (wird neu gebaut, wenn er sich geändert hat)"),
     "start": (95, "Starte die Dienste neu"),
-    "datenschutz": (96, "Frische die Erkennung der Karte Datenschutz auf (kann einige Minuten dauern)"),
+    "datenschutz": (96, "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)"),
 }
 INSTALL_TIMEOUT = 900
 INSTALL_TIMEOUT_TEST = 2400
