@@ -1,9 +1,9 @@
-/* Bild > Datenschutz (DSGVO): Köpfe und Kennzeichen verpixeln, Lizenz, Einrichtung der Erkennung, Zonen ohne Verpixelung. */
+/* Bild > Verpixeln, Lizenz, Einrichtung der Erkennung, Zonen ohne Verpixelung. */
 (() => {
   'use strict';
-  const { h, api, App, ask, toast, run, badge, btn, alertBox, card, sw, field, input, range, disclosure, note, sleep, prog } = Neu;
+  const { h, api, App, ask, toast, run, badge, btn, alertBox, card, sw, field, input, range, disclosure, note, sleep, prog, select } = Neu;
   const T = Neu.slots.bild, box = h('div', { class: 'stack', style: '--gap:var(--space-5)' });
-  T.add('b-ds', 'Datenschutz', box);
+  T.add('b-ds', 'Verpixeln', box);
   const CLAMP = v => Math.max(0, Math.min(1, v)), MIN = 0.02, HANDLE = 0.035, pct = v => Math.round(v * 100), round = z => z.map(v => Math.round(v * 1000) / 1000);
   let last = null, zones = [], licText = '', licLoaded = false, dirty = false, saveT = 0, flow = 0, timer = 0, sig = '';
   const info = note(), err = note(), cancel = btn('Neustart abbrechen', { size: 'sm', onclick: () => { stopped = true; flow++; cancel.hidden = true; info.set('Gespeichert. Die Änderung gilt, sobald die Sendung neu gestartet wird.'); } }); cancel.hidden = true; let stopped = false;
@@ -74,8 +74,10 @@
     else { t = 'Eingeschaltet. Der Dienst startet gerade (das dauert etwa eine halbe Minute). Solange er nicht läuft, bleibt das Hauptbild einer laufenden Sendung schwarz, und eine neue Sendung bitte erst starten, wenn hier „Läuft“ steht.'; tone = 'warn'; }
     const stateBadge = working ? badge('läuft …', 'accent') : installed && c.an && c.lizenz_ok ? badge(d.status && d.status.up ? 'an' : 'an · wartet', d.status && d.status.up ? 'ok' : 'warn') : null;
     const kids = [];
-    kids.push(card({ title: 'Datenschutz (DSGVO): Köpfe und Kennzeichen verpixeln', actions: stateBadge ? [stateBadge] : [], body: [
-      h('p', { class: 'muted', style: 'font-size:var(--text-sm)' }, 'Die Box erkennt mit KI-Unterstützung (künstliche Intelligenz, die Erkennung basiert auf neuronalen Netzen) im Bild der Hauptkamera Köpfe und Kennzeichen und verpixelt sie, bevor das Bild gesendet wird. Die Erkennung läuft nur auf der Box, es werden keine Bilder übertragen. Kleine Bilder (zum Beispiel die eigene Kamera) bleiben unverändert. Die Sendung wird um die eingestellte Verzögerung später ausgegeben. Die Erkennung ist ein Add-on: Wer sie nutzen will, richtet sie hier ein. Sie ist nicht zu 100 % zuverlässig: Sie findet nicht jeden Kopf und nicht jedes Kennzeichen.'),
+    kids.push(card({ title: 'Verpixeln', actions: stateBadge ? [stateBadge] : [], body: [
+      sw({ checked: !!c.voll, label: 'Ganzes Bild verpixeln', s: 'Ganzes Bild verpixeln', k: 'datenschutz verpixeln ganzes bild voll pixel blur', onchange: async (v, el) => { err.set(''); try { render(await api('POST', '/api/datenschutz', { voll: v })); info.set(last && last.restarted ? (last.note || 'Gespeichert. Die Sendung wurde neu gestartet.') : (last && last.sending && last.neustart_noetig ? 'Gespeichert, die Sendung muss aber neu gestartet werden.' : 'Gespeichert.')); } catch (x) { err.set(x.message, 'bad'); el.checked = !v; } } }),
+      field({ label: 'Stufe des ganzen Bildes', control: select([['grob', 'Grob (nichts erkennbar)'], ['mittel', 'Mittel'], ['fein', 'Fein (mehr Daten, mehr erkennbar)']], c.voll_stufe || 'grob', async v => { err.set(''); try { render(await api('POST', '/api/datenschutz', { voll_stufe: v })); info.set(last && last.restarted ? (last.note || 'Gespeichert. Die Sendung wurde neu gestartet.') : 'Gespeichert.'); } catch (x) { err.set(x.message, 'bad'); render(last); } }) }),
+      disclosure('Info', h('p', { class: 'muted', style: 'font-size:var(--text-sm)' }, 'Ohne Erkennung, braucht fast keine Rechenleistung, nichts bleibt erkennbar. Auch im Chat: !pixel voll an.'), h('p', { class: 'muted', style: 'font-size:var(--text-sm)' }, 'Die Box erkennt mit KI-Unterstützung (künstliche Intelligenz, die Erkennung basiert auf neuronalen Netzen) im Bild der Hauptkamera Köpfe und Kennzeichen und verpixelt sie, bevor das Bild gesendet wird. Die Erkennung läuft nur auf der Box, es werden keine Bilder übertragen. Kleine Bilder (zum Beispiel die eigene Kamera) bleiben unverändert. Die Sendung wird um die eingestellte Verzögerung später ausgegeben. Die Erkennung ist ein Add-on: Wer sie nutzen will, richtet sie hier ein. Sie ist nicht zu 100 % zuverlässig: Sie findet nicht jeden Kopf und nicht jedes Kennzeichen.')),
       h('p', { role: 'status', style: tone === 'warn' ? 'color:var(--warn)' : 'color:var(--text-2);font-size:var(--text-sm)', text: t }),
       working ? prog(a.progress || 0, (a.action === 'remove' ? 'Entferne … ' : 'Richte ein … ') + (a.step || '')) : null,
       d.sending && d.neustart_noetig && installed && c.an && c.lizenz_ok ? btn('Sendung jetzt neu starten', { variant: 'primary', run: async () => { render(await api('POST', '/api/datenschutz', { restart_send: true })); info.set((last && last.note) || 'Die Sendung wurde neu gestartet.'); } }) : null] }));
@@ -91,7 +93,7 @@
         sw({ checked: form.an, label: 'Verpixeln einschalten', disabled: !c.lizenz_ok, s: 'Verpixeln einschalten', k: 'datenschutz dsgvo pixel blur', onchange: v => { form.an = v; change(); } }),
         h('p', { style: 'font-weight:var(--weight-medium)', text: 'Was wird verpixelt?' }),
         sw({ checked: form.kopf, label: 'Köpfe', onchange: v => { form.kopf = v; change(); } }), sw({ checked: form.kennz, label: 'Kennzeichen', onchange: v => { form.kennz = v; change(); } }), sw({ checked: form.zweit, label: 'Zweite Erkennung (findet mehr, braucht mehr Rechenleistung)', onchange: v => { form.zweit = v; change(); } }),
-        range({ label: 'Verzögerung der Sendung', min: 2000, max: 12000, step: 100, value: Math.max(2000, Math.min(12000, +form.delay_ms || 2000)), unit: ' ms', oninput: v => { form.delay_ms = v; }, onchange: () => change(), s: 'Datenschutz Verzögerung', k: 'verpixeln verzögerung delay' }),
+        range({ label: 'Verzögerung der Sendung', min: 2000, max: 12000, step: 100, value: Math.max(2000, Math.min(12000, +form.delay_ms || 2000)), unit: ' ms', oninput: v => { form.delay_ms = v; }, onchange: () => change(), s: 'Verpixeln Verzögerung', k: 'verpixeln verzögerung delay' }),
         h('p', { class: 'field__hint', text: 'Änderungen werden automatisch gespeichert.' }), cancel,
         h('div', { class: 'cluster' }, btn('Erkennung entfernen', { variant: 'ghost', disabled: working || !!d.sending, onclick: async () => { if (await ask({ title: 'Die Erkennung entfernen?', text: 'Programme, Modelle und Python-Umgebung werden gelöscht, Verpixeln ist danach aus. Die Einstellungen und Zonen bleiben gespeichert. Neu einrichten geht jederzeit.', ok: 'Entfernen', danger: true })) { try { render(await api('POST', '/api/datenschutz', { addon: 'remove' })); info.set('Das Entfernen wurde angefordert.'); schedule(); } catch (e) { err.set(e.message, 'bad'); } } } }))];
       kids.push(card({ title: 'Einstellungen', body: ctl }), zoneCard);
@@ -104,7 +106,7 @@
   box.replaceChildren(wait, err, retry);
   async function load(withText) {
     try { retry.hidden = true; err.set(''); render(await api('GET', '/api/datenschutz' + (withText || !licLoaded ? '?lizenz=1' : ''))); }
-    catch (e) { if (wait.isConnected) { wait.textContent = 'Die Datenschutz-Einstellungen konnten nicht geladen werden.'; retry.hidden = false; } else if (!box.contains(err)) box.append(err); err.set(e.message, 'bad'); }
+    catch (e) { if (wait.isConnected) { wait.textContent = 'Die Einstellungen konnten nicht geladen werden.'; retry.hidden = false; } else if (!box.contains(err)) box.append(err); err.set(e.message, 'bad'); }
   }
   function schedule() { clearTimeout(timer); timer = setTimeout(async () => { if (!document.hidden && !dirty && App.view === 'bild') await load(false); schedule(); }, last && last.addon && last.addon.state === 'installing' ? 3000 : 10000); }
   document.addEventListener('neu:view', e => { if (e.detail === 'bild') { load(true).then(schedule); } else bild(null); });
