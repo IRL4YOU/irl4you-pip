@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.40
+- Logo im Browser-Tab (Favicon) wieder da, auch auf der Anmeldeseite.
+
 ## 1.1.39
 - Erkennung verbessert.
 
