@@ -1,5 +1,8 @@
 # Änderungen
 
+## 1.1.39
+- Erkennung verbessert.
+
 ## 1.1.38
 - Ganzes Bild verpixeln: Quelltext des Bausteins in `gst/`, wird auf der Box gebaut. Lizenzangaben berichtigt (NOTICE.md, README, Fußzeile), Lizenzabfrage vor dem Laden der Erkennung.
 - Systemupdates: Fehlermeldung „No such file or directory: update-status.json.tmp“ behoben.
