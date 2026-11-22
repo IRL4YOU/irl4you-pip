@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.1.38
+- Ganzes Bild verpixeln: Quelltext des Bausteins in `gst/`, wird auf der Box gebaut. Lizenzangaben berichtigt (NOTICE.md, README, Fußzeile), Lizenzabfrage vor dem Laden der Erkennung.
+- Systemupdates: Fehlermeldung „No such file or directory: update-status.json.tmp“ behoben.
+
 ## 1.1.37
 - Alle Oberflächentexte in den 12 weiteren Sprachen ergänzt, Chat-Befehle jetzt auch in der README.
 

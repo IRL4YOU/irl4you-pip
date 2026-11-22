@@ -26,7 +26,7 @@ Das dauert einige Minuten, weil unter anderem der Encoder (`belacoder`) gebaut w
 
 **Update und Rückweg:** Spätere Versionen spielt die Karte „Software-Update (IRL4YOU BOX)“ ein. Entfernen: `sudo sh install/install.sh uninstall`.
 
-MIT-Lizenz; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`). Das Erkennungsmodul der Karte Datenschutz (Add-on, nur auf Wunsch eingerichtet) hat eine eigene Lizenz ([LICENSE-ERKENNUNG.md](LICENSE-ERKENNUNG.md)): kostenlos für Privatpersonen und Streamer zum Eigengebrauch, nicht für Unternehmen, nicht zum Verkauf oder zur Weitergabe. **Version 1.1.27.**
+MIT-Lizenz, außer dem Erkennungsmodul; `srtla` AGPL-3.0, `belacoder` GPL-3.0, `bluetooth-src` GPL-2.0 (siehe `LICENSE` und `NOTICE.md`). Das Erkennungsmodul der Karte Verpixeln (Add-on, nur auf Wunsch eingerichtet) hat eine eigene Lizenz ([LICENSE-ERKENNUNG.md](LICENSE-ERKENNUNG.md)): kostenlos für Privatpersonen und Streamer zum Eigengebrauch, nicht für Unternehmen, nicht zum Verkauf oder zur Weitergabe. **Version 1.1.38.**
 
 Änderungen: [CHANGELOG.md](CHANGELOG.md).
 
@@ -55,6 +55,7 @@ Webseite: [irl4you.de](https://irl4you.de/irl4you-box.html). Fragen und Fehler: 
 
 * DJI-Kameras per Bluetooth: Das Protokoll stammt vom Projekt [Moblin](https://github.com/eerimoq/moblin) (Erik Moqvist, MIT-Lizenz). Geprüft wurde es gegen [datagutt/node-osmo](https://github.com/datagutt/node-osmo) und [dimadesu/dji-remote](https://github.com/dimadesu/dji-remote) (beide MIT). Ablauf der Sitzung, Verbindungsliste und Befehle folgen dem DJI-Dienst von [Bittersweet1987](https://github.com/Bittersweet1987), hier für IRL4YOU BOX angepasst.
 * BELABOX: Sendekette, `srtla` und `belacoder` stammen aus dem [BELABOX-Projekt](https://github.com/BELABOX).
+* Logo: Eigenentwurf von IRL4YOU (`favicon.svg` der Seite irl4you.de).
 * Lizenztexte und genaue Angaben stehen in [NOTICE.md](https://github.com/IRL4YOU/irl4you-pip/blob/main/NOTICE.md).
 
 Zusätzlich:

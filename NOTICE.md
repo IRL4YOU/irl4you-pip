@@ -86,21 +86,29 @@ und liest das BELABOX-Passwort nur zur Anmeldeprüfung.
 ### SRTLA-Sender (AGPL-3.0)
 
 Der Ordner `srtla/` enthält zwei Patches für `srtla_send.c` aus [BELABOX/srtla](https://github.com/BELABOX/srtla)
-(Commit 37862da, GNU Affero General Public License v3). Die Patches und das damit gebaute Programm stehen ebenfalls unter
+(Commit 37862da, GNU Affero General Public License v3): `srtla_send-latency-aware.patch` (Wegewahl nach Laufzeit und Jitter) und
+`srtla_send-min-share.patch` (Mindestanteil geeigneter Wege). Die Patches und das damit gebaute Programm stehen ebenfalls unter
 AGPL-3.0; der Quelltext ist der Upstream-Commit plus diese Patches (siehe `srtla/README.md`). Das Original-Programm des
 BELABOX-Pakets bleibt unverändert unter `/usr/bin` liegen; der gepatchte Sender wird nach `/usr/local/bin` installiert.
 
 ### belacoder-Encoder mit tolerantem Regler, Stall-Wächter, Kennzahlen und Kamera-Zweigen (GPL-3.0)
 
-Der Ordner `belacoder/` enthält vier Patches für `belacoder.c` aus [BELABOX/belacoder](https://github.com/BELABOX/belacoder)
-(Commit ccce9ca, GNU General Public License v3). Die Patches und das damit gebaute Programm stehen ebenfalls unter GPL-3.0; der
+Der Ordner `belacoder/` enthält neun Patches für `belacoder.c` aus [BELABOX/belacoder](https://github.com/BELABOX/belacoder)
+(Commit ccce9ca, GNU General Public License v3): `belacoder-jitter-tolerant.patch`, `belacoder-stall-output.patch`, `belacoder-stats.patch`,
+`belacoder-live-feeds.patch`, `belacoder-frame-copy.patch`, `belacoder-no-reconfigure.patch`, `belacoder-audio-eos.patch`,
+`belacoder-feed-shift.patch` und `belacoder-fast-decrease.patch`. Die Patches und das damit gebaute Programm stehen ebenfalls unter GPL-3.0; der
 Quelltext ist der Upstream-Commit plus diese Patches (siehe `belacoder/README.md`). Das Original-Programm des BELABOX-Pakets bleibt
 unverändert unter `/usr/bin` liegen; das gepatchte wird nach `/opt/pipbox/bin` installiert und nur von der Sendekette dieses Pakets benutzt.
 
-Der vierte Patch, `belacoder-live-feeds.patch` (Kamera-Zweige, die im laufenden Betrieb gestartet und gestoppt werden, Steuerkanal, Statistik), stammt von
+Der Patch `belacoder-live-feeds.patch` (Kamera-Zweige, die im laufenden Betrieb gestartet und gestoppt werden, Steuerkanal, Statistik) stammt von
 Bittersweet1987 und beruht auf dessen Projekt `streamingbox` (GPL-3.0); er wurde am 6. Oktober 2026 als Pull Request #27 zu diesem Projekt beigetragen und
 steht wie belacoder unter GPL-3.0. Die zugehörige Steuerung `pipbox_live.py` hat er neu geschrieben und mit demselben Pull Request beigetragen.
-Der fünfte Patch, `belacoder-frame-copy.patch` (Kopie der vergrößerten Bilder in normalen Speicher, Issue #35), ist neu geschrieben und steht ebenfalls unter GPL-3.0.
+Die übrigen Patches sind eigene Arbeit und stehen ebenfalls unter GPL-3.0.
+
+### libsrt (MPL-2.0)
+
+`belacoder` wird gegen die Bibliothek libsrt des BELABOX-Pakets `belabox-libsrt1` (Quelltext: [BELABOX/srt](https://github.com/BELABOX/srt),
+Fork von Haivision/srt, Lizenz **MPL-2.0**) gebunden. Die Bibliothek wird **unverändert** vom Paket der Box benutzt und nicht mitgeliefert.
 
 ### WLAN
 
@@ -117,7 +125,7 @@ Das Passwort wird nur an `nmcli` übergeben und von diesem Projekt nicht gespeic
 - **GPL-2.0** (nicht im Repository): der WLAN-Treiber AIC8800D80, den die Box bei Bedarf selbst holt.
 
 Die GPL-/AGPL-Teile sind eigene Dateien (Patches, Bauskripte); der Upstream-Quelltext wird beim Bauen von GitHub geholt und ist hier mit
-Commit genannt. Das MIT-Bauteil in `gst/` wird zur Laufzeit von GStreamer (LGPL) geladen und enthält keinen GPL-Code. Keine Rechtsberatung.
+Commit genannt. Die MIT-Bausteine in `gst/` enthalten keinen GPL-Code; GStreamer (LGPL) lädt sie zur Laufzeit in den `belacoder`-Prozess (siehe „Bildbausteine in der Sendekette“). Keine Rechtsberatung.
 
 ## Erkennungsmodul (eigene Lizenz, `LICENSE-ERKENNUNG.md`)
 
@@ -127,7 +135,32 @@ Das Erkennungsmodul der Karte Datenschutz arbeitet mit künstlicher Intelligenz 
 Fremdes: Die Modelle wurden unter anderem mit Bildern aus dem Open Images Dataset V7 (Google LLC und Mitwirkende) trainiert; die Beschriftungen stehen unter
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), die Fotos unter [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) (Namensnennung der Urheber:
 https://storage.googleapis.com/openimages/web/factsfigures_v7.html). Bilder und Beschriftungen werden nicht mitgeliefert. Bei der Einrichtung werden
-OpenCV (Apache-2.0), NumPy (BSD-3-Clause) und die Rockchip RKNN-Laufzeit (Lizenz des Anbieters) geladen.
+OpenCV (opencv-python-headless, Apache-2.0), NumPy (BSD-3-Clause), psutil (BSD-3-Clause), die Rockchip RKNN-Laufzeit und das Paket `rknn-toolkit-lite2` von Rockchip (Lizenz des Anbieters) geladen. Die Modelldateien und das Programmpaket der Erkennung liegen **nicht** im Repository, sondern als Dateien einer GitHub-Veröffentlichung; im Repository stehen nur ihre Prüfsummen (`privacy-modelle/`). Sie stehen unter `LICENSE-ERKENNUNG.md`.
+
+Die Erkennung läuft als **eigener Prozess** (`pipbox-privacy.service`, Python) und tauscht Bilder und Rechtecke mit der Sendekette nur über Dateien im Arbeitsspeicher (`/dev/shm`) aus; sie ist nicht in `belacoder` einkompiliert.
+
+## Bildbausteine in der Sendekette
+
+Drei GStreamer-Bausteine arbeiten im Bildweg der Sendung, alle unter der MIT-Lizenz mit veröffentlichtem Quelltext in `gst/`; sie werden auf der Box gebaut (`gst/build.sh`).
+`belacoder` (GPL-3.0) baut die Sendekette aus einem Text; GStreamer **lädt** die Bausteine dabei zur Laufzeit aus `/opt/pipbox/gst` (Umgebungsvariable `GST_PLUGIN_PATH`, gesetzt von `pipbox_send.py`)
+**in den `belacoder`-Prozess**. Sie sind nicht in `belacoder` einkompiliert und binden nur GStreamer, GLib und die C-Bibliothek (LGPL); MIT-Code darf in GPL-Programmen verwendet werden.
+
+| Baustein | Aufgabe | Quelltext |
+|---|---|---|
+| `libgstpbpip.so` | Bild-in-Bild | `gst/gstpbpip.c` |
+| `libgstpbpixel.so` | Verpixeln von Rechtecken (die Rechtecke kommen vom Erkennungsmodul über eine Datei im Arbeitsspeicher) | `gst/gstpbpixel.c` |
+| `libgstpbvoll.so` | Verpixeln des ganzen Bildes (Stufen grob, mittel, fein; feines Rauschen auf einem Teil der Kästchen hält die Datenrate oben) | `gst/gstpbvoll.c` |
+
+Die Erkennung selbst (Python, Modelle) läuft als eigener Prozess und ist nicht Teil dieser Bausteine.
+
+## Übersetzungen, Schriften, Symbole
+
+Die Übersetzungen der Oberfläche (`web/i18n/`, außer Deutsch) sind maschinell erstellt und nicht von Muttersprachlern geprüft. Es werden keine Schriftdateien und keine Symbolsammlungen
+mitgeliefert: die Oberfläche nutzt die Systemschriften des Geräts, Symbole sind als einfache SVG-Grafiken in die Seiten eingebettet.
+
+## Logo
+
+Das Logo im Kopf der Oberfläche, auf der Statistikseite und im Testbild ist ein Eigenentwurf von IRL4YOU (`favicon.svg` der Seite irl4you.de).
 
 ## Aussehen der kleinen Bilder (Anregung)
 
@@ -135,9 +168,9 @@ Bedienkonzept und Wertebereiche für Beschnitt in Pixeln, Rahmen (Dicke, Farbe, 
 Ein-/Ausblenden folgen der Anregung von Bittersweet1987 (Issue und Erweiterung in seinem Projekt, MIT-Lizenz). Die Umsetzung ist eigen: Der
 Zeichenkern in `gst/gstpbpip.c` und die Oberfläche wurden für den Baustein dieser Software neu geschrieben, Programmcode wurde nicht übernommen.
 
-## Original-Oberfläche der BELABOX (AGPL-3.0)
+## Original-Oberfläche der BELABOX (GPL-3.0)
 
-IRL4YOU BOX läuft neben der Original-Oberfläche der BELABOX (belaUI) und verändert sie nicht. Aus ihr wird **kein Quelltext** verwendet. Die Karte
+IRL4YOU BOX läuft neben der Original-Oberfläche der BELABOX ([belaUI](https://github.com/BELABOX/belaUI), Lizenz GPL-3.0 laut deren `LICENSE`-Datei) und verändert sie nicht. Aus ihr wird **kein Quelltext** verwendet. Die Karte
 "Entwickler" liest nur zwei Einstellungsdateien dieser Oberfläche (`setup.json`: Name des SSH-Benutzers, `config.json`: ob sie ein SSH-Passwort erzeugt hat
 und welches) und schaltet den SSH-Dienst des Systems (`systemctl start/stop ssh`) sowie das Passwort des SSH-Benutzers (`chpasswd`) mit eigenem Code; ein
 von IRL4YOU BOX erzeugtes Passwort liegt in einer eigenen Datei (`ssh-pass.json`), die Dateien der Original-Oberfläche werden nicht beschrieben. Auch das
