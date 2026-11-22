@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "Activar o desactivar el pixelado",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "Pixelado: aún sin configurar, al tocar se abre la configuración",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "Actualizando la detección de la tarjeta Pixelado (puede tardar unos minutos)",
-  "Verpixeln Verzögerung": "Retardo del pixelado"
+  "Verpixeln Verzögerung": "Retardo del pixelado",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · Licencia MIT, excepto el módulo de detección (carpeta srtla: AGPL-3.0, belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }

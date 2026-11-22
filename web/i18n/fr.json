@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "Activer ou désactiver la pixelisation",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "Pixeliser : pas encore configuré, appuie pour ouvrir la configuration",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "Actualise la détection de la carte Pixeliser (peut prendre quelques minutes)",
-  "Verpixeln Verzögerung": "Délai de pixelisation"
+  "Verpixeln Verzögerung": "Délai de pixelisation",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · licence MIT, sauf le module de détection (dossier srtla : AGPL-3.0, belacoder : GPL-3.0) ·"
  },
  "patterns": []
 }
