@@ -125,7 +125,7 @@ def controller_action(fn, pipeline, cams, send):
             send.change_view(audio=f["audio"]["next"])
 
 
-PHONE_FRAME = """<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>IRL4YOU BOX</title>
+PHONE_FRAME = """<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml"> <link rel="icon" href="/favicon.ico" sizes="any"> <title>IRL4YOU BOX</title>
 <script>try{if(window.top!==window||matchMedia("(max-width:620px)").matches)location.replace("/?app=1")}catch(e){location.replace("/?app=1")}</script></head>
 <body style="margin:0;background:#0f172a"><iframe title="IRL4YOU BOX" src="/?app=1" style="display:block;margin:0 auto;border:0;width:480px;max-width:100%;height:100vh;height:100dvh"></iframe>
 <script>try{var t=localStorage.getItem("pb_theme"),v=JSON.parse(localStorage.getItem("pb_views")||"null"),d=v&&v.mobile&&v.mobile.design;if(t==="light"||(t!=="dark"&&d==="klar"))document.body.style.background="#f1f5f9"}catch(e){}</script></body></html>"""

@@ -12,7 +12,10 @@ from srv.httpd import PHONE_FRAME
 from srv.netinfo import iface_ips, uplink_states
 from srv.static import ASSET_RE
 from srv.wifi import label_bluetooth
-from srv.util import NOT_HANDLED
+from srv.util import NOT_HANDLED, WEB_DIR
+
+
+ICONS = {"/favicon.svg": ("favicon.svg", "image/svg+xml"), "/favicon.ico": ("favicon.ico", "image/x-icon")}
 
 
 class GetRoutes:
@@ -32,6 +35,12 @@ class GetRoutes:
             return self.reply(200, out)
         if path == "/api/swprogress":
             return self.reply(200, self.swupdate.progress_public())
+        if path in ICONS:                                              # Logo im Browser-Tab: auch ohne Anmeldung (die Anmeldeseite braucht es)
+            try:
+                with open(os.path.join(WEB_DIR, "icons", ICONS[path][0]), "rb") as fh:
+                    return self.send_bytes(200, fh.read(), ICONS[path][1], cache="public, max-age=86400")
+            except OSError:
+                return self.reply(404, {"error": "not found"})
         return NOT_HANDLED
 
     def get_status(self, path):
