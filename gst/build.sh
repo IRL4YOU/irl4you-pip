@@ -26,3 +26,13 @@ if [ -f "$HERE/gstpbpixel.c" ]; then
     && mv -f "$OUT/libgstpbpixel.so.new" "$OUT/libgstpbpixel.so" && echo "Baustein gebaut: $OUT/libgstpbpixel.so" \
     || echo "WARNUNG: Der Datenschutz-Baustein konnte nicht gebaut werden."
 fi
+
+if [ -f "$HERE/gstpbvoll.c" ]; then
+  gcc -O2 -Wall -fPIC -shared -pthread -DPACKAGE=\"irl4you-pip\" "$HERE/gstpbvoll.c" -o "$OUT/libgstpbvoll.so.new" \
+    -I"$R/usr/include/gstreamer-1.0" -I"$R/usr/lib/aarch64-linux-gnu/gstreamer-1.0/include" \
+    -I"$R/usr/include/glib-2.0" -I"$R/usr/lib/aarch64-linux-gnu/glib-2.0/include" \
+    -l:libgstvideo-1.0.so.0 -l:libgstbase-1.0.so.0 -l:libgstreamer-1.0.so.0 \
+    -l:libgobject-2.0.so.0 -l:libglib-2.0.so.0 \
+    && mv -f "$OUT/libgstpbvoll.so.new" "$OUT/libgstpbvoll.so" && echo "Baustein gebaut: $OUT/libgstpbvoll.so" \
+    || echo "WARNUNG: Der Baustein für das ganze Bild konnte nicht gebaut werden."
+fi
