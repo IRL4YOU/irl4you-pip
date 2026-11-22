@@ -190,6 +190,8 @@ PY
       install -d "/opt/pipbox/web/${d#$HERE/web/}"
       for f in "$d"/*; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/${f#$HERE/web/}"; done
     done
+    install -d /opt/pipbox/web/icons
+    for f in "$HERE"/web/icons/*; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/icons/$(basename "$f")"; done
     install -d /opt/pipbox/web/i18n
     rm -f /opt/pipbox/web/i18n/*.json
     for f in "$HERE"/web/i18n/*.json; do [ -f "$f" ] && install -m 644 "$f" "/opt/pipbox/web/i18n/$(basename "$f")"; done
