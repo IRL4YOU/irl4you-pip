@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+[ -f "$HERE/install/lizenz.sh" ] && . "$HERE/install/lizenz.sh"
 
 ts_snapshot() {
   command -v tailscale >/dev/null 2>&1 || return 0
@@ -206,29 +207,11 @@ PY
     install -m 644 "$HERE/gst/gstpbpip.c" /opt/pipbox/gst-src/gstpbpip.c
     cmp -s "$HERE/gst/gstpbpixel.c" /opt/pipbox/gst-src/gstpbpixel.c || gst_changed=1
     install -m 644 "$HERE/gst/gstpbpixel.c" /opt/pipbox/gst-src/gstpbpixel.c
+    cmp -s "$HERE/gst/gstpbvoll.c" /opt/pipbox/gst-src/gstpbvoll.c || gst_changed=1
+    install -m 644 "$HERE/gst/gstpbvoll.c" /opt/pipbox/gst-src/gstpbvoll.c
     install -m 755 "$HERE/gst/build.sh" /opt/pipbox/gst-src/build.sh
-    if [ ! -f /opt/pipbox/gst/libgstpbpip.so ] || [ ! -f /opt/pipbox/gst/libgstpbpixel.so ] || [ "$gst_changed" = 1 ]; then
+    if [ ! -f /opt/pipbox/gst/libgstpbpip.so ] || [ ! -f /opt/pipbox/gst/libgstpbpixel.so ] || [ ! -f /opt/pipbox/gst/libgstpbvoll.so ] || [ "$gst_changed" = 1 ]; then
       sh /opt/pipbox/gst-src/build.sh || echo "WARNUNG: Der PiP-Baustein konnte nicht gebaut werden; Bild-in-Bild bleibt gesperrt."
-    fi
-    if [ -f "$HERE/privacy-modelle/VOLL" ]; then
-      read -r vn vsha rest < "$HERE/privacy-modelle/VOLL"
-      vdst="/opt/pipbox/gst/$vn"
-      if [ ! -f "$vdst" ] || [ "$(sha256sum "$vdst" | cut -d' ' -f1)" != "$vsha" ]; then
-        vf="$HERE/privacy-modelle/$vn"
-        if [ ! -f "$vf" ] || [ "$(sha256sum "$vf" | cut -d' ' -f1)" != "$vsha" ]; then
-          vf="/var/tmp/$vn.laden"
-          python3 - "${PB_VOLL_URL:-https://github.com/IRL4YOU/irl4you-pip/releases/download/erkennung-10}/$vn" "$vf" <<'P' 2>/dev/null || true
-import sys, urllib.request
-open(sys.argv[2], "wb").write(urllib.request.urlopen(sys.argv[1], timeout=120).read())
-P
-        fi
-        if [ -f "$vf" ] && [ "$(sha256sum "$vf" | cut -d' ' -f1)" = "$vsha" ]; then
-          install -m 755 "$vf" "$vdst.neu" && mv -f "$vdst.neu" "$vdst"
-        else
-          echo "WARNUNG: Der Baustein für das ganze Bild konnte nicht geladen werden (Internet?)."
-        fi
-        rm -f "/var/tmp/$vn.laden"
-      fi
     fi
     echo "PIPBOX-STEP srtla"
     install -d /opt/pipbox/srtla
@@ -295,12 +278,16 @@ APTEOF
       [ -f "$HERE/pipbox_privacy.py" ] && cp -f "$HERE/pipbox_privacy.py" "$AD.neu/"
       [ -d "$HERE/privacy" ] && cp -f "$HERE"/privacy/*.py "$AD.neu/privacy/"
       cp -f "$HERE"/privacy-modelle/* "$AD.neu/privacy-modelle/"
-      cp -f "$HERE/install/install-datenschutz.sh" "$HERE/install/pipbox-privacy.py" "$HERE/install/pipbox-privacy.service" "$AD.neu/install/"
+      cp -f "$HERE/install/install-datenschutz.sh" "$HERE/install/lizenz.sh" "$HERE/install/pipbox-privacy.py" "$HERE/install/pipbox-privacy.service" "$AD.neu/install/"
       cp -n "$AD"/privacy-modelle/*.rknn "$AD"/privacy-modelle/*.tar "$AD.neu/privacy-modelle/" 2>/dev/null || true
       rm -rf "$AD"; mv "$AD.neu" "$AD"
       if [ -x /opt/pipbox/privacy/venv/bin/python ] && [ -f /etc/systemd/system/pipbox-privacy.service ]; then
         echo "PIPBOX-STEP datenschutz"
-        sh "$AD/install/install-datenschutz.sh" "$AD" 2>&1 | grep -v '^PIPBOX-ADDON' || true
+        if lizenz_pruefen "$AD/LICENSE-ERKENNUNG.md"; then
+          sh "$AD/install/install-datenschutz.sh" "$AD" 2>&1 | grep -v '^PIPBOX-ADDON' || true
+        else
+          echo "HINWEIS: Die Erkennung wird nicht aktualisiert, solange die Lizenz nicht angenommen ist (Karte Verpixeln)."
+        fi
       fi
     fi
     systemctl try-restart pipbox-preview.service 2>/dev/null || true

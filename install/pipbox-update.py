@@ -65,18 +65,24 @@ def read_req(path, limit=4096):
         os.close(fd)
 
 
+STATUS_LOCK = threading.Lock()
+
+
 def save_status(**kw):
-    s = load_status()
-    s.update(kw)
-    tmp = STATUS + ".tmp"
-    try:
-        os.unlink(tmp)
-    except OSError:
-        pass
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-    with os.fdopen(fd, "w") as f:
-        json.dump(s, f)
-    os.replace(tmp, STATUS)
+    # Mehrere Fäden schreiben den Status (Hauptfaden, Zeitgrenze, Abbruchwächter, Aktivitätsanzeige): ohne Sperre löschte einer die
+    # gemeinsame Zwischendatei des anderen ("No such file or directory: update-status.json.tmp") und die Karte zeigte "Fehler".
+    with STATUS_LOCK:
+        s = load_status()
+        s.update(kw)
+        tmp = f"{STATUS}.{os.getpid()}.tmp"
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(fd, "w") as f:
+            json.dump(s, f)
+        os.replace(tmp, STATUS)
 
 
 def log(line):

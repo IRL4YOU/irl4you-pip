@@ -1,6 +1,10 @@
 #!/bin/sh
 set -u
 HERE=${1:-$(cd "$(dirname "$0")/.." && pwd)}
+if [ -f "$HERE/install/lizenz.sh" ]; then
+  . "$HERE/install/lizenz.sh"
+  lizenz_pruefen "$HERE/LICENSE-ERKENNUNG.md" || { echo "WARNUNG: Die Lizenz der Erkennung ist nicht angenommen, es wird nichts geladen."; exit 1; }
+fi
 D=/opt/pipbox/privacy
 RT_VER=2.3.2
 RAW=https://github.com/airockchip/rknn-toolkit2/raw/v$RT_VER
