@@ -66,7 +66,7 @@ def stop():
 
 
 def start(w):
-    env = dict(os.environ, PB_NO_GST="1", PB_BIND="127.0.0.1", MARGIN_FACE="0.30", MARGIN_PX="10", TAP_FPS="10",
+    env = dict(os.environ, PB_NO_GST="1", PB_BIND="127.0.0.1",
                PB_KOPF="1" if w["kopf"] else "0", PB_KENN="1" if w["kennz"] else "0", PB_ZWEIT="1" if w["zweit"] else "0",
                OWN_ZONES=json.dumps(w["zonen"]))
     return subprocess.Popen([PY, "-u", APP, "-", "%g" % w["delay"], PORT], cwd=HOME, env=env)
