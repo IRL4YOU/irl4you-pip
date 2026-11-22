@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "开启或关闭马赛克",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "马赛克：尚未设置，点按即可打开设置",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "正在更新“马赛克”卡片的识别功能（可能需要几分钟）",
-  "Verpixeln Verzögerung": "马赛克延迟"
+  "Verpixeln Verzögerung": "马赛克延迟",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · MIT 许可证，检测模块除外（srtla 文件夹：AGPL-3.0，belacoder：GPL-3.0）·"
  },
  "patterns": []
 }

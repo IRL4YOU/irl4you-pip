@@ -3215,7 +3215,8 @@
   "Verpixeln ein- oder ausschalten": "Switch blurring on or off",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "Blurring: not set up yet, tap to open the setup",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "Refreshing the detection of the Blurring card (can take a few minutes)",
-  "Verpixeln Verzögerung": "Blurring delay"
+  "Verpixeln Verzögerung": "Blurring delay",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · MIT licence, except the detection module (srtla folder: AGPL-3.0, belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }
