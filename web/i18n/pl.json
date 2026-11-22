@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "Włącz lub wyłącz pikselowanie",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "Pikselowanie: jeszcze nieskonfigurowane, dotknięcie otwiera konfigurację",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "Odświeżam wykrywanie karty Pikselowanie (może potrwać kilka minut)",
-  "Verpixeln Verzögerung": "Opóźnienie pikselowania"
+  "Verpixeln Verzögerung": "Opóźnienie pikselowania",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · licencja MIT, z wyjątkiem modułu wykrywania (folder srtla: AGPL-3.0, belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }

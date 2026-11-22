@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "Pikselleştirmeyi aç veya kapat",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "Pikselleştirme: henüz kurulmadı, dokununca kurulum açılır",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "Pikselleştirme kartının algılamasını yeniliyor (birkaç dakika sürebilir)",
-  "Verpixeln Verzögerung": "Pikselleştirme gecikmesi"
+  "Verpixeln Verzögerung": "Pikselleştirme gecikmesi",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · MIT lisansı, algılama modülü hariç (srtla klasörü: AGPL-3.0, belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }
