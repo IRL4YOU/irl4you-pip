@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "모자이크 켜기 또는 끄기",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "모자이크: 아직 설정되지 않음, 누르면 설정이 열립니다",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "모자이크 카드의 인식 기능을 새로 고치는 중 (몇 분 걸릴 수 있음)",
-  "Verpixeln Verzögerung": "모자이크 지연"
+  "Verpixeln Verzögerung": "모자이크 지연",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · MIT 라이선스 (감지 모듈 제외, srtla 폴더: AGPL-3.0, belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }

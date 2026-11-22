@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "Pixeleren in- of uitschakelen",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "Pixeleren: nog niet ingesteld, tikken opent de instelling",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "De herkenning van de kaart Pixeleren wordt vernieuwd (dit kan enkele minuten duren)",
-  "Verpixeln Verzögerung": "Pixelvertraging"
+  "Verpixeln Verzögerung": "Pixelvertraging",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · MIT-licentie, behalve de detectiemodule (map srtla: AGPL-3.0, belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }

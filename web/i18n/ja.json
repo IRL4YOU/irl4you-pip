@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "ぼかしのオン・オフ",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "ぼかし：未設定。タップするとセットアップを開きます",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "ぼかしカードの検出を更新します（数分かかることがあります）",
-  "Verpixeln Verzögerung": "ぼかしの遅延"
+  "Verpixeln Verzögerung": "ぼかしの遅延",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · MITライセンス(検出モジュールを除く。srtlaフォルダー: AGPL-3.0、belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }
