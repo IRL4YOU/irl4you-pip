@@ -3222,7 +3222,8 @@
   "Verpixeln ein- oder ausschalten": "Включить или выключить пикселизацию",
   "Verpixeln: noch nicht eingerichtet, Antippen öffnet die Einrichtung": "Пикселизация: ещё не настроена, нажми, чтобы открыть настройку",
   "Frische die Erkennung der Karte Verpixeln auf (kann einige Minuten dauern)": "Обновление распознавания карточки «Пикселизация» (может занять несколько минут)",
-  "Verpixeln Verzögerung": "Задержка пикселизации"
+  "Verpixeln Verzögerung": "Задержка пикселизации",
+  "© 2026 IRL4YOU · MIT-Lizenz, außer Erkennungsmodul (Ordner srtla: AGPL-3.0, belacoder: GPL-3.0) ·": "© 2026 IRL4YOU · Лицензия MIT, кроме модуля распознавания (папка srtla: AGPL-3.0, belacoder: GPL-3.0) ·"
  },
  "patterns": []
 }
